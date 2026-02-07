@@ -602,7 +602,7 @@ with tabs[4]:
                     recent_df['日期'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
 # --------------------------
-# Tab 5: 市場快報 (旗艦升級版 - 多因子溫度計 + AI 戰略)
+# Tab 5: 市場快報 (旗艦視覺修復版)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
@@ -623,36 +623,35 @@ with tabs[5]:
         if bias_20 > 2.0: trend_score -= 5           # 乖離過大扣分(過熱)
         
         # --- 因子 2: 動能分數 (Momentum - KD) ---
-        # 簡易 KD 計算 (因為不想太複雜，這裡用最近9天模擬 RSV)
         try:
             rsv = (S_current - df_latest['min'].min()) / (df_latest['max'].max() - df_latest['min'].min()) * 100 if 'max' in df_latest else 50
         except: rsv = 50
         
         mom_score = 0
-        if rsv > 80: mom_score = 10      # 超買區 (強勢但小心)
-        elif rsv < 20: mom_score = 5     # 超賣區 (反彈機會)
-        elif rsv > 50: mom_score = 20    # 多方強勢區
-        else: mom_score = 10             # 空方弱勢區
+        if rsv > 80: mom_score = 10      # 超買
+        elif rsv < 20: mom_score = 5     # 超賣
+        elif rsv > 50: mom_score = 20    # 強勢
+        else: mom_score = 10             # 弱勢
         
         # --- 因子 3: 籌碼分數 (Chip) ---
         chip_score = 0
         try:
             last_chip = get_institutional_data(FINMIND_TOKEN)
             net_buy = last_chip['net'].sum() if not last_chip.empty else 0
-            if net_buy > 50: chip_score = 20      # 大買 > 50億
-            elif net_buy > 0: chip_score = 15     # 小買
-            elif net_buy > -50: chip_score = 5    # 小賣
-            else: chip_score = 0                  # 大賣
+            if net_buy > 50: chip_score = 20
+            elif net_buy > 0: chip_score = 15
+            elif net_buy > -50: chip_score = 5
+            else: chip_score = 0
         except: chip_score = 10
         
         # --- 總分計算 ---
-        total_score = min(100, max(0, trend_score + mom_score + chip_score + 10)) # +10 為基礎分
+        total_score = min(100, max(0, trend_score + mom_score + chip_score + 10))
         
         # 繪製儀表板
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number+delta",
             value = total_score,
-            delta = {'reference': 50, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
+            delta = {'reference': 50, 'increasing': {'color': "#28a745"}, 'decreasing': {'color': "#dc3545"}},
             domain = {'x': [0, 1], 'y': [0, 1]},
             title = {'text': "多空綜合評分", 'font': {'size': 20}},
             gauge = {
@@ -668,15 +667,9 @@ with tabs[5]:
             }
         ))
         
-        fig_gauge.update_layout(
-            height=280, 
-            margin=dict(l=30, r=30, t=30, b=30),
-            paper_bgcolor="rgba(0,0,0,0)", 
-            font={'color': "white"}
-        )
+        fig_gauge.update_layout(height=280, margin=dict(l=30, r=30, t=30, b=30), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
         st.plotly_chart(fig_gauge, use_container_width=True)
         
-        # 顯示細項得分
         c1, c2, c3 = st.columns(3)
         c1.metric("趨勢力", f"{trend_score}/40", help="均線與乖離")
         c2.metric("動能力", f"{mom_score}/20", help="KD與RSV")
@@ -685,128 +678,99 @@ with tabs[5]:
     with col_kpi2:
         st.markdown("#### 🤖 **貝伊果 AI 戰略解讀**")
         
-        # --- 5 階動態戰略情境 ---
+        # --- 5 階動態戰略情境 (純 HTML 渲染版 - 解決亂碼問題) ---
         if total_score >= 80:
-            # 1. 極度狂熱 (80-100)
-            ai_title = "🔥 **多頭狂熱：利潤奔跑模式**"
+            ai_title = "🔥 多頭狂熱：利潤奔跑模式"
             ai_status = "極度樂觀"
-            ai_desc = f"""
-            **市場進入「瘋狗浪」階段！** 資金瘋狂湧入，均線發散向上，這是順勢交易者的天堂。
-            但請注意：乖離率過大隨時可能急殺洗盤，**心臟小的不要追**。
-            
-            ⚔️ **攻擊策略**：
-            *   **期權**：Tab 2 積極買進價外 1-2 檔 Call，槓桿全開。
-            *   **現貨**：持有強勢股，沿 5 日線移動停利。
-            """
-            advice_list = ["✅ **追價要快**：猶豫就沒了", "🛑 **停利要狠**：破線就跑"]
-            box_color = "rgba(220, 53, 69, 0.1)" # 紅色底 (台股紅是漲)
-            border_color = "#dc3545"
+            ai_desc = "市場進入「瘋狗浪」階段！資金瘋狂湧入，均線發散向上，這是順勢交易者的天堂。但請注意：乖離率過大隨時可能急殺洗盤，<b>心臟小的不要追</b>。"
+            ai_strat_title = "⚔️ 攻擊策略："
+            ai_strat_content = "<li><b>期權</b>：Tab 2 積極買進價外 1-2 檔 Call，槓桿全開。</li><li><b>現貨</b>：持有強勢股，沿 5 日線移動停利。</li>"
+            ai_tips = "✅ <b>追價要快</b>：猶豫就沒了<br>🛑 <b>停利要狠</b>：破線就跑"
+            box_color = "rgba(220, 53, 69, 0.15)" 
+            border_color = "#dc3545" # 紅色
             
         elif total_score >= 60:
-            # 2. 穩健多頭 (60-79)
-            ai_title = "🐂 **多頭排列：穩健獲利模式**"
+            ai_title = "🐂 多頭排列：穩健獲利模式"
             ai_status = "樂觀偏多"
-            ai_desc = f"""
-            **趨勢溫和向上，最舒服的盤勢。** 指數站穩月線，籌碼安定。
-            這時候不要頻繁進出，**「抱得住」才是贏家**。
-            
-            ⚔️ **攻擊策略**：
-            *   **期權**：Tab 2 選擇價平 Call，賺取波段漲幅。
-            *   **ETF**：Tab 0 的 0050/QQQ 放心續抱。
-            """
-            advice_list = ["✅ **拉回找買點**：靠近 MA20 是機會", "🛑 **減少當沖**：波段利潤更大"]
-            box_color = "rgba(40, 167, 69, 0.1)" # 綠色底
-            border_color = "#28a745"
+            ai_desc = "趨勢溫和向上，最舒服的盤勢。指數站穩月線，籌碼安定。這時候不要頻繁進出，<b>「抱得住」才是贏家</b>。"
+            ai_strat_title = "⚔️ 攻擊策略："
+            ai_strat_content = "<li><b>期權</b>：Tab 2 選擇價平 Call，賺取波段漲幅。</li><li><b>ETF</b>：Tab 0 的 0050/QQQ 放心續抱。</li>"
+            ai_tips = "✅ <b>拉回找買點</b>：靠近 MA20 是機會<br>🛑 <b>減少當沖</b>：波段利潤更大"
+            box_color = "rgba(40, 167, 69, 0.15)"
+            border_color = "#28a745" # 綠色
 
         elif total_score >= 40:
-            # 3. 混沌盤整 (40-59)
-            ai_title = "⚖️ **多空膠著：雙巴震盪模式**"
+            ai_title = "⚖️ 多空膠著：雙巴震盪模式"
             ai_status = "中立觀望"
-            ai_desc = f"""
-            **現在是「絞肉機」行情！** 均線糾結，忽漲忽跌，方向感極差。
-            這時候**「不做」就是「賺」**，頻繁交易只會被磨損本金。
-            
-            🛡️ **防禦策略**：
-            *   **期權**：切勿 Buy Call/Put！適合做 **Credit Spread (收租)** 賺時間價值。
-            *   **資金**：保留 7 成現金，等待突破。
-            """
-            advice_list = ["✅ **區間操作**：箱頂賣、箱底買", "🛑 **嚴禁追單**：突破往往是假突破"]
-            box_color = "rgba(255, 193, 7, 0.1)" # 黃色底
-            border_color = "#ffc107"
+            ai_desc = "現在是「絞肉機」行情！均線糾結，忽漲忽跌，方向感極差。這時候<b>「不做」就是「賺」</b>，頻繁交易只會被磨損本金。"
+            ai_strat_title = "🛡️ 防禦策略："
+            ai_strat_content = "<li><b>期權</b>：切勿 Buy Call/Put！適合做 <b>Credit Spread (收租)</b>。</li><li><b>資金</b>：保留 7 成現金，等待突破。</li>"
+            ai_tips = "✅ <b>區間操作</b>：箱頂賣、箱底買<br>🛑 <b>嚴禁追單</b>：突破往往是假突破"
+            box_color = "rgba(255, 193, 7, 0.15)"
+            border_color = "#ffc107" # 黃色
 
         elif total_score >= 20:
-            # 4. 轉弱修正 (20-39)
-            ai_title = "🐻 **空方試探：保守防禦模式**"
+            ai_title = "🐻 空方試探：保守防禦模式"
             ai_status = "謹慎偏空"
-            ai_desc = f"""
-            **支撐鬆動，風險正在堆積！** 指數跌破月線，反彈無力。
-            多單請務必減碼，不要與趨勢作對。
-            
-            🛡️ **防禦策略**：
-            *   **現貨**：反彈到壓力區（如 MA20）就減碼。
-            *   **避險**：可小量買進 00632R (台灣50反1) 或 Put。
-            """
-            advice_list = ["✅ **現金為王**：活著最重要", "🛑 **別急著抄底**：還沒跌完"]
-            box_color = "rgba(23, 162, 184, 0.1)" # 藍色冷靜底
-            border_color = "#17a2b8"
+            ai_desc = "支撐鬆動，風險正在堆積！指數跌破月線，反彈無力。多單請務必減碼，不要與趨勢作對。"
+            ai_strat_title = "🛡️ 防禦策略："
+            ai_strat_content = "<li><b>現貨</b>：反彈到壓力區（如 MA20）就減碼。</li><li><b>避險</b>：可小量買進 00632R (台灣50反1) 或 Put。</li>"
+            ai_tips = "✅ <b>現金為王</b>：活著最重要<br>🛑 <b>別急著抄底</b>：還沒跌完"
+            box_color = "rgba(23, 162, 184, 0.15)"
+            border_color = "#17a2b8" # 藍色
 
         else:
-            # 5. 空頭崩盤 (0-19)
-            ai_title = "⛈️ **空頭屠殺：全面撤退模式**"
+            ai_title = "⛈️ 空頭屠殺：全面撤退模式"
             ai_status = "極度恐慌"
-            ai_desc = f"""
-            **警報響起！這是要在市場活下去的關鍵時刻。** 
-            均線蓋頭反壓，法人大舉提款。此刻**任何反彈都是逃命波**。
-            
-            ⚔️ **空方策略**：
-            *   **期權**：積極 Buy Put，但要快進快出。
-            *   **心態**：承認虧損，清空多單，留得青山在。
-            """
-            advice_list = ["✅ **果斷停損**：不要有僥倖心態", "🛑 **絕對禁止攤平**：會越攤越平"]
-            box_color = "rgba(52, 58, 64, 0.1)" # 深灰沈重底
-            border_color = "#343a40"
+            ai_desc = "警報響起！均線蓋頭反壓，法人大舉提款。此刻<b>任何反彈都是逃命波</b>。"
+            ai_strat_title = "⚔️ 空方策略："
+            ai_strat_content = "<li><b>期權</b>：積極 Buy Put，但要快進快出。</li><li><b>心態</b>：承認虧損，清空多單，留得青山在。</li>"
+            ai_tips = "✅ <b>果斷停損</b>：不要有僥倖心態<br>🛑 <b>絕對禁止攤平</b>：會越攤越平"
+            box_color = "rgba(52, 58, 64, 0.15)"
+            border_color = "#343a40" # 深灰
 
-        # --- 渲染 UI ---
+        # --- HTML 渲染核心 ---
         st.markdown(f"""
-        <div style="border-left: 5px solid {border_color}; background-color: {box_color}; padding: 15px; border-radius: 5px; margin-bottom: 10px;">
+        <div style="border-left: 5px solid {border_color}; background-color: {box_color}; padding: 15px; border-radius: 5px; margin-bottom: 10px; color: #EEE;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3 style="margin:0; font-size: 1.3em;">{ai_title}</h3>
-                <span style="background-color:{border_color}; color:white; padding: 2px 8px; border-radius: 10px; font-size: 0.8em;">{ai_status}</span>
+                <h3 style="margin:0; font-size: 1.3em; color: white;">{ai_title}</h3>
+                <span style="background-color:{border_color}; color:white; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: bold;">{ai_status}</span>
             </div>
-            <p style="font-size: 15px; line-height: 1.6; margin-bottom: 10px;">{ai_desc}</p>
-            <div style="background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 5px;">
-                {'<br>'.join([item for item in advice_list])}
+            <p style="font-size: 15px; line-height: 1.6; margin-bottom: 15px;">{ai_desc}</p>
+            
+            <div style="margin-bottom: 15px;">
+                <strong style="color: {border_color};">{ai_strat_title}</strong>
+                <ul style="margin-top: 5px; padding-left: 20px;">
+                    {ai_strat_content}
+                </ul>
+            </div>
+
+            <div style="background-color: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; font-size: 0.9em; border: 1px dashed {border_color};">
+                {ai_tips}
             </div>
         </div>
         """, unsafe_allow_html=True)
         
-        # --- 隨機操盤金句 ---
+        # 隨機操盤金句
         quotes = [
-            "「行情總在絕望中誕生，在半信半疑中成長。」",
-            "「截斷虧損，讓利潤奔跑。」",
-            "「不要預測行情，要跟隨行情。」",
-            "「新手看價，老手看量，高手看籌碼。」",
-            "「市場永遠是對的，錯的只有你的帳戶。」"
+            "「行情總在絕望中誕生，在半信半疑中成長。」", "「截斷虧損，讓利潤奔跑。」",
+            "「不要預測行情，要跟隨行情。」", "「新手看價，老手看量，高手看籌碼。」"
         ]
         import random
-        quote = random.choice(quotes)
-        st.caption(f"📜 **貝伊果心法**：{quote}")
+        st.caption(f"📜 **貝伊果心法**：{random.choice(quotes)}")
 
     st.divider()
 
-    # ================= 2. 真實籌碼與點位區 (維持原樣) =================
+    # ================= 2. 真實籌碼與點位區 (完整保留) =================
     col_chip, col_key = st.columns([1.5, 1])
 
     with col_chip:
         st.markdown("#### 💰 **法人籌碼動向 (真實數據)**")
-        
         with st.spinner("載入法人資料..."):
-            df_chips = get_institutional_data(FINMIND_TOKEN)
-            
+            df_chips = get_institutional_data(FINMIND_TOKEN) 
         if not df_chips.empty:
             name_map = {"Foreign_Investors": "外資", "Investment_Trust": "投信", "Dealer_Self": "自營商(自行)", "Dealer_Hedging": "自營商(避險)"}
             df_chips['name_tw'] = df_chips['name'].map(name_map).fillna(df_chips['name'])
-            
             fig_chips = px.bar(df_chips, x="name_tw", y="net", color="net",
                               color_continuous_scale=["green", "red"],
                               labels={"net": "買賣超(億)", "name_tw": "法人身分"},
@@ -819,10 +783,8 @@ with tabs[5]:
 
     with col_key:
         st.markdown("#### 🔑 **關鍵點位 (真實 K 線)**")
-        
         with st.spinner("計算支撐壓力..."):
             real_pressure, real_support = get_support_pressure(FINMIND_TOKEN)
-        
         if real_pressure > 0:
             st.metric("🛑 波段壓力 (20日高)", f"{int(real_pressure)}", delta=f"{real_pressure-S_current:.0f}", delta_color="inverse")
             st.metric("🏠 目前點位", f"{int(S_current)}")
@@ -833,28 +795,21 @@ with tabs[5]:
 
     st.markdown("---")
     
-    # ================= 3. 真實新聞區 (維持原樣) =================
+    # ================= 3. 真實新聞區 (完整保留) =================
     st.markdown("#### 📰 **今日必讀頭條 (即時更新)**")
-    
     with st.spinner("抓取最新新聞中..."):
         real_news_df = get_real_news(FINMIND_TOKEN)
-    
     if not real_news_df.empty:
         for _, row in real_news_df.iterrows():
             col_n1, col_n2 = st.columns([4, 1])
             with col_n1:
-                title = row.get('title', '無標題')
-                link = row.get('link', '#')
-                source = row.get('source', '新聞')
-                st.markdown(f"**[{source}]** [{title}]({link})")
-                if 'description' in row and row['description']:
-                    st.caption(f"{row['description'][:60]}...")
+                st.markdown(f"**[{row.get('source','新聞')}]** [{row.get('title','無標題')}]({row.get('link','#')})")
+                if 'description' in row and row['description']: st.caption(f"{row['description'][:60]}...")
             with col_n2:
-                news_time = pd.to_datetime(row['date']).strftime('%m/%d %H:%M')
-                st.caption(f"🕒 {news_time}")
+                st.caption(f"🕒 {pd.to_datetime(row['date']).strftime('%m/%d %H:%M')}")
             st.divider()
     else:
-        st.warning("⚠️ 目前無最新新聞，或 API 連線忙碌中。")
+        st.warning("⚠️ 目前無最新新聞。")
 
 
 # --------------------------
