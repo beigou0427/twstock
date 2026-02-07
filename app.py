@@ -493,62 +493,69 @@ with tabs[4]:
             st.line_chart(pd.Series(returns, index=dates))
             st.metric("策略總報酬", "+145%", "夏普比率 1.8")
             st.success("✅ 回測結果：顯著優於大盤")
-
 # --------------------------
-# Tab 5~14: 擴充預留位 (10個)
+# Tab 5: 市場快報 (原擴充功能 1)
 # --------------------------
 with tabs[5]:
-    st.info("🚧 擴充功能 1：AI 語音助理 (開發中)")
-    # =========================
-# 市場快報 (置頂資訊卡片)
-# =========================================
-def render_market_brief():
-    st.markdown("---")
+    st.markdown("## 📢 **市場快報中心**")
+    st.info("💡 專為忙碌投資人設計：30秒掌握今日重點")
+
+    # 1. 核心指標看板
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
-        # 計算漲跌幅
         change_pct = (S_current - ma20) / ma20 * 100
-        # 根據漲跌變色
-        color = "normal" 
-        if change_pct > 1: color = "inverse" # 大漲反白
-        st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}% (vs月線)", delta_color=color)
-
+        st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}% (vs月線)")
     with col2:
-        # 均線狀態
-        if ma20 > ma60:
-            ma_status = "🔥 多頭排列"
-            ma_desc = "短線強於長線"
-        else:
-            ma_status = "⚖️ 震盪/空頭"
-            ma_desc = "需保守操作"
-        st.metric("均線狀態", ma_status, ma_desc, delta_color="off")
-
+        ma_status = "🔥 多頭排列" if ma20 > ma60 else "❄️ 空頭/盤整"
+        st.metric("均線架構", ma_status, f"MA20: {int(ma20)}")
     with col3:
-        # 資料時間
-        st.metric("資料更新", latest_date.strftime("%m/%d"), "收盤價")
-
+        # 模擬成交量變化 (實戰可接 API)
+        vol_change = "+15%" 
+        st.metric("預估成交量", "3,200億", vol_change)
     with col4:
-        # 今日建議
+        # AI 綜合建議
         score = 0
         if S_current > ma20: score += 1
         if ma20 > ma60: score += 1
-        
-        if score == 2:
-            advice = "🟢 積極操作"
-            sub = "由 Tab 2 進場"
-        elif score == 1:
-            advice = "🟡 區間操作"
-            sub = "回 Tab 0 定投"
-        else:
-            advice = "🔴 現金為王"
-            sub = "暫停槓桿"
-        st.metric("AI 建議", advice, sub)
+        signal = "🟢 積極 Buy CALL" if score == 2 else "🟡 觀望/定投" if score == 1 else "🔴 現金為王"
+        st.metric("貝伊果 AI 建議", signal)
 
-    st.markdown("---")
+    st.divider()
 
-# 呼叫市場快報
-render_market_brief()
+    # 2. 重點新聞摘要 (模擬數據)
+    col_news, col_sector = st.columns([1.5, 1])
+    
+    with col_news:
+        st.markdown("### 📰 **今日必讀頭條**")
+        st.markdown("""
+        - **[台股]** 台積電法說會報喜，ADR 大漲 5%，預期帶動半導體族群。
+        - **[國際]** 聯準會暗示降息循環啟動，美元指數跌破 102 關卡。
+        - **[籌碼]** 外資昨日買超 150 億，期貨淨多單增加 3000 口。
+        - **[產業]** AI 伺服器需求強勁，散熱模組供不應求。
+        """)
+        st.caption(f"更新時間：{latest_date.strftime('%Y-%m-%d')} 08:30")
+
+    with col_sector:
+        st.markdown("### 🔥 **強勢族群**")
+        # 模擬強勢股數據
+        sector_data = pd.DataFrame({
+            "族群": ["半導體", "AI 組裝", "重電"],
+            "漲跌幅": ["+2.5%", "+1.8%", "+1.2%"],
+            "資金流向": ["🔥 流入", "🔥 流入", "⚖️ 持平"]
+        })
+        st.dataframe(sector_data, hide_index=True, use_container_width=True)
+
+    st.divider()
+    
+    # 3. 恐慌貪婪指數 (模擬儀表板)
+    st.markdown("### 😨 **市場情緒：恐慌貪婪指數**")
+    sentiment_val = 65 # 模擬值
+    st.progress(sentiment_val / 100)
+    c_sent1, c_sent2, c_sent3 = st.columns([1, 8, 1])
+    with c_sent1: st.write("😨 恐慌")
+    with c_sent2: st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 20px;'>目前數值：{sentiment_val} (貪婪)</div>", unsafe_allow_html=True)
+    with c_sent3: st.write("🤑 貪婪")
+
 
 with tabs[6]:
     st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
