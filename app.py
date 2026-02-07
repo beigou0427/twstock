@@ -178,56 +178,6 @@ tab_names = [
 tab_names += [f"🛠️ 擴充 {i+1}" for i in range(10)]
 
 tabs = st.tabs(tab_names)
-# =========================
-# 市場快報 (置頂資訊卡片)
-# =========================================
-def render_market_brief():
-    st.markdown("---")
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        # 計算漲跌幅
-        change_pct = (S_current - ma20) / ma20 * 100
-        # 根據漲跌變色
-        color = "normal" 
-        if change_pct > 1: color = "inverse" # 大漲反白
-        st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}% (vs月線)", delta_color=color)
-
-    with col2:
-        # 均線狀態
-        if ma20 > ma60:
-            ma_status = "🔥 多頭排列"
-            ma_desc = "短線強於長線"
-        else:
-            ma_status = "⚖️ 震盪/空頭"
-            ma_desc = "需保守操作"
-        st.metric("均線狀態", ma_status, ma_desc, delta_color="off")
-
-    with col3:
-        # 資料時間
-        st.metric("資料更新", latest_date.strftime("%m/%d"), "收盤價")
-
-    with col4:
-        # 今日建議
-        score = 0
-        if S_current > ma20: score += 1
-        if ma20 > ma60: score += 1
-        
-        if score == 2:
-            advice = "🟢 積極操作"
-            sub = "由 Tab 2 進場"
-        elif score == 1:
-            advice = "🟡 區間操作"
-            sub = "回 Tab 0 定投"
-        else:
-            advice = "🔴 現金為王"
-            sub = "暫停槓桿"
-        st.metric("AI 建議", advice, sub)
-
-    st.markdown("---")
-
-# 呼叫市場快報
-render_market_brief()
 
 # --------------------------
 # Tab 0: 穩健 ETF (純定投版)
@@ -549,6 +499,57 @@ with tabs[4]:
 # --------------------------
 with tabs[5]:
     st.info("🚧 擴充功能 1：AI 語音助理 (開發中)")
+    # =========================
+# 市場快報 (置頂資訊卡片)
+# =========================================
+def render_market_brief():
+    st.markdown("---")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        # 計算漲跌幅
+        change_pct = (S_current - ma20) / ma20 * 100
+        # 根據漲跌變色
+        color = "normal" 
+        if change_pct > 1: color = "inverse" # 大漲反白
+        st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}% (vs月線)", delta_color=color)
+
+    with col2:
+        # 均線狀態
+        if ma20 > ma60:
+            ma_status = "🔥 多頭排列"
+            ma_desc = "短線強於長線"
+        else:
+            ma_status = "⚖️ 震盪/空頭"
+            ma_desc = "需保守操作"
+        st.metric("均線狀態", ma_status, ma_desc, delta_color="off")
+
+    with col3:
+        # 資料時間
+        st.metric("資料更新", latest_date.strftime("%m/%d"), "收盤價")
+
+    with col4:
+        # 今日建議
+        score = 0
+        if S_current > ma20: score += 1
+        if ma20 > ma60: score += 1
+        
+        if score == 2:
+            advice = "🟢 積極操作"
+            sub = "由 Tab 2 進場"
+        elif score == 1:
+            advice = "🟡 區間操作"
+            sub = "回 Tab 0 定投"
+        else:
+            advice = "🔴 現金為王"
+            sub = "暫停槓桿"
+        st.metric("AI 建議", advice, sub)
+
+    st.markdown("---")
+
+# 呼叫市場快報
+render_market_brief()
+
 with tabs[6]:
     st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
 with tabs[7]:
