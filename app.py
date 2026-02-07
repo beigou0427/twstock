@@ -602,7 +602,7 @@ with tabs[4]:
                     recent_df['日期'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
 # --------------------------
-# Tab 5: 市場快報 (旗艦視覺修復版)
+# Tab 5: 市場快報 (終極渲染修復版)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
@@ -678,7 +678,7 @@ with tabs[5]:
     with col_kpi2:
         st.markdown("#### 🤖 **貝伊果 AI 戰略解讀**")
         
-        # --- 5 階動態戰略情境 (純 HTML 渲染版 - 解決亂碼問題) ---
+        # --- 5 階動態戰略情境 (無縮排 HTML 版) ---
         if total_score >= 80:
             ai_title = "🔥 多頭狂熱：利潤奔跑模式"
             ai_status = "極度樂觀"
@@ -729,27 +729,26 @@ with tabs[5]:
             box_color = "rgba(52, 58, 64, 0.15)"
             border_color = "#343a40" # 深灰
 
-        # --- HTML 渲染核心 ---
-        st.markdown(f"""
-        <div style="border-left: 5px solid {border_color}; background-color: {box_color}; padding: 15px; border-radius: 5px; margin-bottom: 10px; color: #EEE;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3 style="margin:0; font-size: 1.3em; color: white;">{ai_title}</h3>
-                <span style="background-color:{border_color}; color:white; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: bold;">{ai_status}</span>
-            </div>
-            <p style="font-size: 15px; line-height: 1.6; margin-bottom: 15px;">{ai_desc}</p>
-            
-            <div style="margin-bottom: 15px;">
-                <strong style="color: {border_color};">{ai_strat_title}</strong>
-                <ul style="margin-top: 5px; padding-left: 20px;">
-                    {ai_strat_content}
-                </ul>
-            </div>
-
-            <div style="background-color: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; font-size: 0.9em; border: 1px dashed {border_color};">
-                {ai_tips}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # --- 關鍵修復：移除縮排的 HTML 字串 ---
+        html_content = f"""
+<div style="border-left: 5px solid {border_color}; background-color: {box_color}; padding: 15px; border-radius: 5px; margin-bottom: 10px; color: #EEE;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h3 style="margin:0; font-size: 1.3em; color: white;">{ai_title}</h3>
+        <span style="background-color:{border_color}; color:white; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: bold;">{ai_status}</span>
+    </div>
+    <p style="font-size: 15px; line-height: 1.6; margin-bottom: 15px;">{ai_desc}</p>
+    <div style="margin-bottom: 15px;">
+        <strong style="color: {border_color};">{ai_strat_title}</strong>
+        <ul style="margin-top: 5px; padding-left: 20px;">
+            {ai_strat_content}
+        </ul>
+    </div>
+    <div style="background-color: rgba(0,0,0,0.2); padding: 10px; border-radius: 5px; font-size: 0.9em; border: 1px dashed {border_color};">
+        {ai_tips}
+    </div>
+</div>
+"""
+        st.markdown(html_content, unsafe_allow_html=True)
         
         # 隨機操盤金句
         quotes = [
@@ -761,7 +760,7 @@ with tabs[5]:
 
     st.divider()
 
-    # ================= 2. 真實籌碼與點位區 (完整保留) =================
+    # ================= 2. 真實籌碼與點位區 (不變) =================
     col_chip, col_key = st.columns([1.5, 1])
 
     with col_chip:
@@ -795,7 +794,7 @@ with tabs[5]:
 
     st.markdown("---")
     
-    # ================= 3. 真實新聞區 (完整保留) =================
+    # ================= 3. 真實新聞區 (不變) =================
     st.markdown("#### 📰 **今日必讀頭條 (即時更新)**")
     with st.spinner("抓取最新新聞中..."):
         real_news_df = get_real_news(FINMIND_TOKEN)
