@@ -1,6 +1,6 @@
 """
 🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版)
-整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 市場快報 + 真實回測
+整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 市場快報(全真實數據) + 真實回測
 """
 
 import streamlit as st
@@ -83,6 +83,46 @@ def get_real_news(token):
         return news
     except:
         return pd.DataFrame()
+
+@st.cache_data(ttl=1800)
+def get_institutional_data(token):
+    """抓取真實的三大法人大盤買賣超"""
+    dl = DataLoader()
+    dl.login_by_token(api_token=token)
+    # 抓取最近 10 天資料 (確保有最新交易日)
+    start_date = (date.today() - timedelta(days=10)).strftime("%Y-%m-%d")
+    try:
+        # FinMind API: 台灣整體市場三大法人買賣超
+        df = dl.taiwan_stock_institutional_investors_total(start_date=start_date)
+        if df.empty: return pd.DataFrame()
+        
+        # 轉換日期並取最新一天
+        df["date"] = pd.to_datetime(df["date"])
+        latest_date = df["date"].max()
+        df_latest = df[df["date"] == latest_date].copy()
+        
+        # 計算淨買賣超 (buy - sell) 並轉為「億」
+        df_latest["net"] = (df_latest["buy"] - df_latest["sell"]) / 100000000
+        return df_latest
+    except:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=3600)
+def get_support_pressure(token):
+    """抓取真實 K 線以計算支撐壓力"""
+    dl = DataLoader()
+    dl.login_by_token(api_token=token)
+    start_date = (date.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+    try:
+        df = dl.taiwan_stock_daily("TAIEX", start_date=start_date)
+        if df.empty: return 0, 0
+        # 壓力：近 20 日最高價
+        pressure = df['max'].tail(20).max()
+        # 支撐：近 60 日最低價
+        support = df['min'].tail(60).min()
+        return pressure, support
+    except:
+        return 0, 0
 
 def bs_price_delta(S, K, T, r, sigma, cp):
     if T <= 0: return 0.0, 0.5
@@ -518,6 +558,7 @@ with tabs[4]:
                 dl = DataLoader()
                 dl.login_by_token(api_token=FINMIND_TOKEN)
                 
+                # 優化：確保資料抓取範圍涵蓋 MA 計算需求
                 end_date = date.today().strftime("%Y-%m-%d")
                 start_date = (date.today() - timedelta(days=period_days + 150)).strftime("%Y-%m-%d")
                 df_hist = dl.taiwan_stock_daily("TAIEX", start_date=start_date, end_date=end_date)
@@ -562,22 +603,25 @@ with tabs[4]:
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
 
 # --------------------------
-# Tab 5: 市場快報 (顯示優化版 + 真實新聞)
+# Tab 5: 市場快報 (全真實數據版)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
-    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 每日 15:00 更新數據")
+    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 每日 15:00 更新法人籌碼")
 
+    # ================= 1. 核心儀表板區 (真實技術指標) =================
     col_kpi1, col_kpi2 = st.columns([1, 1.5])
 
     with col_kpi1:
         st.markdown("#### 🌡️ **市場多空溫度計**")
         
+        # 使用真實均線數據計算分數
         bull_score = 50
-        if S_current > ma20: bull_score += 20
-        if ma20 > ma60: bull_score += 20
-        if S_current > ma60: bull_score += 10
+        if S_current > ma20: bull_score += 20 # 站上月線
+        if ma20 > ma60: bull_score += 20      # 均線多頭
+        if S_current > ma60: bull_score += 10 # 站上季線
         
+        # 繪製儀表板
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number",
             value = bull_score,
@@ -609,38 +653,37 @@ with tabs[5]:
         st.plotly_chart(fig_gauge, use_container_width=True)
 
     with col_kpi2:
-        st.markdown("#### 🤖 **貝伊果 AI 每日短評**")
+        st.markdown("#### 🤖 **貝伊果 AI 真實短評**")
         
+        # 根據真實分數給評語
         if bull_score >= 70:
-            ai_comment = """
-            🔥 **多頭氣盛，順勢而為！**
-            目前指數站穩月線之上，且均線呈現多頭排列，顯示市場資金充沛。
+            ai_comment = f"""
+            🔥 **多頭強勢格局**
+            目前指數 ({int(S_current)}) 站穩月線 ({int(ma20)}) 之上，且均線呈現多頭排列。
+            市場資金動能充沛，適合順勢操作。
             **操作建議**：
-            1. 積極者可利用 Tab 2 尋找 Lead Call 機會。
-            2. 拉回不破 MA20 皆為買點。
+            1. 拉回不破月線皆為買點。
+            2. 可關注 Tab 2 的 Call 策略。
             """
-            box_color = "#d4edda" 
-            text_color = "#155724"
-        elif bull_score <= 30:
-            ai_comment = """
-            ❄️ **空方控盤，保守為上！**
-            指數跌破重要支撐，上方套牢賣壓沈重。切勿隨意摸底。
+            box_color = "#d4edda"; text_color = "#155724"
+        elif bull_score <= 40:
+            ai_comment = f"""
+            ❄️ **空方壓力沈重**
+            目前指數 ({int(S_current)}) 落於月線 ({int(ma20)}) 之下，且上方套牢賣壓重。
             **操作建議**：
-            1. 暫停所有 Call 買方策略。
-            2. 保留現金，或回到 Tab 0 進行小額定投。
+            1. 現金為王，切勿隨意摸底。
+            2. 等待指數站回 MA20 再考慮進場。
             """
-            box_color = "#f8d7da" 
-            text_color = "#721c24"
+            box_color = "#f8d7da"; text_color = "#721c24"
         else:
-            ai_comment = """
-            ⚖️ **多空拉鋸，區間震盪！**
-            目前指數在月線附近徘徊，方向不明確。
+            ai_comment = f"""
+            ⚖️ **多空震盪整理**
+            指數在月線 ({int(ma20)}) 附近膠著，方向尚未明朗。
             **操作建議**：
-            1. 減少操作頻率，多看少做。
-            2. 若要進場，建議選擇遠月合約降低時間價值耗損。
+            1. 區間操作，買黑賣紅。
+            2. 建議降低槓桿，或轉向 Tab 0 定投 ETF。
             """
-            box_color = "#fff3cd" 
-            text_color = "#856404"
+            box_color = "#fff3cd"; text_color = "#856404"
 
         st.markdown(f"""
         <div style="background-color: {box_color}; color: {text_color}; padding: 20px; border-radius: 10px; border-left: 5px solid {text_color};">
@@ -650,36 +693,49 @@ with tabs[5]:
 
     st.divider()
 
+    # ================= 2. 真實籌碼與點位區 =================
     col_chip, col_key = st.columns([1.5, 1])
 
     with col_chip:
-        st.markdown("#### 💰 **法人籌碼動向 (模擬數據)**")
-        chips_data = {
-            "法人": ["外資", "投信", "自營商"],
-            "買賣超 (億)": [np.random.randint(-150, 150), np.random.randint(0, 50), np.random.randint(-50, 50)]
-        }
-        fig_chips = px.bar(chips_data, x="法人", y="買賣超 (億)", color="買賣超 (億)",
-                          color_continuous_scale=["green", "red"],
-                          text="買賣超 (億)", title="今日三大法人買賣超")
-        fig_chips.update_traces(texttemplate='%{text} 億', textposition='outside')
-        fig_chips.update_layout(height=300)
-        st.plotly_chart(fig_chips, use_container_width=True)
+        st.markdown("#### 💰 **法人籌碼動向 (真實數據)**")
+        
+        with st.spinner("載入法人資料..."):
+            df_chips = get_institutional_data(FINMIND_TOKEN)
+            
+        if not df_chips.empty:
+            # 處理名稱簡化
+            name_map = {"Foreign_Investors": "外資", "Investment_Trust": "投信", "Dealer_Self": "自營商(自行)", "Dealer_Hedging": "自營商(避險)"}
+            # 注意：FinMind 回傳名稱可能略有不同，這裡做通用處理
+            df_chips['name_tw'] = df_chips['name'].map(name_map).fillna(df_chips['name'])
+            
+            # 繪圖
+            fig_chips = px.bar(df_chips, x="name_tw", y="net", color="net",
+                              color_continuous_scale=["green", "red"],
+                              labels={"net": "買賣超(億)", "name_tw": "法人身分"},
+                              text="net", title=f"三大法人合計買賣超 ({df_chips['date'].iloc[0].strftime('%m/%d')})")
+            fig_chips.update_traces(texttemplate='%{text:.1f} 億', textposition='outside')
+            fig_chips.update_layout(height=300)
+            st.plotly_chart(fig_chips, use_container_width=True)
+        else:
+            st.warning("⚠️ 暫無法人資料 (通常下午 3 點後更新)")
 
     with col_key:
-        st.markdown("#### 🔑 **關鍵點位監控**")
+        st.markdown("#### 🔑 **關鍵點位 (真實 K 線)**")
         
-        pressure = int(S_current * 1.02 / 100) * 100 
-        support = int(S_current * 0.98 / 100) * 100  
+        with st.spinner("計算支撐壓力..."):
+            real_pressure, real_support = get_support_pressure(FINMIND_TOKEN)
         
-        st.metric("🛑 上方壓力 (2%)", f"{pressure}", delta=f"{pressure-S_current:.0f}", delta_color="inverse")
-        st.metric("🏠 目前點位", f"{int(S_current)}")
-        st.metric("🛡️ 下方支撐 (-2%)", f"{support}", delta=f"{support-S_current:.0f}")
-        
-        st.caption("💡 支撐壓力僅供參考，請搭配量能判斷")
+        if real_pressure > 0:
+            st.metric("🛑 波段壓力 (20日高)", f"{int(real_pressure)}", delta=f"{real_pressure-S_current:.0f}", delta_color="inverse")
+            st.metric("🏠 目前點位", f"{int(S_current)}")
+            st.metric("🛡️ 波段支撐 (60日低)", f"{int(real_support)}", delta=f"{real_support-S_current:.0f}")
+            st.caption("💡 數據來源：真實歷史 K 線高低點")
+        else:
+            st.warning("⚠️ K 線資料連線中斷")
 
     st.markdown("---")
     
-    # 重點新聞區 (真實數據版)
+    # ================= 3. 真實新聞區 =================
     st.markdown("#### 📰 **今日必讀頭條 (即時更新)**")
     
     with st.spinner("抓取最新新聞中..."):
@@ -694,7 +750,7 @@ with tabs[5]:
                 source = row.get('source', '新聞')
                 st.markdown(f"**[{source}]** [{title}]({link})")
                 if 'description' in row and row['description']:
-                    st.caption(f"{row['description'][:50]}...")
+                    st.caption(f"{row['description'][:60]}...")
             with col_n2:
                 news_time = pd.to_datetime(row['date']).strftime('%m/%d %H:%M')
                 st.caption(f"🕒 {news_time}")
