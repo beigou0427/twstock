@@ -19,8 +19,7 @@ if 'portfolio' not in st.session_state:
 if 'search_res_easy' not in st.session_state:
     st.session_state.search_res_easy = []
 
-FINMIND_TOKEN = "	
-eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0wNyAyMDo0NjoxMiIsInVzZXJfaWQiOiJiYWdlbDADA0MjciJWF pbCI6ImFzZDc4MzM1MjBAeWFob28uY29tLnR3IiwiaXAiOiIxMjIumTixLjE0Mi4xNiJ9.ReTy1gwAKK_UI-RrFJH1PpG8vupPY-MxBcj"
+FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0wNyAyMDo0NjoxMiIsInVzZXJfaWQiOiJiYWdlbDA0MjciLCJlbWFpbCI6ImFzZDc4MzM1MjBAeWFob28uY29tLnR3IiwiaXAiOiIxMjIuMTIxLjE0Mi4xNiJ9.ReTy1gwAKK_UI-RrFJH1PpG8vupPY-dbMxBcVjbGYbM"
 
 st.set_page_config(page_title="台指期權雙模式", layout="wide", page_icon="🔥")
 
