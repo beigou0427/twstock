@@ -1,6 +1,6 @@
 """
-🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版 v4.0)
-整合：ETF定投 + 情報中心 + Lead Call策略 + 專業分析 + 戰情室(12因子+趨勢) + 真實回測
+🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版 v5.0)
+整合：ETF定投 + 情報中心 + Lead Call策略 + 戰情室(12因子/趨勢/籌碼/損益) + 真實回測
 """
 
 import streamlit as st
@@ -187,7 +187,7 @@ with st.sidebar:
         st.success("👑 Pro 會員")
     
     st.divider()
-    st.caption("📊 功能說明：\\\\n• Tab0: ETF定投\\\\n• Tab1: 情報中心\\\\n• Tab2: CALL獵人\\\\n• Tab5: 專業戰情室")
+    st.caption("📊 功能說明：\\\\n• Tab0: ETF定投\\\\n• Tab1: 情報中心\\\\n• Tab2: CALL獵人\\\\n• Tab4: 戰情室")
 
 # =========================
 # 5. 主介面 & 市場快報
@@ -223,14 +223,13 @@ if not st.session_state.disclaimer_accepted:
         st.rerun()
     st.stop()
 
-# 分頁導航 (6個功能 + 9個升級槽)
+# 分頁導航 (5個功能 + 9個升級槽)
 tab_names = [
     "🏦 **穩健ETF**", 
     "🌍 **情報中心**", 
     "🔰 **CALL獵人**", 
-    "🔥 **籌碼分析**", 
     "📊 **歷史回測**",
-    "📰 **戰情室**"
+    "🔥 **專業戰情室**"
 ]
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 
@@ -505,40 +504,10 @@ with tabs[2]:
             display_df["Lev"] = display_df["Lev"].map(lambda x: f"{x:.1f}")
             st.dataframe(display_df.rename(columns={"K":"履約價", "P":"價格", "Lev":"槓桿", "Type":"類型", "Win":"勝率"}), hide_index=True)
 
-
 # --------------------------
-# Tab 3: 專業戰情 (Pro功能)
+# Tab 3: 歷史回測 (真實數據版)
 # --------------------------
 with tabs[3]:
-    st.markdown("### 🔥 **籌碼與損益分析**")
-    
-    col_p1, col_p2 = st.columns([2, 1])
-    
-    with col_p1:
-        st.markdown("#### 📊 **籌碼戰場 (OI Walls)**")
-        st.plotly_chart(plot_oi_walls(S_current), use_container_width=True)
-        st.caption("💡 紅色為大量 Call 賣壓 (壓力)，青色為大量 Put 支撐")
-
-    with col_p2:
-        st.markdown("#### 📉 **損益試算**")
-        k_sim = st.number_input("模擬履約價", 15000, 50000, int(S_current))
-        p_sim = st.number_input("權利金", 1, 1000, 150)
-        st.plotly_chart(plot_payoff(k_sim, p_sim, "CALL"), use_container_width=True)
-
-    # 投組管理 (簡化版)
-    st.markdown("#### 💼 **我的投組**")
-    if st.button("➕ 加入虛擬倉位"):
-        st.session_state.portfolio.append({"K": 23000, "P": 180, "Date": str(date.today())})
-    
-    if st.session_state.portfolio:
-        st.dataframe(pd.DataFrame(st.session_state.portfolio))
-    else:
-        st.info("暫無持倉")
-
-# --------------------------
-# Tab 4: 歷史回測 (真實數據版)
-# --------------------------
-with tabs[4]:
     st.markdown("### 📊 **策略時光機：真實歷史驗證**")
     
     if not st.session_state.is_pro:
@@ -609,12 +578,13 @@ with tabs[4]:
                     recent_df['訊號'] = recent_df['Signal'].apply(lambda x: "🟢 持有" if x else "⚪ 空手")
                     recent_df['日期'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
+
 # --------------------------
-# Tab 5: 專業戰情室 (12因子旗艦版 + 趨勢整合)
+# Tab 4: 專業戰情室 (全功能整合版)
 # --------------------------
-with tabs[5]:
+with tabs[4]:
     st.markdown("## 📰 **專業戰情中心**")
-    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 模型版本：v4.0 (12因子+趨勢整合)")
+    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 模型版本：v5.0 (戰情+籌碼整合)")
 
     # === [新增] 進階數據計算函數 (內嵌以簡化部署) ===
     def calculate_advanced_factors(current_price, ma20, ma60, df_latest, token):
@@ -798,11 +768,17 @@ with tabs[5]:
 
     st.divider()
 
-    # ================= 2. 真實籌碼與點位區 (不變) =================
-    col_chip, col_key = st.columns([1.5, 1])
+    # ================= 2. 籌碼與點位區 (合併自原籌碼分析) =================
+    st.markdown("### 🔥 **籌碼戰場與點位分析**")
+    
+    col_chip1, col_chip2 = st.columns([1.5, 1])
 
-    with col_chip:
-        st.markdown("#### 💰 **法人籌碼動向 (真實數據)**")
+    with col_chip1:
+        st.markdown("#### 💰 **籌碼戰場 (OI Walls)**")
+        st.plotly_chart(plot_oi_walls(S_current), use_container_width=True)
+        st.caption("💡 紅色為大量 Call 賣壓 (壓力)，青色為大量 Put 支撐")
+
+        st.markdown("#### 🏦 **三大法人動向**")
         with st.spinner("載入法人資料..."):
             df_chips = get_institutional_data(FINMIND_TOKEN) 
         if not df_chips.empty:
@@ -813,32 +789,45 @@ with tabs[5]:
                               labels={"net": "買賣超(億)", "name_tw": "法人身分"},
                               text="net", title=f"三大法人合計買賣超 ({df_chips['date'].iloc[0].strftime('%m/%d')})")
             fig_chips.update_traces(texttemplate='%{text:.1f} 億', textposition='outside')
-            fig_chips.update_layout(height=300)
+            fig_chips.update_layout(height=250)
             st.plotly_chart(fig_chips, use_container_width=True)
         else:
             st.warning("⚠️ 暫無法人資料 (下午 3 點後更新)")
 
-    with col_key:
-        st.markdown("#### 🔑 **關鍵點位 (真實 K 線)**")
+    with col_chip2:
+        st.markdown("#### 📉 **即時損益試算**")
+        k_sim = st.number_input("模擬履約價", 15000, 50000, int(S_current))
+        p_sim = st.number_input("權利金", 1, 1000, 150)
+        st.plotly_chart(plot_payoff(k_sim, p_sim, "CALL"), use_container_width=True)
+        
+        st.markdown("#### 🔑 **關鍵點位**")
         with st.spinner("計算支撐壓力..."):
             real_pressure, real_support = get_support_pressure(FINMIND_TOKEN)
         if real_pressure > 0:
             st.metric("🛑 波段壓力 (20日高)", f"{int(real_pressure)}", delta=f"{real_pressure-S_current:.0f}", delta_color="inverse")
             st.metric("🏠 目前點位", f"{int(S_current)}")
             st.metric("🛡️ 波段支撐 (60日低)", f"{int(real_support)}", delta=f"{real_support-S_current:.0f}")
-            st.caption("💡 數據來源：真實歷史 K 線高低點")
         else:
             st.warning("⚠️ K 線資料連線中斷")
+
+    # 投組管理
+    st.markdown("#### 💼 **我的投組**")
+    if st.button("➕ 加入虛擬倉位"):
+        st.session_state.portfolio.append({"K": 23000, "P": 180, "Date": str(date.today())})
+    if st.session_state.portfolio:
+        st.dataframe(pd.DataFrame(st.session_state.portfolio))
+    else:
+        st.info("暫無持倉")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
 # --------------------------
-with tabs[6]: st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
-with tabs[7]: st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
-with tabs[8]: st.info("🚧 擴充功能 4：Line 推播 (開發中)")
-with tabs[9]: st.info("🚧 擴充功能 5：期貨價差監控 (開發中)")
-with tabs[10]: st.info("🚧 擴充功能 6：美股連動分析 (開發中)")
-with tabs[11]: st.info("🚧 擴充功能 7：自定義策略腳本 (開發中)")
-with tabs[12]: st.info("🚧 擴充功能 8：社群討論區 (開發中)")
-with tabs[13]: st.info("🚧 擴充功能 9：課程學習中心 (開發中)")
-with tabs[14]: st.info("🚧 擴充功能 10：VIP 專屬通道 (開發中)")
+with tabs[5]: st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
+with tabs[6]: st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
+with tabs[7]: st.info("🚧 擴充功能 4：Line 推播 (開發中)")
+with tabs[8]: st.info("🚧 擴充功能 5：期貨價差監控 (開發中)")
+with tabs[9]: st.info("🚧 擴充功能 6：美股連動分析 (開發中)")
+with tabs[10]: st.info("🚧 擴充功能 7：自定義策略腳本 (開發中)")
+with tabs[11]: st.info("🚧 擴充功能 8：社群討論區 (開發中)")
+with tabs[12]: st.info("🚧 擴充功能 9：課程學習中心 (開發中)")
+with tabs[13]: st.info("🚧 擴充功能 10：VIP 專屬通道 (開發中)")
