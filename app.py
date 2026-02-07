@@ -495,7 +495,7 @@ with tabs[4]:
             st.metric("策略總報酬", "+145%", "夏普比率 1.8")
             st.success("✅ 回測結果：顯著優於大盤")
 # --------------------------
-# Tab 5: 市場快報 (旗艦完善版)
+# Tab 5: 市場快報 (顯示優化版)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
@@ -507,30 +507,42 @@ with tabs[5]:
     with col_kpi1:
         st.markdown("#### 🌡️ **市場多空溫度計**")
         
-        # 計算多空分數 (0~100)
+        # 計算多空分數
         bull_score = 50
         if S_current > ma20: bull_score += 20
         if ma20 > ma60: bull_score += 20
         if S_current > ma60: bull_score += 10
         
-        # 繪製儀表板
+        # 繪製優化版儀表板
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number",
             value = bull_score,
             domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "多空力道 ( >60 偏多 )"},
+            title = {'text': "多空力道 ( >60 偏多 )", 'font': {'size': 20}},
             gauge = {
-                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
                 'bar': {'color': "#ff4b4b" if bull_score < 40 else "#28a745" if bull_score > 60 else "#ffc107"},
+                'bgcolor': "rgba(0,0,0,0)",
+                'borderwidth': 2,
+                'bordercolor': "#333",
                 'steps': [
-                    {'range': [0, 40], 'color': 'rgba(255, 75, 75, 0.2)'},
-                    {'range': [40, 60], 'color': 'rgba(255, 193, 7, 0.2)'},
-                    {'range': [60, 100], 'color': 'rgba(40, 167, 69, 0.2)'}],
+                    {'range': [0, 40], 'color': '#550000'},   # 深紅底
+                    {'range': [40, 60], 'color': '#554400'},  # 深黃底
+                    {'range': [60, 100], 'color': '#003300'}], # 深綠底
                 'threshold': {
-                    'line': {'color': "red", 'width': 4},
+                    'line': {'color': "white", 'width': 4},
                     'thickness': 0.75,
-                    'value': 90}}))
-        fig_gauge.update_layout(height=250, margin=dict(l=20,r=20,t=30,b=20))
+                    'value': bull_score}
+            }
+        ))
+        
+        # ✅ 關鍵修正：增加高度、調整邊距
+        fig_gauge.update_layout(
+            height=300, 
+            margin=dict(l=30, r=30, t=50, b=30),
+            paper_bgcolor="rgba(0,0,0,0)", # 透明背景
+            font={'color': "white"}
+        )
         st.plotly_chart(fig_gauge, use_container_width=True)
 
     with col_kpi2:
@@ -625,6 +637,7 @@ with tabs[5]:
             st.markdown(f"**[{news['tag']}]** {news['title']}")
         with col_n2:
             st.caption(f"{news['time']}")
+
 
 with tabs[6]:
     st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
