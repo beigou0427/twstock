@@ -300,63 +300,92 @@ with tabs[0]:
     4. 10年後檢視成果
     """)
 # --------------------------
-# Tab 1: 智能全球情報中心 (v6.5 最終修復版)
-# --------------------------
-# --------------------------
-# Tab 1: 智能全球情報中心 (v6.6 真實數據跑馬燈版)
+# Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
 # --------------------------
 with tabs[1]:
     st.markdown("## 🌍 **智能全球情報中心**")
 
-    # 🔥 新增：抓取真實市場數據 (含台股/美股/加密幣)
-    def get_market_ticker():
+    # 🔥 新增：抓取真實市場數據 (台股 + 美股 + 幣圈)
+    @st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁請求變慢
+    def get_real_market_ticker():
+        data = {}
         try:
             # 1. 台股 (FinMind)
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
-            # 抓取大盤與台積電最新日資料
-            df_tw = dl.taiwan_stock_daily("TAIEX", start_date=(date.today()-timedelta(days=5)).strftime("%Y-%m-%d"))
-            taiex_close = df_tw['close'].iloc[-1] if not df_tw.empty else 23000
-            taiex_change = (taiex_close - df_tw['close'].iloc[-2]) / df_tw['close'].iloc[-2] * 100 if len(df_tw) > 1 else 0
-
-            df_tsmc = dl.taiwan_stock_daily("2330", start_date=(date.today()-timedelta(days=5)).strftime("%Y-%m-%d"))
-            tsmc_close = df_tsmc['close'].iloc[-1] if not df_tsmc.empty else 1000
-            tsmc_change = (tsmc_close - df_tsmc['close'].iloc[-2]) / df_tsmc['close'].iloc[-2] * 100 if len(df_tsmc) > 1 else 0
-
-            # 2. 簡單模擬美股/比特幣 (因為 FinMind 只有台股，若要真實美股需 yfinance)
-            # 這裡為了不增加依賴，我們用簡單隨機波動模擬 "即時感"，或者您若有 yfinance 可解鎖下面註解
-            # import yfinance as yf
-            # nvda = yf.Ticker("NVDA").history(period="2d")
-            # btc = yf.Ticker("BTC-USD").history(period="2d")
             
-            # (暫時用台股真實數據 + 靜態文字替代美股，以免報錯)
-            return {
-                "taiex": f"{taiex_close:,.0f}", 
-                "taiex_color": "#28a745" if taiex_change > 0 else "#dc3545",
-                "taiex_pct": f"{taiex_change:+.1f}%",
-                "tsmc": f"{tsmc_close:,.0f}",
-                "tsmc_color": "#28a745" if tsmc_change > 0 else "#dc3545", 
-                "tsmc_pct": f"{tsmc_change:+.1f}%"
-            }
-        except:
-            return {"taiex": "23,000", "taiex_color": "gray", "taiex_pct": "0.0%", "tsmc": "1,000", "tsmc_color": "gray", "tsmc_pct": "0.0%"}
+            # TAIEX
+            df_tw = dl.taiwan_stock_daily("TAIEX", start_date=(date.today()-timedelta(days=5)).strftime("%Y-%m-%d"))
+            if not df_tw.empty:
+                close = df_tw['close'].iloc[-1]
+                prev = df_tw['close'].iloc[-2]
+                change = (close - prev) / prev * 100
+                data['taiex'] = f"{close:,.0f}"
+                data['taiex_pct'] = f"{change:+.1f}%"
+                data['taiex_color'] = "#28a745" if change > 0 else "#dc3545"
+            else:
+                data['taiex'] = "N/A"; data['taiex_pct'] = "0%"; data['taiex_color'] = "gray"
+
+            # 台積電 (2330)
+            df_tsmc = dl.taiwan_stock_daily("2330", start_date=(date.today()-timedelta(days=5)).strftime("%Y-%m-%d"))
+            if not df_tsmc.empty:
+                close = df_tsmc['close'].iloc[-1]
+                prev = df_tsmc['close'].iloc[-2]
+                change = (close - prev) / prev * 100
+                data['tsmc'] = f"{close:,.0f}"
+                data['tsmc_pct'] = f"{change:+.1f}%"
+                data['tsmc_color'] = "#28a745" if change > 0 else "#dc3545"
+            else:
+                data['tsmc'] = "N/A"; data['tsmc_pct'] = "0%"; data['tsmc_color'] = "gray"
+
+            # 2. 美股期貨與比特幣 (yfinance)
+            import yfinance as yf
+            
+            # 納斯達克期貨 (NQ=F) 或 S&P500 (ES=F)
+            nq = yf.Ticker("NQ=F").history(period="2d")
+            if len(nq) > 0:
+                last = nq['Close'].iloc[-1]
+                prev = nq['Close'].iloc[-2] if len(nq) > 1 else last
+                chg = (last - prev) / prev * 100
+                data['nq'] = f"{last:,.0f}"
+                data['nq_pct'] = f"{chg:+.1f}%"
+                data['nq_color'] = "#28a745" if chg > 0 else "#dc3545"
+            else:
+                data['nq'] = "N/A"; data['nq_pct'] = "0%"; data['nq_color'] = "gray"
+
+            # 比特幣 (BTC-USD)
+            btc = yf.Ticker("BTC-USD").history(period="2d")
+            if len(btc) > 0:
+                last = btc['Close'].iloc[-1]
+                prev = btc['Close'].iloc[-2] if len(btc) > 1 else last
+                chg = (last - prev) / prev * 100
+                data['btc'] = f"${last:,.0f}"
+                data['btc_pct'] = f"{chg:+.1f}%"
+                data['btc_color'] = "#28a745" if chg > 0 else "#dc3545"
+            else:
+                data['btc'] = "N/A"; data['btc_pct'] = "0%"; data['btc_color'] = "gray"
+
+        except Exception as e:
+            # 出錯時的回退顯示
+            return {k: "N/A" for k in ['taiex','tsmc','nq','btc']}
+            
+        return data
 
     # 執行抓取
-    market_data = get_market_ticker()
+    m = get_real_market_ticker()
 
     # 渲染真實跑馬燈
     st.markdown(f"""
     <div class="ticker-wrap">
-        🚀 <b>市場熱點 (即時):</b> 
-        TAIEX: <span style="color:{market_data['taiex_color']}">{market_data['taiex']} ({market_data['taiex_pct']})</span> | 
-        台積電: <span style="color:{market_data['tsmc_color']}">{market_data['tsmc']} ({market_data['tsmc_pct']})</span> | 
-        美股期貨: <span style="color:#ffc107">盤中震盪</span> | 
-        比特幣: <span style="color:#28a745">$98,000 (高檔整理)</span>
+        🚀 <b>即時行情:</b> 
+        TAIEX: <span style="color:{m.get('taiex_color','gray')}">{m.get('taiex','N/A')} ({m.get('taiex_pct','')})</span> &nbsp;|&nbsp; 
+        台積電: <span style="color:{m.get('tsmc_color','gray')}">{m.get('tsmc','N/A')} ({m.get('tsmc_pct','')})</span> &nbsp;|&nbsp; 
+        Nasdaq期: <span style="color:{m.get('nq_color','gray')}">{m.get('nq','N/A')} ({m.get('nq_pct','')})</span> &nbsp;|&nbsp; 
+        Bitcoin: <span style="color:{m.get('btc_color','gray')}">{m.get('btc','N/A')} ({m.get('btc_pct','')})</span>
     </div>
     """, unsafe_allow_html=True)
     
-    st.caption("數據來源：FinMind 實時台股 + 國際市場快訊")
-
+    st.caption("數據來源：FinMind (台股) + Yahoo Finance (國際/加密幣)")
     # Session State 初始化
     if 'filter_kw' not in st.session_state:
         st.session_state['filter_kw'] = "全部"
