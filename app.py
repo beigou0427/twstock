@@ -1,6 +1,6 @@
 """
 🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版)
-整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 擴充預留
+整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 市場快報 + 擴充預留
 """
 
 import streamlit as st
@@ -68,6 +68,21 @@ def get_data(token):
     
     return S, df_latest, latest, ma20, ma60
 
+@st.cache_data(ttl=1800)
+def get_real_news(token):
+    dl = DataLoader()
+    dl.login_by_token(api_token=token)
+    start_date = (date.today() - timedelta(days=3)).strftime("%Y-%m-%d")
+    try:
+        news = dl.taiwan_stock_news(stock_id="TAIEX", start_date=start_date)
+        if news.empty:
+            news = dl.taiwan_stock_news(stock_id="2330", start_date=start_date)
+        news["date"] = pd.to_datetime(news["date"])
+        news = news.sort_values("date", ascending=False).head(5)
+        return news
+    except:
+        return pd.DataFrame()
+
 def bs_price_delta(S, K, T, r, sigma, cp):
     if T <= 0: return 0.0, 0.5
     try:
@@ -130,7 +145,7 @@ with st.sidebar:
         st.success("👑 Pro 會員")
     
     st.divider()
-    st.caption("📊 功能說明：\n• Tab0: ETF定投\n• Tab1: 趨勢判斷\n• Tab2: CALL獵人")
+    st.caption("📊 功能說明：\\n• Tab0: ETF定投\\n• Tab1: 趨勢判斷\\n• Tab2: CALL獵人")
 
 # =========================
 # 5. 主介面 & 市場快報
@@ -166,17 +181,16 @@ if not st.session_state.disclaimer_accepted:
         st.rerun()
     st.stop()
 
-# 分頁導航 (5個功能 + 10個升級槽)
+# 分頁導航 (6個功能 + 9個升級槽)
 tab_names = [
     "🏦 **穩健ETF**", 
     "📈 **趨勢判斷**", 
     "🔰 **CALL獵人**", 
     "🔥 **專業戰情**", 
     "📊 **歷史回測**",
-    "📰 **市場快報**"  # 🔥 這裡原本是 "🛠️ 擴充 1"，現在改名了！
+    "📰 **市場快報**"
 ]
-# 增加 10 個擴充 Tab 名稱 (隱藏或預留)
-tab_names += [f"🛠️ 擴充 {i+1}" for i in range(10)]
+tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 
 tabs = st.tabs(tab_names)
 
@@ -494,8 +508,9 @@ with tabs[4]:
             st.line_chart(pd.Series(returns, index=dates))
             st.metric("策略總報酬", "+145%", "夏普比率 1.8")
             st.success("✅ 回測結果：顯著優於大盤")
+
 # --------------------------
-# Tab 5: 市場快報 (顯示優化版)
+# Tab 5: 市場快報 (顯示優化版 + 真實新聞)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
@@ -507,13 +522,11 @@ with tabs[5]:
     with col_kpi1:
         st.markdown("#### 🌡️ **市場多空溫度計**")
         
-        # 計算多空分數
         bull_score = 50
         if S_current > ma20: bull_score += 20
         if ma20 > ma60: bull_score += 20
         if S_current > ma60: bull_score += 10
         
-        # 繪製優化版儀表板
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number",
             value = bull_score,
@@ -526,9 +539,9 @@ with tabs[5]:
                 'borderwidth': 2,
                 'bordercolor': "#333",
                 'steps': [
-                    {'range': [0, 40], 'color': '#550000'},   # 深紅底
-                    {'range': [40, 60], 'color': '#554400'},  # 深黃底
-                    {'range': [60, 100], 'color': '#003300'}], # 深綠底
+                    {'range': [0, 40], 'color': '#550000'},   
+                    {'range': [40, 60], 'color': '#554400'},  
+                    {'range': [60, 100], 'color': '#003300'}], 
                 'threshold': {
                     'line': {'color': "white", 'width': 4},
                     'thickness': 0.75,
@@ -536,11 +549,10 @@ with tabs[5]:
             }
         ))
         
-        # ✅ 關鍵修正：增加高度、調整邊距
         fig_gauge.update_layout(
             height=300, 
             margin=dict(l=30, r=30, t=50, b=30),
-            paper_bgcolor="rgba(0,0,0,0)", # 透明背景
+            paper_bgcolor="rgba(0,0,0,0)", 
             font={'color': "white"}
         )
         st.plotly_chart(fig_gauge, use_container_width=True)
@@ -548,7 +560,6 @@ with tabs[5]:
     with col_kpi2:
         st.markdown("#### 🤖 **貝伊果 AI 每日短評**")
         
-        # 根據技術面生成文案
         if bull_score >= 70:
             ai_comment = """
             🔥 **多頭氣盛，順勢而為！**
@@ -557,7 +568,7 @@ with tabs[5]:
             1. 積極者可利用 Tab 2 尋找 Lead Call 機會。
             2. 拉回不破 MA20 皆為買點。
             """
-            box_color = "#d4edda" # 淺綠
+            box_color = "#d4edda" 
             text_color = "#155724"
         elif bull_score <= 30:
             ai_comment = """
@@ -567,7 +578,7 @@ with tabs[5]:
             1. 暫停所有 Call 買方策略。
             2. 保留現金，或回到 Tab 0 進行小額定投。
             """
-            box_color = "#f8d7da" # 淺紅
+            box_color = "#f8d7da" 
             text_color = "#721c24"
         else:
             ai_comment = """
@@ -577,7 +588,7 @@ with tabs[5]:
             1. 減少操作頻率，多看少做。
             2. 若要進場，建議選擇遠月合約降低時間價值耗損。
             """
-            box_color = "#fff3cd" # 淺黃
+            box_color = "#fff3cd" 
             text_color = "#856404"
 
         st.markdown(f"""
@@ -593,7 +604,6 @@ with tabs[5]:
 
     with col_chip:
         st.markdown("#### 💰 **法人籌碼動向 (模擬數據)**")
-        # 模擬三大法人數據
         chips_data = {
             "法人": ["外資", "投信", "自營商"],
             "買賣超 (億)": [np.random.randint(-150, 150), np.random.randint(0, 50), np.random.randint(-50, 50)]
@@ -608,9 +618,8 @@ with tabs[5]:
     with col_key:
         st.markdown("#### 🔑 **關鍵點位監控**")
         
-        # 計算支撐壓力
-        pressure = int(S_current * 1.02 / 100) * 100 # 上方壓力 (整數關卡)
-        support = int(S_current * 0.98 / 100) * 100  # 下方支撐
+        pressure = int(S_current * 1.02 / 100) * 100 
+        support = int(S_current * 0.98 / 100) * 100  
         
         st.metric("🛑 上方壓力 (2%)", f"{pressure}", delta=f"{pressure-S_current:.0f}", delta_color="inverse")
         st.metric("🏠 目前點位", f"{int(S_current)}")
@@ -620,40 +629,38 @@ with tabs[5]:
 
     st.markdown("---")
     
-    # ================= 3. 重點新聞區 =================
-    st.markdown("#### 📰 **今日必讀頭條**")
+    # ================= 3. 重點新聞區 (真實數據版) =================
+    st.markdown("#### 📰 **今日必讀頭條 (即時更新)**")
     
-    # 模擬新聞
-    news_items = [
-        {"title": "台積電法說會報喜，先進製程產能滿載", "tag": "半導體", "time": "09:05"},
-        {"title": "聯準會暗示利率維持高檔，美債殖利率反彈", "tag": "總經", "time": "08:30"},
-        {"title": "AI 伺服器需求強勁，供應鏈股價齊揚", "tag": "AI", "time": "08:15"},
-        {"title": "新台幣早盤升值 5.2 分，外資熱錢回流", "tag": "匯市", "time": "09:10"},
-    ]
+    with st.spinner("抓取最新新聞中..."):
+        real_news_df = get_real_news(FINMIND_TOKEN)
     
-    for news in news_items:
-        col_n1, col_n2 = st.columns([4, 1])
-        with col_n1:
-            st.markdown(f"**[{news['tag']}]** {news['title']}")
-        with col_n2:
-            st.caption(f"{news['time']}")
+    if not real_news_df.empty:
+        for _, row in real_news_df.iterrows():
+            col_n1, col_n2 = st.columns([4, 1])
+            with col_n1:
+                title = row.get('title', '無標題')
+                link = row.get('link', '#')
+                source = row.get('source', '新聞')
+                st.markdown(f"**[{source}]** [{title}]({link})")
+                if 'description' in row and row['description']:
+                    st.caption(f"{row['description'][:50]}...")
+            with col_n2:
+                news_time = pd.to_datetime(row['date']).strftime('%m/%d %H:%M')
+                st.caption(f"🕒 {news_time}")
+            st.divider()
+    else:
+        st.warning("⚠️ 目前無最新新聞，或 API 連線忙碌中。")
 
-
-with tabs[6]:
-    st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
-with tabs[7]:
-    st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
-with tabs[8]:
-    st.info("🚧 擴充功能 4：Line 推播 (開發中)")
-with tabs[9]:
-    st.info("🚧 擴充功能 5：期貨價差監控 (開發中)")
-with tabs[10]:
-    st.info("🚧 擴充功能 6：美股連動分析 (開發中)")
-with tabs[11]:
-    st.info("🚧 擴充功能 7：自定義策略腳本 (開發中)")
-with tabs[12]:
-    st.info("🚧 擴充功能 8：社群討論區 (開發中)")
-with tabs[13]:
-    st.info("🚧 擴充功能 9：課程學習中心 (開發中)")
-with tabs[14]:
-    st.info("🚧 擴充功能 10：VIP 專屬通道 (開發中)")
+# --------------------------
+# Tab 6~14: 擴充預留位
+# --------------------------
+with tabs[6]: st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
+with tabs[7]: st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
+with tabs[8]: st.info("🚧 擴充功能 4：Line 推播 (開發中)")
+with tabs[9]: st.info("🚧 擴充功能 5：期貨價差監控 (開發中)")
+with tabs[10]: st.info("🚧 擴充功能 6：美股連動分析 (開發中)")
+with tabs[11]: st.info("🚧 擴充功能 7：自定義策略腳本 (開發中)")
+with tabs[12]: st.info("🚧 擴充功能 8：社群討論區 (開發中)")
+with tabs[13]: st.info("🚧 擴充功能 9：課程學習中心 (開發中)")
+with tabs[14]: st.info("🚧 擴充功能 10：VIP 專屬通道 (開發中)")
