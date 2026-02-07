@@ -231,14 +231,15 @@ with tabs[1]:
 # --------------------------
 # Tab 2: 新手 CALL 獵人 (整數顯示版)
 # --------------------------
+# --------------------------
+# Tab 2: 新手 CALL 獵人 (槓桿小數點修正版)
+# --------------------------
 with tabs[2]:
     st.markdown("### 🔰 **Lead Call 策略選號**")
     
-    # 1. 資料前處理
     if not df_latest.empty:
         df_latest["call_put"] = df_latest["call_put"].astype(str).str.upper().str.strip()
     
-    # 2. 篩選有 CALL 資料的合約
     available_contracts = []
     if not df_latest.empty:
         call_df = df_latest[df_latest["call_put"] == "CALL"]
@@ -287,13 +288,13 @@ with tabs[2]:
                     
                     res.append({
                         "K": int(K), 
-                        "P": int(round(P)), # ✅ 強制轉整數 (四捨五入)
-                        "Lev": lev, 
+                        "P": int(round(P)), 
+                        "Lev": lev, # 保留浮點數以便計算
                         "Delta": abs(d), 
-                        "Win": int(calculate_win_rate(d, days)), # ✅ 勝率轉整數
+                        "Win": int(calculate_win_rate(d, days)), 
                         "Diff": abs(lev - target_lev),
                         "Type": price_type, 
-                        "Vol": int(vol) # ✅ 成交量轉整數
+                        "Vol": int(vol)
                     })
                 except: continue
             
@@ -308,30 +309,32 @@ with tabs[2]:
                 with rc1:
                     st.markdown(f"#### 🏆 {sel_con} **{best['K']} CALL**")
                     
-                    # ✅ 顯示：完全無小數點
-                    st.metric(f"{best['Type']}", f"{best['P']} 點", f"槓桿 {int(best['Lev'])}x")
+                    # ✅ 槓桿顯示小數點後一位 (例如 5.2x)
+                    st.metric(f"{best['Type']}", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
                     
                     if best['Vol'] == 0:
                         st.caption("⚠️ 此為理論價格 (無成交量)，請掛單等待")
                     else:
                         st.caption(f"成交量: {best['Vol']} | 勝率: {best['Win']}%")
                         
+                    # ✅ 分享按鈕也顯示小數點後一位
                     if st.button("📱 分享此策略", key="share_btn"):
                         st.balloons()
-                        st.code(f"台指{int(S_current)}，我選了 {best['K']} CALL ({best['Type']})，槓桿{int(best['Lev'])}x！")
+                        st.code(f"台指{int(S_current)}，我用貝伊果屋選了 {best['K']} CALL ({best['Type']})，槓桿{best['Lev']:.1f}x！")
 
                 with rc2:
                     st.markdown("#### 🛡️ **風險模擬**")
                     loss_pct = st.slider("停損 %", 10, 50, 20)
-                    risk = int(best['P'] * 50 * (loss_pct/100)) # ✅ 金額轉整數
+                    risk = int(best['P'] * 50 * (loss_pct/100))
                     st.write(f"🔻 最大虧損: **NT$ -{risk}**")
                     
                 st.markdown("---")
                 st.caption("📋 其他候選合約")
                 other_df = pd.DataFrame(res[:5])
-                # ✅ 確保表格內也是整數顯示
+                
+                # ✅ 表格內的槓桿也統一顯示小數點後一位
                 display_df = other_df[["K", "P", "Lev", "Type", "Win"]].copy()
-                display_df["Lev"] = display_df["Lev"].astype(int)
+                display_df["Lev"] = display_df["Lev"].map(lambda x: f"{x:.1f}") # 格式化為字串
                 
                 st.dataframe(display_df.rename(columns={"K":"履約價", "P":"價格", "Lev":"槓桿", "Type":"類型", "Win":"勝率"}), hide_index=True)
                 
