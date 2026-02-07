@@ -1,6 +1,6 @@
 """
-🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版)
-整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 市場快報(全真實數據) + 真實回測
+🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版 v4.0)
+整合：ETF定投 + 情報中心 + Lead Call策略 + 專業分析 + 戰情室(12因子+趨勢) + 真實回測
 """
 
 import streamlit as st
@@ -11,6 +11,7 @@ from FinMind.data import DataLoader
 from scipy.stats import norm
 import plotly.graph_objects as go
 import plotly.express as px
+import feedparser # 確保 requirements.txt 有 feedparser
 
 # =========================
 # 1. 初始化 & 設定
@@ -186,7 +187,7 @@ with st.sidebar:
         st.success("👑 Pro 會員")
     
     st.divider()
-    st.caption("📊 功能說明：\\\\n• Tab0: ETF定投\\\\n• Tab1: 趨勢判斷\\\\n• Tab2: CALL獵人")
+    st.caption("📊 功能說明：\\\\n• Tab0: ETF定投\\\\n• Tab1: 情報中心\\\\n• Tab2: CALL獵人\\\\n• Tab5: 專業戰情室")
 
 # =========================
 # 5. 主介面 & 市場快報
@@ -225,11 +226,11 @@ if not st.session_state.disclaimer_accepted:
 # 分頁導航 (6個功能 + 9個升級槽)
 tab_names = [
     "🏦 **穩健ETF**", 
-    "📈 **趨勢+新聞**", 
+    "🌍 **情報中心**", 
     "🔰 **CALL獵人**", 
-    "🔥 **專業戰情**", 
+    "🔥 **籌碼分析**", 
     "📊 **歷史回測**",
-    "📰 **市場戰情室**"
+    "📰 **戰情室**"
 ]
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 
@@ -274,59 +275,13 @@ with tabs[0]:
     """)
 
 # --------------------------
-# Tab 1: 趨勢判斷 + 全球市場情報 (合併版)
+# Tab 1: 全球市場情報中心 (純新聞版)
 # --------------------------
 with tabs[1]:
-    st.markdown("## 🚦 **趨勢情報中心**")
+    st.markdown("## 🌍 **全球市場情報中心**")
+    st.caption("整合 FinMind 台股新聞 + Yahoo/Reuters/CNBC 國際 RSS + 情緒分析")
     
-    # === 上半部：趨勢燈號 ===
-    col_idx, col_ma, col_signal = st.columns(3)
-    
-    with col_idx:
-        st.metric("📈 加權指數", f"{S_current:,.0f}", delta=f"{S_current-ma20:.0f}")
-    
-    with col_ma:
-        ma_trend = "🔥 多頭排列" if ma20 > ma60 else "⚖️ 盤整" if abs(ma20-ma60)/S_current < 0.01 else "❄️ 空頭排列"
-        st.metric("均線狀態", ma_trend, f"20日: {ma20:,.0f}")
-    
-    with col_signal:
-        trend_score = 0
-        if S_current > ma20: trend_score += 1
-        if ma20 > ma60: trend_score += 1
-        
-        if trend_score == 2:
-            signal = "🟢 強勢買點"
-            action = "立即前往 CALL 獵人"
-        elif trend_score == 1:
-            signal = "🟡 觀望整理"
-            action = "回穩健 ETF 定投"
-        else:
-            signal = "🔴 高風險區"
-            action = "現金為王"
-        
-        st.metric("交易燈號", signal, action)
-    
-    st.divider()
-    
-    # === 中間：趨勢視覺化 ===
-    fig = go.Figure()
-    x = np.arange(20)
-    np.random.seed(42)
-    price_line = S_current * (1 + np.random.normal(0, 0.005, 20).cumsum())
-    ma20_line = np.linspace(ma20*0.99, ma20*1.01, 20)
-    ma60_line = np.linspace(ma60*0.995, ma60*1.005, 20)
-    
-    fig.add_trace(go.Scatter(x=x, y=price_line, mode='lines', name='指數', line=dict(color='#1f77b4', width=2)))
-    fig.add_trace(go.Scatter(x=x, y=ma20_line, mode='lines', name='MA20', line=dict(color='#ff7f0e', width=2)))
-    fig.add_trace(go.Scatter(x=x, y=ma60_line, mode='lines', name='MA60', line=dict(color='#2ca02c', width=2)))
-    fig.update_layout(height=300, title="近期趨勢 (綠燈 = 20 > 60日線)", showlegend=True)
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # === 下半部：全球市場情報中心 (從原 Tab 5 移入) ===
-    st.markdown("### 🌍 **全球市場情報**")
-    with st.spinner("📰 抓取全球財經情報中..."):
-        import feedparser # 確保已安裝: feedparser
-        
+    with st.spinner("📰 正在抓取全球財經情報..."):
         # A. 台股新聞 (FinMind)
         taiwan_news = get_real_news(FINMIND_TOKEN)
         
@@ -341,7 +296,7 @@ with tabs[1]:
         for title, url in list(rss_sources.items())[:3]:
             try:
                 feed = feedparser.parse(url)
-                for entry in feed.entries[:1]:
+                for entry in feed.entries[:2]: # 每源取2則
                     global_news.append({
                         'title': entry.title,
                         'link': entry.link,
@@ -362,11 +317,11 @@ with tabs[1]:
                     'time': pd.to_datetime(row['date']).strftime('%m/%d %H:%M'),
                     'summary': row.get('description', '')[:120] + '...'
                 })
-        all_news.extend(global_news[:3])
+        all_news.extend(global_news)
         
         # D. 簡單情緒分析
-        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '買超', '強勢', '反彈']
-        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '賣超', '弱勢', '崩盤']
+        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '買超', '強勢', '反彈', 'Bull', 'Rise', 'Gain']
+        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '賣超', '弱勢', '崩盤', 'Bear', 'Fall', 'Loss']
         pos_score, neg_score = 0, 0
         for news in all_news:
             text = news['title'] + news['summary']
@@ -377,6 +332,7 @@ with tabs[1]:
         sentiment = (pos_score - neg_score) / max(total_signals, 1)
         sentiment_label = "🟢 看多共振" if sentiment > 0.3 else "🟡 中性" if sentiment > -0.3 else "🔴 看空恐慌"
     
+    # 顯示儀表板
     col_sent1, col_sent2 = st.columns([1, 1])
     with col_sent1: st.metric("📰 情報總數", f"{len(all_news)} 則", delta=f"({pos_score}+/{neg_score}-)")
     with col_sent2: st.metric("📊 市場情緒", sentiment_label, f"{sentiment*100:+.0f}%")
@@ -384,7 +340,7 @@ with tabs[1]:
     st.divider()
     
     # E. 新聞卡片
-    for i, news in enumerate(all_news[:6]): # 顯示前6則
+    for i, news in enumerate(all_news[:8]): # 顯示前8則
         col_n1, col_n2 = st.columns([4, 1])
         with col_n1:
             source_emoji = "🇹🇼" if "台股" in news.get('source', '') else "🌍"
@@ -554,7 +510,7 @@ with tabs[2]:
 # Tab 3: 專業戰情 (Pro功能)
 # --------------------------
 with tabs[3]:
-    st.markdown("### 🔥 **戰情室：籌碼與損益分析**")
+    st.markdown("### 🔥 **籌碼與損益分析**")
     
     col_p1, col_p2 = st.columns([2, 1])
     
@@ -654,11 +610,11 @@ with tabs[4]:
                     recent_df['日期'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
 # --------------------------
-# Tab 5: 市場戰情室 (12因子旗艦版)
+# Tab 5: 專業戰情室 (12因子旗艦版 + 趨勢整合)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **專業戰情中心**")
-    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 模型版本：v3.0 (12因子加權)")
+    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 模型版本：v4.0 (12因子+趨勢整合)")
 
     # === [新增] 進階數據計算函數 (內嵌以簡化部署) ===
     def calculate_advanced_factors(current_price, ma20, ma60, df_latest, token):
@@ -707,7 +663,7 @@ with tabs[5]:
         score += 10
         return min(100, max(0, score)), details
 
-    # ================= 1. 核心儀表板區 =================
+    # ================= 1. 趨勢燈號與溫度計 =================
     col_kpi1, col_kpi2 = st.columns([1, 1.5])
 
     with col_kpi1:
@@ -739,7 +695,20 @@ with tabs[5]:
         fig_gauge.update_layout(height=280, margin=dict(l=30, r=30, t=30, b=30), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
         st.plotly_chart(fig_gauge, use_container_width=True)
         
-        # 顯示評分細節 (折疊式)
+        # 趨勢視覺化 (合併至此)
+        trend_score = 0
+        if S_current > ma20: trend_score += 1
+        if ma20 > ma60: trend_score += 1
+        
+        if trend_score == 2:
+            signal = "🟢 強勢買點"
+        elif trend_score == 1:
+            signal = "🟡 觀望整理"
+        else:
+            signal = "🔴 高風險區"
+            
+        st.metric("🚦 趨勢燈號", signal, f"指數 {S_current:,.0f}")
+        
         with st.expander("🔍 查看 12 因子細項"):
             st.write(f"**總分：{total_score}**")
             st.markdown(" • " + "\\n • ".join(score_details))
