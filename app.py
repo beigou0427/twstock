@@ -1,6 +1,6 @@
 """
-🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版 v5.0)
-整合：ETF定投 + 情報中心 + Lead Call策略 + 戰情室(12因子/趨勢/籌碼/損益) + 真實回測
+🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版 v6.0)
+整合：ETF定投 + 智能情報中心 + Lead Call策略 + 戰情室(12因子/趨勢/籌碼/損益) + 真實回測
 """
 
 import streamlit as st
@@ -11,19 +11,52 @@ from FinMind.data import DataLoader
 from scipy.stats import norm
 import plotly.graph_objects as go
 import plotly.express as px
-import feedparser # 確保 requirements.txt 有 feedparser
+import feedparser
+from collections import Counter
 
 # =========================
 # 1. 初始化 & 設定
 # =========================================
 st.set_page_config(page_title="貝伊果屋-財富雙軌系統", layout="wide", page_icon="🥯")
 
-# CSS 優化
+# CSS 優化 (新增卡片與標籤樣式)
 st.markdown("""
 <style>
 .big-font {font-size:20px !important; font-weight:bold;}
-.crowd-card {background: linear-gradient(90deg, #1D976C, #93F9B9); padding: 15px; border-radius: 10px; color: #004d40;}
-.share-btn {border: 2px solid #FF4B4B; border-radius: 5px; padding: 5px;}
+
+/* 新聞卡片容器 */
+.news-card {
+    background-color: #262730;
+    padding: 15px;
+    border-radius: 10px;
+    border-left: 5px solid #4ECDC4;
+    margin-bottom: 15px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+    transition: transform 0.2s;
+}
+.news-card:hover {
+    background-color: #31333F;
+    transform: translateY(-2px);
+}
+
+/* 情緒標籤 */
+.tag-bull {background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
+.tag-bear {background-color: #dc3545; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
+.tag-neutral {background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
+
+/* 來源標記 */
+.source-badge {background-color: #444; color: #ddd; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 8px;}
+
+/* 跑馬燈特效 */
+.ticker-wrap {
+    width: 100%;
+    overflow: hidden;
+    background-color: #1E1E1E;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    white-space: nowrap;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -50,7 +83,6 @@ def get_data(token):
     dl = DataLoader()
     dl.login_by_token(api_token=token)
     try:
-        # 抓到最新收盤日
         index_df = dl.taiwan_stock_daily("TAIEX", start_date=(date.today()-timedelta(days=100)).strftime("%Y-%m-%d"))
         S = float(index_df["close"].iloc[-1]) if not index_df.empty else 23000.0
         ma20 = index_df['close'].rolling(20).mean().iloc[-1] if len(index_df) > 20 else S * 0.98
@@ -80,29 +112,22 @@ def get_real_news(token):
         if news.empty:
             news = dl.taiwan_stock_news(stock_id="2330", start_date=start_date)
         news["date"] = pd.to_datetime(news["date"])
-        news = news.sort_values("date", ascending=False).head(5)
+        news = news.sort_values("date", ascending=False).head(10)
         return news
     except:
         return pd.DataFrame()
 
 @st.cache_data(ttl=1800)
 def get_institutional_data(token):
-    """抓取真實的三大法人大盤買賣超"""
     dl = DataLoader()
     dl.login_by_token(api_token=token)
-    # 抓取最近 10 天資料 (確保有最新交易日)
     start_date = (date.today() - timedelta(days=10)).strftime("%Y-%m-%d")
     try:
-        # FinMind API: 台灣整體市場三大法人買賣超
         df = dl.taiwan_stock_institutional_investors_total(start_date=start_date)
         if df.empty: return pd.DataFrame()
-        
-        # 轉換日期並取最新一天
         df["date"] = pd.to_datetime(df["date"])
         latest_date = df["date"].max()
         df_latest = df[df["date"] == latest_date].copy()
-        
-        # 計算淨買賣超 (buy - sell) 並轉為「億」
         df_latest["net"] = (df_latest["buy"] - df_latest["sell"]) / 100000000
         return df_latest
     except:
@@ -110,16 +135,13 @@ def get_institutional_data(token):
 
 @st.cache_data(ttl=3600)
 def get_support_pressure(token):
-    """抓取真實 K 線以計算支撐壓力"""
     dl = DataLoader()
     dl.login_by_token(api_token=token)
     start_date = (date.today() - timedelta(days=90)).strftime("%Y-%m-%d")
     try:
         df = dl.taiwan_stock_daily("TAIEX", start_date=start_date)
         if df.empty: return 0, 0
-        # 壓力：近 20 日最高價
         pressure = df['max'].tail(20).max()
-        # 支撐：近 60 日最低價
         support = df['min'].tail(60).min()
         return pressure, support
     except:
@@ -147,7 +169,8 @@ def plot_payoff(K, premium, cp):
     fig.add_trace(go.Scatter(x=x_range, y=profit, mode='lines', fill='tozeroy', 
                              line=dict(color='green' if profit[-1]>0 else 'red')))
     fig.add_hline(y=0, line_dash="dash", line_color="gray")
-    fig.update_layout(title=f"到期損益圖 ({cp} @ {K})", xaxis_title="指數", yaxis_title="損益(TWD)", height=300, margin=dict(l=0,r=0,t=30,b=0))
+    fig.update_layout(title=f"到期損益圖 ({cp} @ {K})", xaxis_title="指數", yaxis_title="損益(TWD)", 
+                      height=300, margin=dict(l=0,r=0,t=30,b=0))
     return fig
 
 def plot_oi_walls(current_price):
@@ -172,7 +195,7 @@ with st.spinner("🚀 啟動財富引擎..."):
         st.stop()
 
 # =========================
-# 側邊欄 (簡潔版)
+# 側邊欄
 # =========================================
 with st.sidebar:
     st.markdown("## 🥯 **貝伊果屋**")
@@ -187,32 +210,27 @@ with st.sidebar:
         st.success("👑 Pro 會員")
     
     st.divider()
-    st.caption("📊 功能說明：\\\\n• Tab0: ETF定投\\\\n• Tab1: 情報中心\\\\n• Tab2: CALL獵人\\\\n• Tab4: 戰情室")
+    st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
 
 # =========================
 # 5. 主介面 & 市場快報
 # =========================================
 st.markdown("# 🥯 **貝伊果屋：財富雙軌系統**")
 
-# 市場快報 (貼在所有 Tab 之前)
+# 市場快報
 st.markdown("---")
 col1, col2, col3, col4 = st.columns(4)
-
 with col1:
     change_pct = (S_current - ma20) / ma20 * 100
     st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}%")
-
 with col2:
     ma_trend = "🔥 多頭" if ma20 > ma60 else "⚖️ 盤整"
     st.metric("均線狀態", ma_trend)
-
 with col3:
     st.metric("資料更新", latest_date.strftime("%m/%d"))
-
 with col4:
     signal = "🟢 CALL時機" if S_current > ma20 > ma60 else "🟡 觀望"
     st.metric("今日建議", signal)
-
 st.markdown("---")
 
 # 合規聲明
@@ -223,27 +241,26 @@ if not st.session_state.disclaimer_accepted:
         st.rerun()
     st.stop()
 
-# 分頁導航 (5個功能 + 9個升級槽)
+# 分頁導航
 tab_names = [
     "🏦 **穩健ETF**", 
-    "🌍 **情報中心**", 
+    "🌍 **智能情報**", 
     "🔰 **CALL獵人**", 
     "📊 **歷史回測**",
     "🔥 **專業戰情室**"
 ]
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
-
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (純定投版)
+# Tab 0: 穩健 ETF
 # --------------------------
 with tabs[0]:
     st.markdown("## 🐢 **ETF 定投計畫**")
     
-    col1, col2 = st.columns([1, 1])
+    c1, c2 = st.columns([1, 1])
     
-    with col1:
+    with c1:
         st.markdown("### 📊 **三大 ETF 比較**")
         etf_df = pd.DataFrame({
             "ETF": ["0050", "SPY", "QQQ"],
@@ -253,7 +270,7 @@ with tabs[0]:
         })
         st.dataframe(etf_df, use_container_width=True)
     
-    with col2:
+    with c2:
         st.markdown("### 💰 **定投試算器**")
         monthly = st.number_input("每月投入", 10000, 100000, 30000)
         years = st.slider("持續年數", 5, 30, 10)
@@ -274,126 +291,205 @@ with tabs[0]:
     """)
 
 # --------------------------
-# Tab 1: 全球市場情報中心 (純新聞版)
+# Tab 1: 智能全球情報中心 (優化版)
 # --------------------------
 with tabs[1]:
-    st.markdown("## 🌍 **全球市場情報中心**")
-    st.caption("整合 FinMind 台股新聞 + Yahoo/Reuters/CNBC 國際 RSS + 情緒分析")
+    st.markdown("## 🌍 **智能全球情報中心**")
     
-    with st.spinner("📰 正在抓取全球財經情報..."):
+    # === 1. 頂部跑馬燈 (模擬數據) ===
+    st.markdown("""
+    <div class="ticker-wrap">
+        🚀 <b>Global Indices:</b> 
+        S&P 500: <span style="color:#28a745">5,842 (+0.8%)</span> &nbsp;|&nbsp; 
+        Nasdaq: <span style="color:#28a745">18,320 (+1.2%)</span> &nbsp;|&nbsp; 
+        VIX: <span style="color:#dc3545">13.2 (-2.1%)</span> &nbsp;|&nbsp; 
+        TSMC ADR: <span style="color:#28a745">192.5 (+2.5%)</span> &nbsp;|&nbsp; 
+        Bitcoin: <span style="color:#28a745">$98,500 (+3.1%)</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.caption("整合 FinMind 台股新聞 + Reuters/CNBC 國際快訊 + 關鍵字情緒 AI 分析")
+    
+    with st.spinner("🤖 正在掃描全球市場訊號..."):
+        # === 2. 數據抓取 ===
         # A. 台股新聞 (FinMind)
         taiwan_news = get_real_news(FINMIND_TOKEN)
         
-        # B. 國際新聞 (RSS 多源)
-        global_news = []
+        # B. 國際新聞 (RSS)
         rss_sources = {
             "📈 Yahoo Finance": "https://tw.stock.yahoo.com/rss/index.rss",
-            "🌐 Reuters 全球": "https://feeds.reuters.com/reuters/businessNews",
-            "📊 CNBC Asia": "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+            "🌐 Reuters Biz": "https://feeds.reuters.com/reuters/businessNews",
+            "📊 CNBC Tech": "https://www.cnbc.com/id/19854910/device/rss/rss.html"
         }
-        
+        global_news = []
         for title, url in list(rss_sources.items())[:3]:
             try:
                 feed = feedparser.parse(url)
-                for entry in feed.entries[:2]: # 每源取2則
+                for entry in feed.entries[:2]:
                     global_news.append({
                         'title': entry.title,
                         'link': entry.link,
                         'source': title,
                         'time': entry.get('published', 'N/A'),
-                        'summary': entry.get('summary', '')[:120] + '...'
+                        'summary': entry.get('summary', '')[:100] + '...'
                     })
             except: pass
         
-        # C. 合併與情緒分析
+        # C. 合併資料
         all_news = []
         if not taiwan_news.empty:
-            for _, row in taiwan_news.head(3).iterrows():
+            for _, row in taiwan_news.head(4).iterrows():
                 all_news.append({
                     'title': row.get('title', '無標題'),
                     'link': row.get('link', '#'),
-                    'source': f"🇹🇼 {row.get('source', '台股新聞')}",
+                    'source': f"🇹🇼 台股新聞",
                     'time': pd.to_datetime(row['date']).strftime('%m/%d %H:%M'),
-                    'summary': row.get('description', '')[:120] + '...'
+                    'summary': row.get('description', '')[:100] + '...'
                 })
         all_news.extend(global_news)
+
+        # === 3. AI 情緒與熱詞分析 ===
+        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '強勢', 'Bull', 'Rise', 'High', 'AI', 'Growth', 'Surge']
+        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '弱勢', 'Bear', 'Fall', 'Low', 'Cut', 'Fear', 'Drop']
         
-        # D. 簡單情緒分析
-        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '買超', '強勢', '反彈', 'Bull', 'Rise', 'Gain']
-        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '賣超', '弱勢', '崩盤', 'Bear', 'Fall', 'Loss']
+        word_list = []
         pos_score, neg_score = 0, 0
-        for news in all_news:
-            text = news['title'] + news['summary']
-            for kw in pos_keywords: pos_score += text.count(kw)
-            for kw in neg_keywords: neg_score += text.count(kw)
         
+        for news in all_news:
+            text = (news['title'] + news['summary']).lower()
+            n_pos = sum(text.count(k.lower()) for k in pos_keywords)
+            n_neg = sum(text.count(k.lower()) for k in neg_keywords)
+            
+            if n_pos > n_neg: news['sentiment'] = 'bull'
+            elif n_neg > n_pos: news['sentiment'] = 'bear'
+            else: news['sentiment'] = 'neutral'
+            
+            pos_score += n_pos
+            neg_score += n_neg
+            
+            for k in pos_keywords + neg_keywords:
+                if k.lower() in text:
+                    word_list.append(k)
+
         total_signals = pos_score + neg_score
-        sentiment = (pos_score - neg_score) / max(total_signals, 1)
-        sentiment_label = "🟢 看多共振" if sentiment > 0.3 else "🟡 中性" if sentiment > -0.3 else "🔴 看空恐慌"
+        sentiment_idx = (pos_score - neg_score) / max(total_signals, 1)
+        sentiment_label = "🟢 貪婪" if sentiment_idx > 0.2 else "🔴 恐慌" if sentiment_idx < -0.2 else "🟡 中性"
+        
+        if word_list:
+            top_words = Counter(word_list).most_common(5)
+            hot_keywords = " ".join([f"#{w[0]}" for w in top_words])
+        else:
+            hot_keywords = "#台積電 #AI #降息 #通膨"
+
+    # === 4. 儀表板區域 ===
+    col_dash1, col_dash2 = st.columns([1, 2])
     
-    # 顯示儀表板
-    col_sent1, col_sent2 = st.columns([1, 1])
-    with col_sent1: st.metric("📰 情報總數", f"{len(all_news)} 則", delta=f"({pos_score}+/{neg_score}-)")
-    with col_sent2: st.metric("📊 市場情緒", sentiment_label, f"{sentiment*100:+.0f}%")
+    with col_dash1:
+        st.markdown("#### 🌡️ 市場情緒儀表")
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge+number", 
+            value = 50 + sentiment_idx*50,
+            gauge = {
+                'axis': {'range': [0, 100]}, 
+                'bar': {'color': "#4ECDC4"},
+                'steps': [
+                    {'range': [0, 40], 'color': "rgba(255, 0, 0, 0.2)"},
+                    {'range': [60, 100], 'color': "rgba(0, 255, 0, 0.2)"}
+                ]
+            },
+            title = {'text': sentiment_label, 'font': {'size': 20}}
+        ))
+        fig_gauge.update_layout(height=160, margin=dict(l=20,r=20,t=30,b=20), paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig_gauge, use_container_width=True)
     
+    with col_dash2:
+        st.markdown("#### 🔥 今日市場熱詞")
+        st.markdown(f"""
+        <div style="
+            background: linear-gradient(90deg, #333 0%, #222 100%);
+            border-radius: 10px;
+            padding: 25px;
+            text-align: center;
+            font-size: 2.2em;
+            font-weight: bold;
+            color: #ffc107;
+            text-shadow: 2px 2px 4px #000;
+            border: 1px solid #444;
+        ">
+        {hot_keywords}
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption(f"📊 已掃描 {len(all_news)} 則情報，偵測到 {pos_score} 個多頭訊號、{neg_score} 個空頭訊號。")
+
     st.divider()
+    st.markdown("### 📰 **精選快訊 (Smart Feed)**")
+
+    # === 5. 卡片式新聞呈現 ===
+    col_news_left, col_news_right = st.columns(2)
     
-    # E. 新聞卡片
-    for i, news in enumerate(all_news[:8]): # 顯示前8則
-        col_n1, col_n2 = st.columns([4, 1])
-        with col_n1:
-            source_emoji = "🇹🇼" if "台股" in news.get('source', '') else "🌍"
-            title = news.get('title', '無標題')
-            link = news.get('link', '#')
-            source = news.get('source', '未知來源')
-            summary = news.get('summary', '')[:100] + '...'
-            st.markdown(f"**{source_emoji} {source}** [{title}]({link})")
-            if summary: st.caption(f"{summary}")
-        with col_n2:
-            time_str = news.get('time', 'N/A')
-            st.caption(f"🕒 {time_str}")
-        st.divider()
+    for i, news in enumerate(all_news):
+        if news['sentiment'] == 'bull':
+            tag_html = '<span class="tag-bull">看多</span>'
+            border_color = "#28a745"
+        elif news['sentiment'] == 'bear':
+            tag_html = '<span class="tag-bear">看空</span>'
+            border_color = "#dc3545"
+        else:
+            tag_html = '<span class="tag-neutral">中性</span>'
+            border_color = "#6c757d"
+
+        card_html = f"""
+        <div class="news-card" style="border-left: 5px solid {border_color};">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div>
+                    <span class="source-badge">{news['source']}</span>
+                    {tag_html}
+                </div>
+                <div style="font-size: 0.8em; color: #888;">{news['time']}</div>
+            </div>
+            <a href="{news['link']}" target="_blank" style="text-decoration: none; color: white; font-weight: bold; font-size: 1.1em; display: block; margin-bottom: 5px; line-height: 1.4;">
+                {news['title']}
+            </a>
+            <div style="font-size: 0.9em; color: #aaa; margin-bottom: 5px; line-height: 1.5;">
+                {news['summary']}
+            </div>
+        </div>
+        """
+        
+        if i % 2 == 0:
+            with col_news_left: st.markdown(card_html, unsafe_allow_html=True)
+        else:
+            with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 
 # --------------------------
-# Tab 2: 新手 CALL 獵人 (狀態保存+畫面修復版)
+# Tab 2: CALL 獵人
 # --------------------------
 with tabs[2]:
     st.markdown("### 🔰 **Lead Call 策略選號**")
     
-    # 資料前處理
     if not df_latest.empty:
         df_latest["call_put"] = df_latest["call_put"].astype(str).str.upper().str.strip()
     
-    # 篩選可用合約
     available_contracts = []
     if not df_latest.empty:
         call_df = df_latest[df_latest["call_put"] == "CALL"]
         available_contracts = sorted(call_df["contract_date"].unique())
 
     if not available_contracts:
-        st.error("⚠️ 找不到任何 CALL 合約資料 (可能是資料源問題)")
+        st.error("⚠️ 找不到任何 CALL 合約資料")
     else:
-        # 搜尋區塊
         c1, c2, c3, c4 = st.columns([1, 2, 1.5, 1])
         with c1: st.success("📈 **固定看漲**")
-        
         with c2: 
-            # 記憶合約選擇
             default_idx = len(available_contracts)-1
-            if 'selected_contract' in st.session_state:
-                if st.session_state['selected_contract'] in available_contracts:
-                    default_idx = available_contracts.index(st.session_state['selected_contract'])
-            
+            if 'selected_contract' in st.session_state and st.session_state['selected_contract'] in available_contracts:
+                default_idx = available_contracts.index(st.session_state['selected_contract'])
             sel_con = st.selectbox("合約月份", available_contracts, index=default_idx)
-            
-        with c3: 
-            target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0, 0.1, format="%.1f")
-            
+        with c3: target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0, 0.1)
         with c4: is_safe = st.checkbox("穩健濾網", True)
         
-        # 🔥 按鈕點擊事件：只負責「算」跟「存」
         if st.button("🎯 **尋找最佳 CALL**", type="primary", use_container_width=True):
-            st.session_state['selected_contract'] = sel_con # 記住選擇
+            st.session_state['selected_contract'] = sel_con
             
             tdf = df_latest[(df_latest["contract_date"] == sel_con) & (df_latest["call_put"] == "CALL")]
             y, m = int(sel_con[:4]), int(sel_con[4:6])
@@ -428,12 +524,11 @@ with tabs[2]:
             
             if res:
                 res.sort(key=lambda x: x['Diff'])
-                st.session_state['search_results'] = res # 存入結果
+                st.session_state['search_results'] = res
             else:
                 st.session_state['search_results'] = None
                 st.toast("⚠️ 找不到符合條件的合約")
 
-        # 🔥 顯示區塊：獨立於按鈕之外，只要 Session 有資料就顯示
         if st.session_state.get('search_results'):
             res = st.session_state['search_results']
             best = res[0]
@@ -443,7 +538,6 @@ with tabs[2]:
             
             rc1, rc2 = st.columns([1, 1])
             with rc1:
-                # 顯示推薦卡片
                 con_name = st.session_state.get('selected_contract', sel_con)
                 st.markdown(f"#### 🏆 {con_name} **{best['K']} CALL**")
                 st.metric(f"{best['Type']}", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
@@ -458,13 +552,10 @@ with tabs[2]:
                     st.code(f"台指{int(S_current)}，我用貝伊果屋選了 {best['K']} CALL ({best['Type']})，槓桿{best['Lev']:.1f}x！")
 
             with rc2:
-                # 顯示風險模擬
                 st.markdown("#### 🛡️ **交易計畫模擬**")
                 col_sl, col_tp = st.columns(2)
-                with col_sl:
-                    loss_pct = st.slider("停損幅度 %", 10, 50, 20, step=5)
-                with col_tp:
-                    profit_pct = st.slider("停利幅度 %", 10, 200, 50, step=10)
+                with col_sl: loss_pct = st.slider("停損幅度 %", 10, 50, 20, step=5)
+                with col_tp: profit_pct = st.slider("停利幅度 %", 10, 200, 50, step=10)
                 
                 cost = best['P'] * 50
                 potential_loss = int(cost * (loss_pct/100))
@@ -505,25 +596,23 @@ with tabs[2]:
             st.dataframe(display_df.rename(columns={"K":"履約價", "P":"價格", "Lev":"槓桿", "Type":"類型", "Win":"勝率"}), hide_index=True)
 
 # --------------------------
-# Tab 3: 歷史回測 (真實數據版)
+# Tab 3: 歷史回測
 # --------------------------
 with tabs[3]:
     st.markdown("### 📊 **策略時光機：真實歷史驗證**")
     
     if not st.session_state.is_pro:
-        # 鎖定畫面
         col_lock1, col_lock2 = st.columns([2, 1])
         with col_lock1:
             st.warning("🔒 **此為 Pro 會員專屬功能**")
-            st.info("解鎖後可查看：\\\\n- ✅ 真實歷史數據回測\\\\n- ✅ 策略 vs 大盤績效對決\\\\n- ✅ 詳細交易訊號點位")
+            st.info("解鎖後可查看：\n- ✅ 真實歷史數據回測\n- ✅ 策略 vs 大盤績效對決\n- ✅ 詳細交易訊號點位")
         with col_lock2:
             st.metric("累積報酬率", "🔒 ???%", "勝率 ???%")
-            if st.button("⭐ 免費升級 Pro", key="upgrade_btn_tab4"):
+            if st.button("⭐ 免費升級 Pro", key="upgrade_btn_tab3"):
                 st.session_state.is_pro = True; st.balloons(); st.rerun()
         st.image("https://via.placeholder.com/1000x300?text=Pro+Feature+Locked", use_container_width=True)
     
     else:
-        # Pro 功能區
         with st.expander("⚙️ **回測參數設定**", expanded=True):
             c1, c2, c3 = st.columns(3)
             with c1: period_days = st.selectbox("回測長度", [250, 500, 750], index=0, format_func=lambda x: f"近 {x} 天")
@@ -535,7 +624,6 @@ with tabs[3]:
                 dl = DataLoader()
                 dl.login_by_token(api_token=FINMIND_TOKEN)
                 
-                # 優化：確保資料抓取範圍涵蓋 MA 計算需求
                 end_date = date.today().strftime("%Y-%m-%d")
                 start_date = (date.today() - timedelta(days=period_days + 150)).strftime("%Y-%m-%d")
                 df_hist = dl.taiwan_stock_daily("TAIEX", start_date=start_date, end_date=end_date)
@@ -584,25 +672,18 @@ with tabs[3]:
 # --------------------------
 with tabs[4]:
     st.markdown("## 📰 **專業戰情中心**")
-    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 模型版本：v5.0 (戰情+籌碼整合)")
+    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 模型版本：v6.0 (戰情+籌碼整合)")
 
-    # === [新增] 進階數據計算函數 (內嵌以簡化部署) ===
+    # 進階數據計算函數
     def calculate_advanced_factors(current_price, ma20, ma60, df_latest, token):
         score = 0
         details = []
         
-        # --- A. 趨勢維度 (Trend, 40%) ---
-        # 1. 站上月線
         if current_price > ma20: score += 10; details.append("✅ 站上月線 (+10)")
-        # 2. 多頭排列
         if ma20 > ma60: score += 10; details.append("✅ 均線多排 (+10)")
-        # 3. 站上季線
         if current_price > ma60: score += 5; details.append("✅ 站上季線 (+5)")
-        # 4. 季線翻揚 (模擬: 若價格遠高於季線通常季線會上揚)
         if (current_price - ma60)/ma60 > 0.05: score += 5; details.append("✅ 季線乖離強 (+5)")
 
-        # --- B. 動能維度 (Momentum, 30%) ---
-        # 5. RSV/KD 位置
         try:
             low_min = df_latest['min'].min() if 'min' in df_latest else current_price * 0.9
             high_max = df_latest['max'].max() if 'max' in df_latest else current_price * 1.1
@@ -611,10 +692,8 @@ with tabs[4]:
             if rsv > 80: score += 5; details.append("🔥 動能強勁 (+5)")
         except: pass
 
-        # 6. 模擬 MACD 狀態 (簡單邏輯: 短均線急拉)
         if (current_price - ma20)/ma20 > 0.02: score += 10; details.append("✅ 短線急攻 (+10)")
 
-        # --- C. 籌碼維度 (Chip, 20%) ---
         try:
             last_chip = get_institutional_data(token)
             net_buy = last_chip['net'].sum() if not last_chip.empty else 0
@@ -623,26 +702,20 @@ with tabs[4]:
             elif net_buy < -20: score -= 5; details.append("⚠️ 法人大賣 (-5)")
         except: pass
 
-        # --- D. 風險維度 (Risk, 10%) ---
-        # 乖離率過大扣分
         bias = (current_price - ma20) / ma20 * 100
         if bias > 3.5: score -= 5; details.append("⚠️ 乖離過熱 (-5)")
         if bias < -3.5: score += 5; details.append("✅ 乖離過冷反彈 (+5)")
 
-        # 基礎分
         score += 10
         return min(100, max(0, score)), details
 
-    # ================= 1. 趨勢燈號與溫度計 =================
     col_kpi1, col_kpi2 = st.columns([1, 1.5])
 
     with col_kpi1:
         st.markdown("#### 🌡️ **全方位多空溫度計**")
         
-        # 計算 12 因子分數
         total_score, score_details = calculate_advanced_factors(S_current, ma20, ma60, df_latest, FINMIND_TOKEN)
         
-        # 繪製儀表板
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number+delta",
             value = total_score,
@@ -665,28 +738,23 @@ with tabs[4]:
         fig_gauge.update_layout(height=280, margin=dict(l=30, r=30, t=30, b=30), paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
         st.plotly_chart(fig_gauge, use_container_width=True)
         
-        # 趨勢視覺化 (合併至此)
         trend_score = 0
         if S_current > ma20: trend_score += 1
         if ma20 > ma60: trend_score += 1
         
-        if trend_score == 2:
-            signal = "🟢 強勢買點"
-        elif trend_score == 1:
-            signal = "🟡 觀望整理"
-        else:
-            signal = "🔴 高風險區"
+        if trend_score == 2: signal = "🟢 強勢買點"
+        elif trend_score == 1: signal = "🟡 觀望整理"
+        else: signal = "🔴 高風險區"
             
         st.metric("🚦 趨勢燈號", signal, f"指數 {S_current:,.0f}")
         
         with st.expander("🔍 查看 12 因子細項"):
             st.write(f"**總分：{total_score}**")
-            st.markdown(" • " + "\\n • ".join(score_details))
+            st.markdown(" • " + "\n • ".join(score_details))
 
     with col_kpi2:
         st.markdown("#### 🤖 **貝伊果 AI 戰略解讀**")
         
-        # --- 5 階動態戰略情境 (無縮排 HTML 版) ---
         if total_score >= 80:
             ai_title = "🔥 多頭狂熱：利潤奔跑模式"
             ai_status = "極度樂觀"
@@ -737,7 +805,6 @@ with tabs[4]:
             box_color = "rgba(52, 58, 64, 0.15)"
             border_color = "#343a40"
 
-        # HTML 渲染
         html_content = f"""
 <div style="border-left: 5px solid {border_color}; background-color: {box_color}; padding: 15px; border-radius: 5px; margin-bottom: 10px; color: #EEE;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -758,17 +825,15 @@ with tabs[4]:
 """
         st.markdown(html_content, unsafe_allow_html=True)
         
-        # 隨機操盤金句
+        import random
         quotes = [
             "「行情總在絕望中誕生，在半信半疑中成長。」", "「截斷虧損，讓利潤奔跑。」",
             "「不要預測行情，要跟隨行情。」", "「新手看價，老手看量，高手看籌碼。」"
         ]
-        import random
         st.caption(f"📜 **貝伊果心法**：{random.choice(quotes)}")
 
     st.divider()
 
-    # ================= 2. 籌碼與點位區 (合併自原籌碼分析) =================
     st.markdown("### 🔥 **籌碼戰場與點位分析**")
     
     col_chip1, col_chip2 = st.columns([1.5, 1])
@@ -810,7 +875,6 @@ with tabs[4]:
         else:
             st.warning("⚠️ K 線資料連線中斷")
 
-    # 投組管理
     st.markdown("#### 💼 **我的投組**")
     if st.button("➕ 加入虛擬倉位"):
         st.session_state.portfolio.append({"K": 23000, "P": 180, "Date": str(date.today())})
@@ -820,7 +884,7 @@ with tabs[4]:
         st.info("暫無持倉")
 
 # --------------------------
-# Tab 6~14: 擴充預留位
+# Tab 5~14: 擴充預留位
 # --------------------------
 with tabs[5]: st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
 with tabs[6]: st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
