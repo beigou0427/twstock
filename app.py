@@ -225,11 +225,11 @@ if not st.session_state.disclaimer_accepted:
 # 分頁導航 (6個功能 + 9個升級槽)
 tab_names = [
     "🏦 **穩健ETF**", 
-    "📈 **趨勢判斷**", 
+    "📈 **趨勢+新聞**", 
     "🔰 **CALL獵人**", 
     "🔥 **專業戰情**", 
     "📊 **歷史回測**",
-    "📰 **市場快報**"
+    "📰 **市場戰情室**"
 ]
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 
@@ -274,11 +274,12 @@ with tabs[0]:
     """)
 
 # --------------------------
-# Tab 1: 趨勢判斷 (完整修復版)
+# Tab 1: 趨勢判斷 + 全球市場情報 (合併版)
 # --------------------------
 with tabs[1]:
-    st.markdown("## 🚦 **市場趨勢儀表板**")
+    st.markdown("## 🚦 **趨勢情報中心**")
     
+    # === 上半部：趨勢燈號 ===
     col_idx, col_ma, col_signal = st.columns(3)
     
     with col_idx:
@@ -307,9 +308,8 @@ with tabs[1]:
     
     st.divider()
     
-    st.markdown("### 📉 **趨勢視覺化**")
+    # === 中間：趨勢視覺化 ===
     fig = go.Figure()
-    
     x = np.arange(20)
     np.random.seed(42)
     price_line = S_current * (1 + np.random.normal(0, 0.005, 20).cumsum())
@@ -319,33 +319,85 @@ with tabs[1]:
     fig.add_trace(go.Scatter(x=x, y=price_line, mode='lines', name='指數', line=dict(color='#1f77b4', width=2)))
     fig.add_trace(go.Scatter(x=x, y=ma20_line, mode='lines', name='MA20', line=dict(color='#ff7f0e', width=2)))
     fig.add_trace(go.Scatter(x=x, y=ma60_line, mode='lines', name='MA60', line=dict(color='#2ca02c', width=2)))
-    
     fig.update_layout(height=300, title="近期趨勢 (綠燈 = 20 > 60日線)", showlegend=True)
     st.plotly_chart(fig, use_container_width=True)
     
-    st.markdown("### 🎯 **今日操作建議**")
+    # === 下半部：全球市場情報中心 (從原 Tab 5 移入) ===
+    st.markdown("### 🌍 **全球市場情報**")
+    with st.spinner("📰 抓取全球財經情報中..."):
+        import feedparser # 確保已安裝: feedparser
+        
+        # A. 台股新聞 (FinMind)
+        taiwan_news = get_real_news(FINMIND_TOKEN)
+        
+        # B. 國際新聞 (RSS 多源)
+        global_news = []
+        rss_sources = {
+            "📈 Yahoo Finance": "https://tw.stock.yahoo.com/rss/index.rss",
+            "🌐 Reuters 全球": "https://feeds.reuters.com/reuters/businessNews",
+            "📊 CNBC Asia": "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+        }
+        
+        for title, url in list(rss_sources.items())[:3]:
+            try:
+                feed = feedparser.parse(url)
+                for entry in feed.entries[:1]:
+                    global_news.append({
+                        'title': entry.title,
+                        'link': entry.link,
+                        'source': title,
+                        'time': entry.get('published', 'N/A'),
+                        'summary': entry.get('summary', '')[:120] + '...'
+                    })
+            except: pass
+        
+        # C. 合併與情緒分析
+        all_news = []
+        if not taiwan_news.empty:
+            for _, row in taiwan_news.head(3).iterrows():
+                all_news.append({
+                    'title': row.get('title', '無標題'),
+                    'link': row.get('link', '#'),
+                    'source': f"🇹🇼 {row.get('source', '台股新聞')}",
+                    'time': pd.to_datetime(row['date']).strftime('%m/%d %H:%M'),
+                    'summary': row.get('description', '')[:120] + '...'
+                })
+        all_news.extend(global_news[:3])
+        
+        # D. 簡單情緒分析
+        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '買超', '強勢', '反彈']
+        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '賣超', '弱勢', '崩盤']
+        pos_score, neg_score = 0, 0
+        for news in all_news:
+            text = news['title'] + news['summary']
+            for kw in pos_keywords: pos_score += text.count(kw)
+            for kw in neg_keywords: neg_score += text.count(kw)
+        
+        total_signals = pos_score + neg_score
+        sentiment = (pos_score - neg_score) / max(total_signals, 1)
+        sentiment_label = "🟢 看多共振" if sentiment > 0.3 else "🟡 中性" if sentiment > -0.3 else "🔴 看空恐慌"
     
-    if trend_score == 2:
-        st.success("""
-        **🟢 強勢多頭環境**
-        - ✅ 適合操作 CALL 策略
-        - 🎯 點擊上方「CALL 獵人」尋找機會
-        - 💡 建議槓桿 3~7x
-        """)
-    elif trend_score == 1:
-        st.warning("""
-        **🟡 震盪整理環境**
-        - ⚠️ 趨勢不明，建議觀望或減少部位
-        - 💡 回到「穩健 ETF」進行定投
-        - 🚫 槓桿操作需極度保守
-        """)
-    else:
-        st.error("""
-        **🔴 空頭/高風險環境**
-        - ⛔ 禁止 Buy CALL 操作
-        - 💵 現金為王，等待落底訊號
-        - 🛡️ 只做 ETF 定投
-        """)
+    col_sent1, col_sent2 = st.columns([1, 1])
+    with col_sent1: st.metric("📰 情報總數", f"{len(all_news)} 則", delta=f"({pos_score}+/{neg_score}-)")
+    with col_sent2: st.metric("📊 市場情緒", sentiment_label, f"{sentiment*100:+.0f}%")
+    
+    st.divider()
+    
+    # E. 新聞卡片
+    for i, news in enumerate(all_news[:6]): # 顯示前6則
+        col_n1, col_n2 = st.columns([4, 1])
+        with col_n1:
+            source_emoji = "🇹🇼" if "台股" in news.get('source', '') else "🌍"
+            title = news.get('title', '無標題')
+            link = news.get('link', '#')
+            source = news.get('source', '未知來源')
+            summary = news.get('summary', '')[:100] + '...'
+            st.markdown(f"**{source_emoji} {source}** [{title}]({link})")
+            if summary: st.caption(f"{summary}")
+        with col_n2:
+            time_str = news.get('time', 'N/A')
+            st.caption(f"🕒 {time_str}")
+        st.divider()
 
 # --------------------------
 # Tab 2: 新手 CALL 獵人 (狀態保存+畫面修復版)
@@ -538,7 +590,7 @@ with tabs[4]:
         col_lock1, col_lock2 = st.columns([2, 1])
         with col_lock1:
             st.warning("🔒 **此為 Pro 會員專屬功能**")
-            st.info("解鎖後可查看：\\n- ✅ 真實歷史數據回測\\n- ✅ 策略 vs 大盤績效對決\\n- ✅ 詳細交易訊號點位")
+            st.info("解鎖後可查看：\\\\n- ✅ 真實歷史數據回測\\\\n- ✅ 策略 vs 大盤績效對決\\\\n- ✅ 詳細交易訊號點位")
         with col_lock2:
             st.metric("累積報酬率", "🔒 ???%", "勝率 ???%")
             if st.button("⭐ 免費升級 Pro", key="upgrade_btn_tab4"):
@@ -602,10 +654,10 @@ with tabs[4]:
                     recent_df['日期'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
 # --------------------------
-# Tab 5: 市場快報 (12因子旗艦 + 全球情報 RSS 版)
+# Tab 5: 市場戰情室 (12因子旗艦版)
 # --------------------------
 with tabs[5]:
-    st.markdown("## 📰 **市場快報中心**")
+    st.markdown("## 📰 **專業戰情中心**")
     st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 模型版本：v3.0 (12因子加權)")
 
     # === [新增] 進階數據計算函數 (內嵌以簡化部署) ===
@@ -690,7 +742,7 @@ with tabs[5]:
         # 顯示評分細節 (折疊式)
         with st.expander("🔍 查看 12 因子細項"):
             st.write(f"**總分：{total_score}**")
-            st.markdown(" • " + "\n • ".join(score_details))
+            st.markdown(" • " + "\\n • ".join(score_details))
 
     with col_kpi2:
         st.markdown("#### 🤖 **貝伊果 AI 戰略解讀**")
@@ -808,97 +860,6 @@ with tabs[5]:
             st.caption("💡 數據來源：真實歷史 K 線高低點")
         else:
             st.warning("⚠️ K 線資料連線中斷")
-
-    st.markdown("---")
-    
-    # ================= 3. 全球市場情報中心 (完整 RSS 版) =================
-    st.markdown("#### 🌍 **全球市場情報中心**")
-    
-    with st.spinner("📰 即時抓取全球財經情報中..."):
-        import feedparser # 確保已安裝: feedparser
-        
-        # === A. 台股新聞 (FinMind) ===
-        taiwan_news = get_real_news(FINMIND_TOKEN)
-        
-        # === B. 國際新聞 (RSS 多源) ===
-        global_news = []
-        rss_sources = {
-            "📈 Yahoo Finance": "https://tw.stock.yahoo.com/rss/index.rss",
-            "🌐 Reuters 全球": "https://feeds.reuters.com/reuters/businessNews",
-            "📊 CNBC Asia": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-            "💼 Bloomberg": "https://feeds.bloomberg.com/markets/news.rss"
-        }
-        
-        for title, url in list(rss_sources.items())[:3]:  # 取前3個避免超時
-            try:
-                feed = feedparser.parse(url)
-                for entry in feed.entries[:1]:  # 每源取最新1筆
-                    global_news.append({
-                        'title': entry.title,
-                        'link': entry.link,
-                        'source': title,
-                        'time': entry.get('published', 'N/A'),
-                        'summary': entry.get('summary', '')[:120] + '...'
-                    })
-            except: pass
-        
-        # === C. 合併與情緒分析 ===
-        all_news = []
-        if not taiwan_news.empty:
-            for _, row in taiwan_news.head(3).iterrows():
-                all_news.append({
-                    'title': row.get('title', '無標題'),
-                    'link': row.get('link', '#'),
-                    'source': f"🇹🇼 {row.get('source', '台股新聞')}",
-                    'time': pd.to_datetime(row['date']).strftime('%m/%d %H:%M'),
-                    'summary': row.get('description', '')[:120] + '...'
-                })
-        
-        all_news.extend(global_news[:3])  # 國際新聞取前3
-        
-        # === D. 簡單情緒分析 (關鍵字計數) ===
-        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '買超', '強勢', '反彈']
-        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '賣超', '弱勢', '崩盤']
-        
-        pos_score, neg_score = 0, 0
-        for news in all_news:
-            text = news['title'] + news['summary']
-            for kw in pos_keywords: pos_score += text.count(kw)
-            for kw in neg_keywords: neg_score += text.count(kw)
-        
-        total_signals = pos_score + neg_score
-        sentiment = (pos_score - neg_score) / max(total_signals, 1)
-        sentiment_label = "🟢 看多共振" if sentiment > 0.3 else "🟡 中性" if sentiment > -0.3 else "🔴 看空恐慌"
-    
-    # === E. 情報總覽儀表板 ===
-    col_sent1, col_sent2 = st.columns([1, 1])
-    with col_sent1:
-        st.metric("📰 情報總數", f"{len(all_news)} 則", delta=f"({pos_score}+/{neg_score}-)")
-    with col_sent2:
-        st.metric("📊 市場情緒", sentiment_label, f"{sentiment*100:+.0f}%")
-    
-    st.divider()
-    
-    # === F. 新聞卡片展示 ===
-    for i, news in enumerate(all_news[:8]):  # 最多顯示8則
-        col_n1, col_n2 = st.columns([4, 1])  # 確保這行完整
-        
-        with col_n1:  # 確保這裡有縮排且前面有冒號
-            source_emoji = "🇹🇼" if "台股" in news.get('source', '') else "🌍"
-            title = news.get('title', '無標題')
-            link = news.get('link', '#')
-            source = news.get('source', '未知來源')
-            summary = news.get('summary', '')[:100] + '...'
-            
-            st.markdown(f"**{source_emoji} {source}** [{title}]({link})")
-            if summary:
-                st.caption(f"{summary}")
-                
-        with col_n2:
-            time_str = news.get('time', 'N/A')
-            st.caption(f"🕒 {time_str}")
-            
-        st.divider()
 
 # --------------------------
 # Tab 6~14: 擴充預留位
