@@ -13,6 +13,16 @@ import plotly.graph_objects as go
 import plotly.express as px
 import feedparser
 from collections import Counter
+# Add these imports at the top of your app.py (after existing imports)
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+# Optional: pip install streamlit-pills for clickable pills
+try:
+    from streamlit_pills import pills
+    PILLS_AVAILABLE = True
+except ImportError:
+    PILLS_AVAILABLE = False
+
 
 # =========================
 # 1. 初始化 & 設定
