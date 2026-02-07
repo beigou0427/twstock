@@ -300,151 +300,180 @@ with tabs[0]:
     4. 10年後檢視成果
     """)
 # --------------------------
-# Tab 1: 智能全球情報中心 (v2.0 - 熱詞優化版)
+# Tab 1: 智能全球情報中心 (v6.2 修復版)
 # --------------------------
 with tabs[1]:
     st.markdown("## 🌍 **智能全球情報中心**")
-    
-    # 頂部跑馬燈 (台股熱門：AI、台積電、Fed降息等) [web:47]
+
+    # 1. 跑馬燈 (模擬數據，避免空白)
     st.markdown("""
     <div class="ticker-wrap">
-        🚀 <b>台股熱門:</b> 
-        TAIEX: <span style="color:#28a745">29,350 (+1.3%)</span> | 
-        台積電: <span style="color:#28a745">1,585 (+2.3%)</span> | 
-        AI晶片: <span style="color:#28a745">NVIDIA H200 爆單</span> | 
-        Fed Cut: <span style="color:#ffc107">預期降息</span> | 
-        記憶體: <span style="color:#28a745">供應吃緊</span>
+        🚀 <b>市場熱點:</b> 
+        TAIEX: <span style="color:#28a745">23,500 (+1.2%)</span> | 
+        台積電: <span style="color:#28a745">1,085 (+2.5%)</span> | 
+        AI概念: <span style="color:#28a745">NVIDIA 財報超預期</span> | 
+        Fed: <span style="color:#ffc107">降息預期升溫</span> | 
+        比特幣: <span style="color:#28a745">$98,000 (+3.1%)</span>
     </div>
     """, unsafe_allow_html=True)
     
-    st.caption("FinMind 台股 + 國際 RSS + AI 情緒/熱詞分析 | 熱門：AI、台積電、Fed Cut [web:46][web:47]")
-    
-    # Session state for keyword filter
-    if 'selected_keyword' not in st.session_state:
-        st.session_state.selected_keyword = "全部"
-    
-    with st.spinner("🤖 掃描全球訊號 + 生成熱詞雲..."):
-        # Data fetching (same as before)
+    st.caption("整合 FinMind 台股 + Reuters/CNBC 國際快訊 + AI 情緒/熱詞分析")
+
+    # Session State 初始化篩選關鍵字
+    if 'filter_kw' not in st.session_state:
+        st.session_state['filter_kw'] = "全部"
+
+    with st.spinner("🤖 正在掃描全球市場訊號..."):
+        # 2. 數據抓取
         taiwan_news = get_real_news(FINMIND_TOKEN)
         rss_sources = {
             "📈 Yahoo財經": "https://tw.stock.yahoo.com/rss/index.rss",
             "🌐 Reuters": "https://feeds.reuters.com/reuters/businessNews",
-            "📊 CNBC": "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+            "📊 CNBC Tech": "https://www.cnbc.com/id/19854910/device/rss/rss.html"
         }
-        global_news = []
+        
+        all_news = []
+        # 台股新聞
+        if not taiwan_news.empty:
+            for _, row in taiwan_news.head(5).iterrows():
+                all_news.append({
+                    'title': row.get('title', '無標題'), 'link': row.get('link', '#'),
+                    'source': "🇹🇼 台股新聞", 'time': pd.to_datetime(row['date']).strftime('%m/%d %H:%M'),
+                    'summary': row.get('description', '')[:100] + '...'
+                })
+        
+        # 國際新聞
+        import feedparser
         for title, url in rss_sources.items():
             try:
                 feed = feedparser.parse(url)
-                for entry in feed.entries[:2]:
-                    global_news.append({
+                for entry in feed.entries[:3]:
+                    all_news.append({
                         'title': entry.title, 'link': entry.link, 'source': title,
                         'time': entry.get('published', 'N/A'), 'summary': entry.get('summary', '')[:100] + '...'
                     })
             except: pass
-        
-        all_news = []
-        if not taiwan_news.empty:
-            for _, row in taiwan_news.head(4).iterrows():
-                all_news.append({
-                    'title': row.get('title', '無標題'), 'link': row.get('link', '#'),
-                    'source': f"🇹🇼 台股新聞", 'time': pd.to_datetime(row['date']).strftime('%m/%d %H:%M'),
-                    'summary': row.get('description', '')[:100] + '...'
-                })
-        all_news.extend(global_news)
 
-        # Sentiment & Keywords (enhanced keywords list from Taiwan market [web:46][web:47])
-        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '強勢', 'Bull', 'Rise', 'AI', '成長', '台積電', 'TSMC']
-        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '弱勢', 'Bear', 'Fall', '關稅', 'Trump']
-        all_keywords = pos_keywords + neg_keywords  # Expanded for Taiwan context
+        # 3. AI 情緒與熱詞分析
+        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '強勢', 'Bull', 'Rise', 'AI', '成長', '台積電']
+        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '弱勢', 'Bear', 'Fall', '關稅', '通膨']
         
-        word_list, pos_score, neg_score = [], 0, 0
+        word_list = []
+        pos_score, neg_score = 0, 0
+        
         for news in all_news:
-            text = (news['title'] + ' ' + news['summary']).lower()
-            n_pos = sum([text.count(k.lower()) for k in pos_keywords])
-            n_neg = sum([text.count(k.lower()) for k in neg_keywords])
-            news['sentiment'] = 'bull' if n_pos > n_neg else 'bear' if n_neg > n_pos else 'neutral'
-            pos_score += n_pos; neg_score += n_neg
+            text = (news['title'] + news['summary']).lower()
+            n_pos = sum(text.count(k.lower()) for k in pos_keywords)
+            n_neg = sum(text.count(k.lower()) for k in neg_keywords)
             
-            # Collect unique keywords for cloud/filter
-            for k in all_keywords:
+            if n_pos > n_neg: news['sentiment'] = 'bull'
+            elif n_neg > n_pos: news['sentiment'] = 'bear'
+            else: news['sentiment'] = 'neutral'
+            
+            pos_score += n_pos
+            neg_score += n_neg
+            
+            # 收集關鍵字
+            for k in pos_keywords + neg_keywords:
                 if k.lower() in text:
                     word_list.append(k)
-        
+
         sentiment_idx = (pos_score - neg_score) / max(pos_score + neg_score, 1)
         sentiment_label = "🟢 貪婪" if sentiment_idx > 0.2 else "🔴 恐慌" if sentiment_idx < -0.2 else "🟡 中性"
         
-        # Top keywords for filter/cloud
-        top_keywords = ["全部"] + [w[0] for w in Counter(word_list).most_common(6)]
-        hot_keywords_str = " ".join([f"#{w}" for w in top_keywords[1:]])
+        # 產生前 6 大熱詞
+        from collections import Counter
+        top_keywords = ["全部"]
+        if word_list:
+            top_keywords += [w[0] for w in Counter(word_list).most_common(5)]
+        else:
+            top_keywords += ["台積電", "AI", "降息", "通膨", "強勢"] # 預設
 
-    # 儀表板
+    # 4. 儀表板區域
     col_dash1, col_dash2 = st.columns([1, 2])
+    
     with col_dash1:
         st.markdown("#### 🌡️ 市場情緒")
         fig_gauge = go.Figure(go.Indicator(
-            mode="gauge+number", value=50 + sentiment_idx*50,
-            gauge={'bar': {'color': "#4ECDC4"}, 'axis': {'range': [0, 100]}},
-            title={'text': sentiment_label}
+            mode = "gauge+number", 
+            value = 50 + sentiment_idx*50,
+            gauge = {
+                'axis': {'range': [0, 100]}, 
+                'bar': {'color': "#4ECDC4"},
+                'steps': [
+                    {'range': [0, 40], 'color': "rgba(255, 0, 0, 0.2)"},
+                    {'range': [60, 100], 'color': "rgba(0, 255, 0, 0.2)"}
+                ]
+            },
+            title = {'text': sentiment_label, 'font': {'size': 20}}
         ))
-        fig_gauge.update_layout(height=180)
+        fig_gauge.update_layout(height=180, margin=dict(l=20,r=20,t=30,b=20), paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig_gauge, use_container_width=True)
-
+    
     with col_dash2:
-        st.markdown("#### 🔥 **今日市場熱詞** (點擊篩選)")
+        st.markdown("#### 🔥 **今日市場熱詞 (點擊篩選)**")
         
-        # Clickable keyword filter [web:48]
-        if PILLS_AVAILABLE:
-            selected_idx = pills("🔍 篩選熱詞", top_keywords, index=0, format_func=lambda x: f"#{x}" if x != "全部" else "全部")
-            st.session_state.selected_keyword = top_keywords[selected_idx]
-        else:
-            # Fallback: buttons in columns
-            cols = st.columns(min(3, len(top_keywords)))
-            for i, kw in enumerate(top_keywords):
-                if cols[i % len(cols)].button(f"#{kw}", key=f"kw_{i}", use_container_width=True):
-                    st.session_state.selected_keyword = kw
-            st.caption("💡 安裝 `streamlit-pills` 解鎖圓形按鈕")
+        # 漂亮的按鈕牆 (取代失敗的詞雲)
+        cols = st.columns(3)
+        for i, kw in enumerate(top_keywords):
+            # 根據是否選中改變按鈕樣式 (模擬)
+            btn_label = f"✅ #{kw}" if st.session_state['filter_kw'] == kw else f"#{kw}"
+            if cols[i % 3].button(btn_label, key=f"btn_kw_{i}", use_container_width=True):
+                st.session_state['filter_kw'] = kw
+                st.rerun() # 重新整理以更新新聞列表
 
-        # Word Cloud visualization [web:41][web:42][web:43]
-        if word_list:
-            wc_text = " ".join(word_list[:200])  # Limit for performance
-            wordcloud = WordCloud(width=400, height=200, background_color='black',
-                                  colormap='viridis', max_words=20).generate(wc_text)
-            fig_wc, ax = plt.subplots(figsize=(8, 4))
-            ax.imshow(wordcloud, interpolation='bilinear')
-            ax.axis('off')
-            st.pyplot(fig_wc)
-        else:
-            st.markdown(f"### {hot_keywords_str}")
+        st.caption(f"📊 已掃描 {len(all_news)} 則情報 | 多頭訊號: {pos_score} | 空頭訊號: {neg_score}")
 
-    st.caption(f"📊 掃描 {len(all_news)} 則新聞 | 多頭:{pos_score} 空頭:{neg_score}")
-
-    # Filtered News (by selected keyword)
-    filtered_news = [n for n in all_news if st.session_state.selected_keyword == "全部" or 
-                     st.session_state.selected_keyword.lower() in (n['title'] + n['summary']).lower()]
-    
     st.divider()
-    st.markdown("### 📰 **精選快訊** (已篩選)")
     
-    col_left, col_right = st.columns(2)
-    for i, news in enumerate(filtered_news[:12]):  # Top 12 filtered
-        sentiment = news['sentiment']
-        tag = '<span class="tag-bull">看多</span>' if sentiment == 'bull' else '<span class="tag-bear">看空</span>' if sentiment == 'bear' else '<span class="tag-neutral">中性</span>'
-        border_color = "#28a745" if sentiment == 'bull' else "#dc3545" if sentiment == 'bear' else "#6c757d"
-        
-        card = f"""
-        <div class="news-card" style="border-left-color:{border_color}">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <span class="source-badge">{news['source']}</span>{tag}
-                <small style="color:#888">{news['time']}</small>
+    # 5. 過濾後的新聞列表
+    current_filter = st.session_state['filter_kw']
+    st.markdown(f"### 📰 **精選快訊** (篩選: {current_filter})")
+    
+    filtered_news = []
+    for news in all_news:
+        if current_filter == "全部" or current_filter.lower() in (news['title'] + news['summary']).lower():
+            filtered_news.append(news)
+            
+    if not filtered_news:
+        st.info(f"⚠️ 暫無包含「{current_filter}」的相關新聞")
+    
+    # 卡片式顯示
+    col_news_left, col_news_right = st.columns(2)
+    for i, news in enumerate(filtered_news):
+        if news['sentiment'] == 'bull':
+            tag_html = '<span class="tag-bull">看多</span>'
+            border_color = "#28a745"
+        elif news['sentiment'] == 'bear':
+            tag_html = '<span class="tag-bear">看空</span>'
+            border_color = "#dc3545"
+        else:
+            tag_html = '<span class="tag-neutral">中性</span>'
+            border_color = "#6c757d"
+
+        card_html = f"""
+        <div class="news-card" style="border-left: 5px solid {border_color};">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div>
+                    <span class="source-badge">{news['source']}</span>
+                    {tag_html}
+                </div>
+                <div style="font-size: 0.8em; color: #888;">{news['time']}</div>
             </div>
-            <a href="{news['link']}" target="_blank" style="color:white;font-weight:bold;font-size:1.1em;text-decoration:none;">{news['title']}</a>
-            <div style="color:#aaa;font-size:0.9em;margin-top:5px">{news['summary']}</div>
+            <a href="{news['link']}" target="_blank" style="text-decoration: none; color: white; font-weight: bold; font-size: 1.1em; display: block; margin-bottom: 5px; line-height: 1.4;">
+                {news['title']}
+            </a>
+            <div style="font-size: 0.9em; color: #aaa; margin-bottom: 5px; line-height: 1.5;">
+                {news['summary']}
+            </div>
         </div>
         """
+        
         if i % 2 == 0:
-            with col_left: st.markdown(card, unsafe_allow_html=True)
+            with col_news_left: st.markdown(card_html, unsafe_allow_html=True)
         else:
-            with col_right: st.markdown(card, unsafe_allow_html=True)
+            with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
+
 
 
 # --------------------------
