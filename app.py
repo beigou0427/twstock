@@ -202,7 +202,7 @@ with tabs[0]:
     4. 10年後檢視成果
     """)
 # --------------------------
-# Tab 1: 趨勢判斷 (完整版)
+# Tab 1: 趨勢判斷 (完整修復版)
 # --------------------------
 with tabs[1]:
     st.markdown("## 🚦 **市場趨勢儀表板**")
@@ -244,9 +244,11 @@ with tabs[1]:
     
     # 模擬近期數據
     x = np.arange(20)
-    price_line = S_current * (1 + np.random.normal(0, 0.01, 20)).cumprod()
-    ma20_line = np.full(20, ma20)
-    ma60_line = np.full(20, ma60)
+    # 使用 np.cumprod 模擬簡單走勢
+    np.random.seed(42)
+    price_line = S_current * (1 + np.random.normal(0, 0.005, 20).cumsum())
+    ma20_line = np.linspace(ma20*0.99, ma20*1.01, 20)
+    ma60_line = np.linspace(ma60*0.995, ma60*1.005, 20)
     
     fig.add_trace(go.Scatter(x=x, y=price_line, mode='lines', name='指數', line=dict(color='#1f77b4', width=2)))
     fig.add_trace(go.Scatter(x=x, y=ma20_line, mode='lines', name='MA20', line=dict(color='#ff7f0e', width=2)))
@@ -262,10 +264,24 @@ with tabs[1]:
         st.success("""
         **🟢 強勢多頭環境**
         - ✅ 適合操作 CALL 策略
-        - 🎯 點擊「CALL 獵人」尋找機會
+        - 🎯 點擊上方「CALL 獵人」尋找機會
         - 💡 建議槓桿 3~7x
         """)
-    elif trend_score
+    elif trend_score == 1:
+        st.warning("""
+        **🟡 震盪整理環境**
+        - ⚠️ 趨勢不明，建議觀望或減少部位
+        - 💡 回到「穩健 ETF」進行定投
+        - 🚫 槓桿操作需極度保守
+        """)
+    else:
+        st.error("""
+        **🔴 空頭/高風險環境**
+        - ⛔ 禁止 Buy CALL 操作
+        - 💵 現金為王，等待落底訊號
+        - 🛡️ 只做 ETF 定投
+        """)
+
 
 # --------------------------
 # Tab 2: 新手 CALL 獵人 (狀態保存版)
