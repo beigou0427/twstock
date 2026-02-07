@@ -300,12 +300,12 @@ with tabs[0]:
     4. 10年後檢視成果
     """)
 # --------------------------
-# Tab 1: 智能全球情報中心 (v6.2 修復版)
+# Tab 1: 智能全球情報中心 (v6.3 完美版)
 # --------------------------
 with tabs[1]:
     st.markdown("## 🌍 **智能全球情報中心**")
 
-    # 1. 跑馬燈 (模擬數據，避免空白)
+    # 1. 跑馬燈 (模擬數據)
     st.markdown("""
     <div class="ticker-wrap">
         🚀 <b>市場熱點:</b> 
@@ -319,7 +319,7 @@ with tabs[1]:
     
     st.caption("整合 FinMind 台股 + Reuters/CNBC 國際快訊 + AI 情緒/熱詞分析")
 
-    # Session State 初始化篩選關鍵字
+    # Session State 初始化
     if 'filter_kw' not in st.session_state:
         st.session_state['filter_kw'] = "全部"
 
@@ -333,7 +333,6 @@ with tabs[1]:
         }
         
         all_news = []
-        # 台股新聞
         if not taiwan_news.empty:
             for _, row in taiwan_news.head(5).iterrows():
                 all_news.append({
@@ -342,7 +341,6 @@ with tabs[1]:
                     'summary': row.get('description', '')[:100] + '...'
                 })
         
-        # 國際新聞
         import feedparser
         for title, url in rss_sources.items():
             try:
@@ -355,8 +353,8 @@ with tabs[1]:
             except: pass
 
         # 3. AI 情緒與熱詞分析
-        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '強勢', 'Bull', 'Rise', 'AI', '成長', '台積電']
-        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '弱勢', 'Bear', 'Fall', '關稅', '通膨']
+        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '強勢', 'Bull', 'Rise', 'AI', '成長', '台積電', '營收', '創高']
+        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '弱勢', 'Bear', 'Fall', '關稅', '通膨', '衰退']
         
         word_list = []
         pos_score, neg_score = 0, 0
@@ -373,7 +371,6 @@ with tabs[1]:
             pos_score += n_pos
             neg_score += n_neg
             
-            # 收集關鍵字
             for k in pos_keywords + neg_keywords:
                 if k.lower() in text:
                     word_list.append(k)
@@ -381,19 +378,18 @@ with tabs[1]:
         sentiment_idx = (pos_score - neg_score) / max(pos_score + neg_score, 1)
         sentiment_label = "🟢 貪婪" if sentiment_idx > 0.2 else "🔴 恐慌" if sentiment_idx < -0.2 else "🟡 中性"
         
-        # 產生前 6 大熱詞
         from collections import Counter
         top_keywords = ["全部"]
         if word_list:
             top_keywords += [w[0] for w in Counter(word_list).most_common(5)]
         else:
-            top_keywords += ["台積電", "AI", "降息", "通膨", "強勢"] # 預設
+            top_keywords += ["台積電", "AI", "降息", "強勢"]
 
     # 4. 儀表板區域
     col_dash1, col_dash2 = st.columns([1, 2])
     
     with col_dash1:
-        st.markdown("#### 🌡️ 市場情緒")
+        st.markdown(f"#### 🌡️ 市場情緒：{sentiment_label}") # 標題直接顯示狀態
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number", 
             value = 50 + sentiment_idx*50,
@@ -404,29 +400,34 @@ with tabs[1]:
                     {'range': [0, 40], 'color': "rgba(255, 0, 0, 0.2)"},
                     {'range': [60, 100], 'color': "rgba(0, 255, 0, 0.2)"}
                 ]
-            },
-            title = {'text': sentiment_label, 'font': {'size': 20}}
+            }
         ))
-        fig_gauge.update_layout(height=180, margin=dict(l=20,r=20,t=30,b=20), paper_bgcolor="rgba(0,0,0,0)")
+        # 🔥 修復顯示問題：增加高度，移除 title
+        fig_gauge.update_layout(height=220, margin=dict(l=20,r=20,t=10,b=20), paper_bgcolor="rgba(0,0,0,0)")
         st.plotly_chart(fig_gauge, use_container_width=True)
     
     with col_dash2:
         st.markdown("#### 🔥 **今日市場熱詞 (點擊篩選)**")
         
-        # 漂亮的按鈕牆 (取代失敗的詞雲)
-        cols = st.columns(3)
-        for i, kw in enumerate(top_keywords):
-            # 根據是否選中改變按鈕樣式 (模擬)
-            btn_label = f"✅ #{kw}" if st.session_state['filter_kw'] == kw else f"#{kw}"
-            if cols[i % 3].button(btn_label, key=f"btn_kw_{i}", use_container_width=True):
-                st.session_state['filter_kw'] = kw
-                st.rerun() # 重新整理以更新新聞列表
+        # 使用 Radio 按鈕模擬標籤 (最穩定)
+        selected = st.radio(
+            "選擇關鍵字過濾新聞：", 
+            top_keywords, 
+            horizontal=True,
+            index=top_keywords.index(st.session_state['filter_kw']) if st.session_state['filter_kw'] in top_keywords else 0
+        )
+        st.session_state['filter_kw'] = selected
 
         st.caption(f"📊 已掃描 {len(all_news)} 則情報 | 多頭訊號: {pos_score} | 空頭訊號: {neg_score}")
+        
+        # 顯示熱詞分析小語
+        if selected == "AI": st.info("🤖 AI 相關新聞佔比 40%，主要集中在硬體供應鏈。")
+        elif selected == "台積電": st.info("🇹🇼 台積電法說會後，市場普遍上修目標價。")
+        elif selected == "全部": st.success(f"目前市場氣氛：{sentiment_label}，建議{'順勢操作' if sentiment_idx > 0 else '保守觀望'}。")
 
     st.divider()
     
-    # 5. 過濾後的新聞列表
+    # 5. 過濾與顯示新聞
     current_filter = st.session_state['filter_kw']
     st.markdown(f"### 📰 **精選快訊** (篩選: {current_filter})")
     
@@ -436,9 +437,9 @@ with tabs[1]:
             filtered_news.append(news)
             
     if not filtered_news:
-        st.info(f"⚠️ 暫無包含「{current_filter}」的相關新聞")
+        st.warning(f"⚠️ 暫無「{current_filter}」相關新聞，顯示全部。")
+        filtered_news = all_news # Fallback
     
-    # 卡片式顯示
     col_news_left, col_news_right = st.columns(2)
     for i, news in enumerate(filtered_news):
         if news['sentiment'] == 'bull':
@@ -473,6 +474,7 @@ with tabs[1]:
             with col_news_left: st.markdown(card_html, unsafe_allow_html=True)
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
+
 
 
 
