@@ -242,84 +242,105 @@ with st.expander("🔧 **除錯：查看原始資料**", expanded=False):
     st.write("**call_put 獨特值**：", df_latest["call_put"].unique())
 
 # --------------------------
-# Tab 2: 新手 CALL 獵人 (修正版)
+# Tab 2: 新手 CALL 獵人 (大小寫修正版)
 # --------------------------
 with tabs[2]:
     st.markdown("### 🔰 **Lead Call 策略選號**")
     
-    # 確保資料存在
-    if df_latest.empty:
-        st.error("⚠️ 無法取得期權資料，請稍後再試。")
+    # 1. 資料前處理：強制將 call_put 轉大寫，避免大小寫問題
+    if not df_latest.empty:
+        df_latest["call_put"] = df_latest["call_put"].astype(str).str.upper().str.strip()
+    
+    # 2. 篩選有 CALL 資料的合約
+    available_contracts = []
+    if not df_latest.empty:
+        # 這裡已經轉成大寫 'CALL' 了，所以篩選一定會對
+        call_df = df_latest[df_latest["call_put"] == "CALL"]
+        available_contracts = sorted(call_df["contract_date"].unique())
+
+    if not available_contracts:
+        st.error("⚠️ 找不到任何 CALL 合約資料 (可能是資料源問題)")
     else:
         c1, c2, c3, c4 = st.columns([1, 2, 1.5, 1])
         with c1: st.success("📈 **固定看漲**")
+        
         with c2: 
-            # 確保有合約可選
-            cons = sorted(df_latest["contract_date"].unique())
-            sel_con = st.selectbox("合約月份", cons, index=len(cons)-1 if cons else 0)
+            # 預設選最遠月
+            sel_con = st.selectbox("合約月份", available_contracts, index=len(available_contracts)-1)
+            
         with c3: target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0)
         with c4: is_safe = st.checkbox("穩健濾網", True)
         
         if st.button("🎯 **尋找最佳 CALL**", type="primary", use_container_width=True):
-            # 1. 篩選資料
-            tdf = df_latest[(df_latest["contract_date"]==sel_con) & (df_latest["call_put"]=="CALL")]
+            # 篩選該月份 CALL
+            tdf = df_latest[(df_latest["contract_date"] == sel_con) & (df_latest["call_put"] == "CALL")]
             
-            if tdf.empty:
-                st.warning(f"⚠️ {sel_con} 沒有 CALL 合約資料，請切換其他月份。")
+            # 計算天數
+            y, m = int(sel_con[:4]), int(sel_con[4:6])
+            # 簡單假設該月 15 號結算
+            expiry_date = date(y, m, 15)
+            days = (expiry_date - latest_date.date()).days
+            if days <= 0: days = 1
+
+            res = []
+            for _, row in tdf.iterrows():
+                try:
+                    K = float(row["strike_price"])
+                    
+                    # 價格容錯機制：如果收盤價是 0，嘗試找其他價格欄位
+                    P = float(row["close"])
+                    if P == 0 and "settlement_price" in row:
+                        P = float(row["settlement_price"])
+                    
+                    # 如果還是 0，則跳過
+                    if P <= 0: continue
+                    
+                    # BS 模型計算
+                    bs, d = bs_price_delta(S_current, K, days/365, 0.02, 0.2, "CALL")
+                    lev = (abs(d) * S_current) / P
+                    
+                    # 穩健濾網
+                    if is_safe and abs(d) < 0.1: continue
+                    
+                    res.append({
+                        "K": int(K), "P": P, "Lev": lev, 
+                        "Delta": abs(d), "Win": calculate_win_rate(d, days),
+                        "Diff": abs(lev - target_lev),
+                        "Vol": row.get("volume", 0)
+                    })
+                except: continue
+            
+            if res:
+                # 排序：找最接近目標槓桿的
+                res.sort(key=lambda x: x['Diff'])
+                best = res[0]
+                
+                st.divider()
+                st.success(f"✅ 找到 {len(res)} 檔合約，最佳推薦：")
+                
+                rc1, rc2 = st.columns([1, 1])
+                with rc1:
+                    st.markdown(f"#### 🏆 {sel_con} **{best['K']} CALL**")
+                    st.metric("權利金", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
+                    
+                    # 如果成交量是 0，顯示警語
+                    if best['Vol'] == 0:
+                        st.caption(f"⚠️ **注意：今日成交量為 0** (僅供參考)")
+                    else:
+                        st.caption(f"成交量: {best['Vol']} | 勝率: {best['Win']}%")
+                        
+                    if st.button("📱 分享此策略", key="share_btn"):
+                        st.balloons()
+                        st.code(f"台指{S_current}，我選了 {best['K']} CALL，槓桿{best['Lev']:.1f}x！")
+
+                with rc2:
+                    st.markdown("#### 🛡️ **風險模擬**")
+                    loss_pct = st.slider("停損 %", 10, 50, 20)
+                    risk = best['P'] * 50 * (loss_pct/100)
+                    st.write(f"🔻 最大虧損: **NT$ -{risk:.0f}**")
             else:
-                # 計算剩餘天數
-                y, m = int(sel_con[:4]), int(sel_con[4:6])
-                target_date = date(y, m, 15) # 假設結算日為15號
-                days = (target_date - latest_date.date()).days
-                if days <= 0: days = 1 # 避免除以0
-                
-                res = []
-                for _, row in tdf.iterrows():
-                    try:
-                        K = float(row["strike_price"])
-                        P = float(row["close"])
-                        
-                        # 過濾無效價格
-                        if P <= 0.1: continue 
+                st.warning(f"⚠️ {sel_con} 有資料，但篩選後無符合結果 (可能是價格為 0 或 Delta 太小)。")
 
-                        bs, d = bs_price_delta(S_current, K, days/365, 0.02, 0.2, "CALL")
-                        lev = (abs(d) * S_current) / P
-                        
-                        # 穩健模式：過濾極度價外 (Delta太小)
-                        if is_safe and abs(d) < 0.1: continue
-                        
-                        res.append({
-                            "K": int(K), "P": P, "Lev": lev, 
-                            "Delta": abs(d), "Win": calculate_win_rate(d, days),
-                            "Diff": abs(lev - target_lev) # 槓桿差距
-                        })
-                    except: continue
-                
-                # 2. 顯示結果
-                if res:
-                    res.sort(key=lambda x: x['Diff']) # 找最接近目標槓桿的
-                    best = res[0]
-                    
-                    st.divider()
-                    st.success(f"✅ 找到最佳合約！")
-                    
-                    rc1, rc2 = st.columns([1, 1])
-                    with rc1:
-                        st.markdown(f"#### 🏆 推薦：{sel_con} **{best['K']} CALL**")
-                        st.metric("權利金", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
-                        st.caption(f"勝率預估: {best['Win']}% | Delta: {best['Delta']:.2f}")
-                        
-                        if st.button("📱 分享此策略 (獲積分)", key="share_res"):
-                            st.balloons()
-                            st.code(f"台指{S_current}，我選了 {best['K']} CALL，槓桿{best['Lev']:.1f}x！#LeadCall")
-
-                    with rc2:
-                        st.markdown("#### 🛡️ **風險模擬**")
-                        loss_pct = st.slider("停損 %", 10, 50, 20)
-                        risk = best['P'] * 50 * (loss_pct/100)
-                        st.write(f"🔻 最大虧損: **NT$ -{risk:.0f}**")
-                else:
-                    st.warning("⚠️ 找不到符合條件的合約，請嘗試：\n1. 關閉「穩健濾網」\n2. 調整「目標槓桿」\n3. 切換「合約月份」")
 
 
 # --------------------------
