@@ -10,7 +10,7 @@ tqdm>=4.66.0
 loguru>=0.7.0
 python-dateutil
 pytz
-
+wordcloud
 # === 新增的新聞解析與文本處理套件 ===
 feedparser>=6.0.10      # 解析 RSS/Atom 新聞源
 beautifulsoup4>=4.12.0  # 清理 HTML 標籤
