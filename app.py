@@ -541,7 +541,7 @@ with tabs[4]:
             st.info("解鎖後可查看：\n- ✅ 真實歷史數據回測\n- ✅ 策略 vs 大盤績效對決\n- ✅ 詳細交易訊號點位")
         with col_lock2:
             st.metric("累積報酬率", "🔒 ???%", "勝率 ???%")
-            if st.button("⭐ 升級 Pro (NT$299)", key="upgrade_btn_tab4"):
+            if st.button("⭐ 免費升級 Pro", key="upgrade_btn_tab4"):
                 st.session_state.is_pro = True; st.balloons(); st.rerun()
         st.image("https://via.placeholder.com/1000x300?text=Pro+Feature+Locked", use_container_width=True)
     
