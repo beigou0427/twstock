@@ -230,63 +230,85 @@ with tabs[1]:
             st.error("🛑 **紅燈：風險過高，暫停槓桿操作**")
 
 # --------------------------
-# Tab 2: 新手 CALL 獵人 (核心)
+# Tab 2: 新手 CALL 獵人 (修正版)
 # --------------------------
 with tabs[2]:
     st.markdown("### 🔰 **Lead Call 策略選號**")
     
-    c1, c2, c3, c4 = st.columns([1, 2, 1.5, 1])
-    with c1: st.success("📈 **固定看漲**")
-    with c2: 
-        cons = sorted(df_latest["contract_date"].unique()) if not df_latest.empty else []
-        sel_con = st.selectbox("合約月份", cons, index=len(cons)-1 if cons else 0)
-    with c3: target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0)
-    with c4: is_safe = st.checkbox("穩健濾網", True)
-    
-    if st.button("🎯 **尋找最佳 CALL**", type="primary", use_container_width=True):
-        if not df_latest.empty:
-            # 搜尋邏輯
+    # 確保資料存在
+    if df_latest.empty:
+        st.error("⚠️ 無法取得期權資料，請稍後再試。")
+    else:
+        c1, c2, c3, c4 = st.columns([1, 2, 1.5, 1])
+        with c1: st.success("📈 **固定看漲**")
+        with c2: 
+            # 確保有合約可選
+            cons = sorted(df_latest["contract_date"].unique())
+            sel_con = st.selectbox("合約月份", cons, index=len(cons)-1 if cons else 0)
+        with c3: target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0)
+        with c4: is_safe = st.checkbox("穩健濾網", True)
+        
+        if st.button("🎯 **尋找最佳 CALL**", type="primary", use_container_width=True):
+            # 1. 篩選資料
             tdf = df_latest[(df_latest["contract_date"]==sel_con) & (df_latest["call_put"]=="CALL")]
-            y, m = int(sel_con[:4]), int(sel_con[4:6])
-            days = max((date(y, m, 15) - latest_date.date()).days, 1)
             
-            res = []
-            for _, row in tdf.iterrows():
-                try:
-                    K, P = float(row["strike_price"]), float(row["close"])
-                    if P <= 0: continue
-                    bs, d = bs_price_delta(S_current, K, days/365, 0.02, 0.2, "CALL")
-                    lev = (abs(d)*S_current)/P
-                    if is_safe and abs(d) < 0.1: continue
-                    res.append({"K":int(K), "P":P, "Lev":lev, "Delta":abs(d), "Win":calculate_win_rate(d, days)})
-                except: continue
-            
-            if res:
-                res.sort(key=lambda x: abs(x['Lev']-target_lev))
-                best = res[0]
+            if tdf.empty:
+                st.warning(f"⚠️ {sel_con} 沒有 CALL 合約資料，請切換其他月份。")
+            else:
+                # 計算剩餘天數
+                y, m = int(sel_con[:4]), int(sel_con[4:6])
+                target_date = date(y, m, 15) # 假設結算日為15號
+                days = (target_date - latest_date.date()).days
+                if days <= 0: days = 1 # 避免除以0
                 
-                # 結果顯示
-                st.markdown("---")
-                rc1, rc2 = st.columns([1, 1])
-                with rc1:
-                    st.markdown(f"#### 🏆 推薦：{sel_con} **{best['K']} CALL**")
-                    st.metric("權利金", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
-                    st.caption(f"勝率預估: {best['Win']}% | Delta: {best['Delta']:.2f}")
-                    
-                    # 病毒分享
-                    if st.button("📱 分享此策略 (獲積分)", key="share_res"):
-                        st.balloons()
-                        st.code(f"台指{S_current}，我用貝伊果屋選了 {best['K']} CALL，槓桿{best['Lev']:.1f}x！#LeadCall")
+                res = []
+                for _, row in tdf.iterrows():
+                    try:
+                        K = float(row["strike_price"])
+                        P = float(row["close"])
+                        
+                        # 過濾無效價格
+                        if P <= 0.1: continue 
 
-                with rc2:
-                    st.markdown("#### 🛡️ **風險模擬 (新手必看)**")
-                    loss_pct = st.slider("設定停損 %", 10, 50, 20)
-                    profit_pct = st.slider("設定停利 %", 20, 100, 50)
+                        bs, d = bs_price_delta(S_current, K, days/365, 0.02, 0.2, "CALL")
+                        lev = (abs(d) * S_current) / P
+                        
+                        # 穩健模式：過濾極度價外 (Delta太小)
+                        if is_safe and abs(d) < 0.1: continue
+                        
+                        res.append({
+                            "K": int(K), "P": P, "Lev": lev, 
+                            "Delta": abs(d), "Win": calculate_win_rate(d, days),
+                            "Diff": abs(lev - target_lev) # 槓桿差距
+                        })
+                    except: continue
+                
+                # 2. 顯示結果
+                if res:
+                    res.sort(key=lambda x: x['Diff']) # 找最接近目標槓桿的
+                    best = res[0]
                     
-                    risk = best['P'] * 50 * (loss_pct/100)
-                    reward = best['P'] * 50 * (profit_pct/100)
-                    st.write(f"🔻 最大虧損: **NT$ -{risk:.0f}**")
-                    st.write(f"💚 預期獲利: **NT$ +{reward:.0f}**")
+                    st.divider()
+                    st.success(f"✅ 找到最佳合約！")
+                    
+                    rc1, rc2 = st.columns([1, 1])
+                    with rc1:
+                        st.markdown(f"#### 🏆 推薦：{sel_con} **{best['K']} CALL**")
+                        st.metric("權利金", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
+                        st.caption(f"勝率預估: {best['Win']}% | Delta: {best['Delta']:.2f}")
+                        
+                        if st.button("📱 分享此策略 (獲積分)", key="share_res"):
+                            st.balloons()
+                            st.code(f"台指{S_current}，我選了 {best['K']} CALL，槓桿{best['Lev']:.1f}x！#LeadCall")
+
+                    with rc2:
+                        st.markdown("#### 🛡️ **風險模擬**")
+                        loss_pct = st.slider("停損 %", 10, 50, 20)
+                        risk = best['P'] * 50 * (loss_pct/100)
+                        st.write(f"🔻 最大虧損: **NT$ -{risk:.0f}**")
+                else:
+                    st.warning("⚠️ 找不到符合條件的合約，請嘗試：\n1. 關閉「穩健濾網」\n2. 調整「目標槓桿」\n3. 切換「合約月份」")
+
 
 # --------------------------
 # Tab 3: 專業戰情 (Pro功能)
