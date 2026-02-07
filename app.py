@@ -602,7 +602,7 @@ with tabs[4]:
                     recent_df['日期'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
 # --------------------------
-# Tab 5: 市場快報 (12因子旗艦版 + 完美渲染)
+# Tab 5: 市場快報 (12因子旗艦 + 全球情報 RSS 版)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
@@ -811,10 +811,12 @@ with tabs[5]:
 
     st.markdown("---")
     
-    # ================= 3. 全球市場情報中心 (旗艦版) =================
+    # ================= 3. 全球市場情報中心 (完整 RSS 版) =================
     st.markdown("#### 🌍 **全球市場情報中心**")
     
     with st.spinner("📰 即時抓取全球財經情報中..."):
+        import feedparser # 確保已安裝: feedparser
+        
         # === A. 台股新聞 (FinMind) ===
         taiwan_news = get_real_news(FINMIND_TOKEN)
         
@@ -838,8 +840,7 @@ with tabs[5]:
                         'time': entry.get('published', 'N/A'),
                         'summary': entry.get('summary', '')[:120] + '...'
                     })
-            except:
-                pass
+            except: pass
         
         # === C. 合併與情緒分析 ===
         all_news = []
@@ -880,12 +881,24 @@ with tabs[5]:
     
     # === F. 新聞卡片展示 ===
     for i, news in enumerate(all_news[:8]):  # 最多顯示8則
-        col_n1, col_n2 = st.columns([4, 1])
-        with col_n1:
-            source_emoji = "🇹🇼" if "台股" in news['source'] else "🌍"
-            st.markdown(f"**{source_emoji} {news['source']}** [{news['title']}]({news['link']})")
-            st.caption(f"{news['summary']}")
-        with
+        col_n1, col_n2 = st.columns([4, 1])  # 確保這行完整
+        
+        with col_n1:  # 確保這裡有縮排且前面有冒號
+            source_emoji = "🇹🇼" if "台股" in news.get('source', '') else "🌍"
+            title = news.get('title', '無標題')
+            link = news.get('link', '#')
+            source = news.get('source', '未知來源')
+            summary = news.get('summary', '')[:100] + '...'
+            
+            st.markdown(f"**{source_emoji} {source}** [{title}]({link})")
+            if summary:
+                st.caption(f"{summary}")
+                
+        with col_n2:
+            time_str = news.get('time', 'N/A')
+            st.caption(f"🕒 {time_str}")
+            
+        st.divider()
 
 # --------------------------
 # Tab 6~14: 擴充預留位
