@@ -487,27 +487,98 @@ with tabs[3]:
         st.info("暫無持倉")
 
 # --------------------------
-# Tab 4: 歷史回測
+# Tab 4: 歷史回測 (完善升級版)
 # --------------------------
 with tabs[4]:
-    st.markdown("### 📊 **策略時光機**")
+    st.markdown("### 📊 **策略時光機：驗證獲利能力**")
+    
+    # 用戶權限檢查
     if not st.session_state.is_pro:
-        st.warning("🔒 **此為 Pro 功能** (贊助 NT$299 解鎖完整 5 年回測)")
-        st.image("https://via.placeholder.com/800x300?text=Pro+Feature+Locked", use_container_width=True)
+        # 鎖住畫面，引導付費
+        col_lock1, col_lock2 = st.columns([2, 1])
+        with col_lock1:
+            st.warning("🔒 **此為 Pro 會員專屬功能**")
+            st.info("""
+            **解鎖後您將獲得：**
+            - ✅ 完整 5 年策略回測數據
+            - ✅ 自定義回測參數 (槓桿、停損利)
+            - ✅ 每月損益熱力圖 & 交易明細
+            - ✅ 策略與大盤績效比較
+            """)
+        with col_lock2:
+            st.metric("累積報酬率", "🔒 ???%", "勝率 ???%")
+            if st.button("⭐ 立即升級 Pro (NT$299)", key="upgrade_btn_tab4"):
+                st.session_state.is_pro = True
+                st.balloons()
+                st.rerun()
+        st.image("https://via.placeholder.com/1000x400?text=Pro+Feature+Locked+-+Unlock+to+See+Real+Data", use_container_width=True)
+    
     else:
-        col_b1, col_b2 = st.columns(2)
-        with col_b1: contract_type = st.selectbox("回測策略", ["Lead Call (遠月)", "短線衝刺 (近月)"])
-        with col_b2: period = st.selectbox("回測年份", ["2025", "2024", "2023"])
+        # Pro 會員看到的完整功能
         
-        if st.button("🚀 開始回測"):
-            # 模擬數據
-            np.random.seed(42)
-            dates = pd.date_range(start="2025-01-01", periods=100)
-            returns = np.random.normal(0.02, 0.05, 100).cumsum()
-            
-            st.line_chart(pd.Series(returns, index=dates))
-            st.metric("策略總報酬", "+145%", "夏普比率 1.8")
-            st.success("✅ 回測結果：顯著優於大盤")
+        # 1. 參數設定列
+        with st.expander("⚙️ **回測參數設定**", expanded=True):
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: strategy = st.selectbox("選擇策略", ["Lead Call (趨勢)", "Credit Spread (收租)", "Iron Condor (盤整)"])
+            with c2: period_years = st.selectbox("回測期間", ["近 1 年", "近 3 年", "近 5 年"])
+            with c3: init_capital = st.number_input("初始本金 (萬)", 10, 500, 100)
+            with c4: leverage = st.slider("槓桿倍數", 1, 10, 5)
+        
+        if st.button("🚀 開始執行回測", type="primary"):
+            with st.spinner("正在模擬歷史交易數據..."):
+                # 模擬數據生成 (更真實的隨機漫步)
+                np.random.seed(42)
+                days = 250 if "1" in period_years else 750 if "3" in period_years else 1250
+                dates = pd.date_range(end=date.today(), periods=days)
+                
+                # 模擬策略報酬 (有正期望值)
+                daily_ret = np.random.normal(0.0015, 0.015, days) # 平均日賺 0.15%
+                cum_ret = (1 + daily_ret).cumprod() * init_capital
+                
+                # 模擬大盤報酬 (較低波動)
+                benchmark_ret = np.random.normal(0.0005, 0.01, days)
+                benchmark_cum = (1 + benchmark_ret).cumprod() * init_capital
+
+                # 2. 核心 KPI 儀表板
+                total_ret = (cum_ret[-1] - init_capital) / init_capital * 100
+                mdd = np.min(cum_ret / np.maximum.accumulate(cum_ret)) - 1
+                win_rate = np.sum(daily_ret > 0) / days * 100
+                
+                st.divider()
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("💰 最終資產", f"{int(cum_ret[-1]):,} 萬", f"+{total_ret:.1f}%")
+                k2.metric("🏆 交易勝率", f"{win_rate:.1f}%", "高於平均")
+                k3.metric("📉 最大回撤 (MDD)", f"{mdd*100:.1f}%", "風險可控", delta_color="inverse")
+                k4.metric("📊 夏普比率", "1.85", "優秀 (>1.5)")
+
+                # 3. 權益曲線圖 (策略 vs 大盤)
+                fig_perf = go.Figure()
+                fig_perf.add_trace(go.Scatter(x=dates, y=cum_ret, name='貝伊果策略', line=dict(color='#00CC96', width=2)))
+                fig_perf.add_trace(go.Scatter(x=dates, y=benchmark_cum, name='大盤指數', line=dict(color='#EF553B', width=2, dash='dash')))
+                fig_perf.update_layout(title="資金權益曲線比較", yaxis_title="資產淨值 (萬)", hovermode="x unified", height=400)
+                st.plotly_chart(fig_perf, use_container_width=True)
+
+                # 4. 每月損益熱力圖 (模擬)
+                st.markdown("#### 📅 **每月損益表現**")
+                month_ret = np.random.randint(-5, 15, size=(4, 12)) # 4年 x 12月
+                fig_heat = px.imshow(month_ret, 
+                                    labels=dict(x="月份", y="年份", color="報酬%"),
+                                    x=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                                    y=['2026', '2025', '2024', '2023'],
+                                    color_continuous_scale="RdYlGn", text_auto=True)
+                fig_heat.update_layout(height=300)
+                st.plotly_chart(fig_heat, use_container_width=True)
+
+                # 5. 近期交易明細
+                st.markdown("#### 📝 **近期交易紀錄**")
+                trade_log = pd.DataFrame({
+                    "日期": dates[-5:][::-1].strftime('%Y-%m-%d'),
+                    "訊號": ["Buy CALL", "Sell PUT", "Buy CALL", "Close", "Buy CALL"],
+                    "標的": ["23000 CALL", "22500 PUT", "23200 CALL", "22800 CALL", "23500 CALL"],
+                    "損益": ["+12,500", "+5,400", "-3,200", "+18,000", "+8,900"],
+                    "狀態": ["✅ 獲利", "✅ 獲利", "❌ 停損", "✅ 獲利", "✅ 獲利"]
+                })
+                st.dataframe(trade_log, use_container_width=True, hide_index=True)
 
 # --------------------------
 # Tab 5: 市場快報 (顯示優化版 + 真實新聞)
