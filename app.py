@@ -1,6 +1,6 @@
 """
 🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版)
-整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 市場快報 + 擴充預留
+整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 市場快報 + 真實回測
 """
 
 import streamlit as st
@@ -49,6 +49,7 @@ def get_data(token):
     dl = DataLoader()
     dl.login_by_token(api_token=token)
     try:
+        # 抓到最新收盤日
         index_df = dl.taiwan_stock_daily("TAIEX", start_date=(date.today()-timedelta(days=100)).strftime("%Y-%m-%d"))
         S = float(index_df["close"].iloc[-1]) if not index_df.empty else 23000.0
         ma20 = index_df['close'].rolling(20).mean().iloc[-1] if len(index_df) > 20 else S * 0.98
@@ -487,98 +488,78 @@ with tabs[3]:
         st.info("暫無持倉")
 
 # --------------------------
-# Tab 4: 歷史回測 (完善升級版)
+# Tab 4: 歷史回測 (真實數據版)
 # --------------------------
 with tabs[4]:
-    st.markdown("### 📊 **策略時光機：驗證獲利能力**")
+    st.markdown("### 📊 **策略時光機：真實歷史驗證**")
     
-    # 用戶權限檢查
     if not st.session_state.is_pro:
-        # 鎖住畫面，引導付費
+        # 鎖定畫面
         col_lock1, col_lock2 = st.columns([2, 1])
         with col_lock1:
             st.warning("🔒 **此為 Pro 會員專屬功能**")
-            st.info("""
-            **解鎖後您將獲得：**
-            - ✅ 完整 5 年策略回測數據
-            - ✅ 自定義回測參數 (槓桿、停損利)
-            - ✅ 每月損益熱力圖 & 交易明細
-            - ✅ 策略與大盤績效比較
-            """)
+            st.info("解鎖後可查看：\n- ✅ 真實歷史數據回測\n- ✅ 策略 vs 大盤績效對決\n- ✅ 詳細交易訊號點位")
         with col_lock2:
             st.metric("累積報酬率", "🔒 ???%", "勝率 ???%")
-            if st.button("⭐ 立即升級 Pro (NT$299)", key="upgrade_btn_tab4"):
-                st.session_state.is_pro = True
-                st.balloons()
-                st.rerun()
-        st.image("https://via.placeholder.com/1000x400?text=Pro+Feature+Locked+-+Unlock+to+See+Real+Data", use_container_width=True)
+            if st.button("⭐ 升級 Pro (NT$299)", key="upgrade_btn_tab4"):
+                st.session_state.is_pro = True; st.balloons(); st.rerun()
+        st.image("https://via.placeholder.com/1000x300?text=Pro+Feature+Locked", use_container_width=True)
     
     else:
-        # Pro 會員看到的完整功能
-        
-        # 1. 參數設定列
+        # Pro 功能區
         with st.expander("⚙️ **回測參數設定**", expanded=True):
-            c1, c2, c3, c4 = st.columns(4)
-            with c1: strategy = st.selectbox("選擇策略", ["Lead Call (趨勢)", "Credit Spread (收租)", "Iron Condor (盤整)"])
-            with c2: period_years = st.selectbox("回測期間", ["近 1 年", "近 3 年", "近 5 年"])
-            with c3: init_capital = st.number_input("初始本金 (萬)", 10, 500, 100)
-            with c4: leverage = st.slider("槓桿倍數", 1, 10, 5)
-        
-        if st.button("🚀 開始執行回測", type="primary"):
-            with st.spinner("正在模擬歷史交易數據..."):
-                # 模擬數據生成 (更真實的隨機漫步)
-                np.random.seed(42)
-                days = 250 if "1" in period_years else 750 if "3" in period_years else 1250
-                dates = pd.date_range(end=date.today(), periods=days)
+            c1, c2, c3 = st.columns(3)
+            with c1: period_days = st.selectbox("回測長度", [250, 500, 750], index=0, format_func=lambda x: f"近 {x} 天")
+            with c2: init_capital = st.number_input("初始本金 (萬)", 10, 500, 100)
+            with c3: leverage = st.slider("模擬槓桿", 1, 3, 1)
+
+        if st.button("🚀 執行真實回測", type="primary"):
+            with st.spinner("正在下載並計算歷史數據..."):
+                dl = DataLoader()
+                dl.login_by_token(api_token=FINMIND_TOKEN)
                 
-                # 模擬策略報酬 (有正期望值)
-                daily_ret = np.random.normal(0.0015, 0.015, days) # 平均日賺 0.15%
-                cum_ret = (1 + daily_ret).cumprod() * init_capital
+                end_date = date.today().strftime("%Y-%m-%d")
+                start_date = (date.today() - timedelta(days=period_days + 150)).strftime("%Y-%m-%d")
+                df_hist = dl.taiwan_stock_daily("TAIEX", start_date=start_date, end_date=end_date)
                 
-                # 模擬大盤報酬 (較低波動)
-                benchmark_ret = np.random.normal(0.0005, 0.01, days)
-                benchmark_cum = (1 + benchmark_ret).cumprod() * init_capital
+                if df_hist.empty:
+                    st.error("❌ 無法取得歷史數據，請稍後再試")
+                else:
+                    df_hist['close'] = df_hist['close'].astype(float)
+                    df_hist['MA20'] = df_hist['close'].rolling(20).mean()
+                    df_hist['MA60'] = df_hist['close'].rolling(60).mean()
+                    df_hist = df_hist.dropna().tail(period_days).reset_index(drop=True)
+                    
+                    df_hist['Signal'] = (df_hist['close'] > df_hist['MA20']) & (df_hist['MA20'] > df_hist['MA60'])
+                    df_hist['Daily_Ret'] = df_hist['close'].pct_change().fillna(0)
+                    df_hist['Strategy_Ret'] = df_hist['Signal'].shift(1).fillna(False) * df_hist['Daily_Ret'] * leverage
+                    
+                    df_hist['Equity_Strategy'] = init_capital * (1 + df_hist['Strategy_Ret']).cumprod()
+                    df_hist['Equity_Benchmark'] = init_capital * (1 + df_hist['Daily_Ret']).cumprod()
+                    
+                    total_ret = (df_hist['Equity_Strategy'].iloc[-1] / init_capital - 1) * 100
+                    bench_ret = (df_hist['Equity_Benchmark'].iloc[-1] / init_capital - 1) * 100
+                    win_days = df_hist[df_hist['Strategy_Ret'] > 0]
+                    win_rate = len(win_days) / len(df_hist[df_hist['Signal'].shift(1)==True]) * 100 if len(df_hist[df_hist['Signal'].shift(1)==True]) > 0 else 0
+                    
+                    st.divider()
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric("💰 策略最終資產", f"{int(df_hist['Equity_Strategy'].iloc[-1]):,} 萬", f"{total_ret:+.1f}%")
+                    k2.metric("🐢 大盤同期表現", f"{bench_ret:+.1f}%", f"超額 {total_ret - bench_ret:+.1f}%", delta_color="off")
+                    k3.metric("🏆 交易勝率 (日)", f"{win_rate:.1f}%")
+                    k4.metric("📅 交易天數", f"{df_hist['Signal'].sum()} 天", f"佔比 {df_hist['Signal'].mean()*100:.0f}%")
 
-                # 2. 核心 KPI 儀表板
-                total_ret = (cum_ret[-1] - init_capital) / init_capital * 100
-                mdd = np.min(cum_ret / np.maximum.accumulate(cum_ret)) - 1
-                win_rate = np.sum(daily_ret > 0) / days * 100
-                
-                st.divider()
-                k1, k2, k3, k4 = st.columns(4)
-                k1.metric("💰 最終資產", f"{int(cum_ret[-1]):,} 萬", f"+{total_ret:.1f}%")
-                k2.metric("🏆 交易勝率", f"{win_rate:.1f}%", "高於平均")
-                k3.metric("📉 最大回撤 (MDD)", f"{mdd*100:.1f}%", "風險可控", delta_color="inverse")
-                k4.metric("📊 夏普比率", "1.85", "優秀 (>1.5)")
-
-                # 3. 權益曲線圖 (策略 vs 大盤)
-                fig_perf = go.Figure()
-                fig_perf.add_trace(go.Scatter(x=dates, y=cum_ret, name='貝伊果策略', line=dict(color='#00CC96', width=2)))
-                fig_perf.add_trace(go.Scatter(x=dates, y=benchmark_cum, name='大盤指數', line=dict(color='#EF553B', width=2, dash='dash')))
-                fig_perf.update_layout(title="資金權益曲線比較", yaxis_title="資產淨值 (萬)", hovermode="x unified", height=400)
-                st.plotly_chart(fig_perf, use_container_width=True)
-
-                # 4. 每月損益熱力圖 (模擬)
-                st.markdown("#### 📅 **每月損益表現**")
-                month_ret = np.random.randint(-5, 15, size=(4, 12)) # 4年 x 12月
-                fig_heat = px.imshow(month_ret, 
-                                    labels=dict(x="月份", y="年份", color="報酬%"),
-                                    x=['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-                                    y=['2026', '2025', '2024', '2023'],
-                                    color_continuous_scale="RdYlGn", text_auto=True)
-                fig_heat.update_layout(height=300)
-                st.plotly_chart(fig_heat, use_container_width=True)
-
-                # 5. 近期交易明細
-                st.markdown("#### 📝 **近期交易紀錄**")
-                trade_log = pd.DataFrame({
-                    "日期": dates[-5:][::-1].strftime('%Y-%m-%d'),
-                    "訊號": ["Buy CALL", "Sell PUT", "Buy CALL", "Close", "Buy CALL"],
-                    "標的": ["23000 CALL", "22500 PUT", "23200 CALL", "22800 CALL", "23500 CALL"],
-                    "損益": ["+12,500", "+5,400", "-3,200", "+18,000", "+8,900"],
-                    "狀態": ["✅ 獲利", "✅ 獲利", "❌ 停損", "✅ 獲利", "✅ 獲利"]
-                })
-                st.dataframe(trade_log, use_container_width=True, hide_index=True)
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(x=df_hist['date'], y=df_hist['Equity_Strategy'], name='貝伊果策略', line=dict(color='#00CC96', width=2)))
+                    fig.add_trace(go.Scatter(x=df_hist['date'], y=df_hist['Equity_Benchmark'], name='大盤指數', line=dict(color='#EF553B', width=2, dash='dash')))
+                    fig.update_layout(title="資金權益曲線 (真實歷史)", yaxis_title="資產淨值 (萬)", hovermode="x unified", height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    st.markdown("#### 📝 **近期策略訊號**")
+                    recent_df = df_hist.tail(10).copy()
+                    recent_df['訊號'] = recent_df['Signal'].apply(lambda x: "🟢 持有" if x else "⚪ 空手")
+                    recent_df['日期'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
+                    st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
 
 # --------------------------
 # Tab 5: 市場快報 (顯示優化版 + 真實新聞)
@@ -587,7 +568,6 @@ with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
     st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 每日 15:00 更新數據")
 
-    # ================= 1. 核心儀表板區 =================
     col_kpi1, col_kpi2 = st.columns([1, 1.5])
 
     with col_kpi1:
@@ -670,7 +650,6 @@ with tabs[5]:
 
     st.divider()
 
-    # ================= 2. 籌碼與數據區 =================
     col_chip, col_key = st.columns([1.5, 1])
 
     with col_chip:
@@ -700,7 +679,7 @@ with tabs[5]:
 
     st.markdown("---")
     
-    # ================= 3. 重點新聞區 (真實數據版) =================
+    # 重點新聞區 (真實數據版)
     st.markdown("#### 📰 **今日必讀頭條 (即時更新)**")
     
     with st.spinner("抓取最新新聞中..."):
