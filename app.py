@@ -603,97 +603,134 @@ with tabs[4]:
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
 
 # --------------------------
-# Tab 5: 市場快報 (全真實數據版)
+# Tab 5: 市場快報 (旗艦升級版 - 多因子溫度計)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
-    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 每日 15:00 更新法人籌碼")
+    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 綜合因子模型：趨勢+動能+籌碼")
 
-    # ================= 1. 核心儀表板區 (真實技術指標) =================
+    # ================= 1. 核心儀表板區 (多因子模型) =================
     col_kpi1, col_kpi2 = st.columns([1, 1.5])
 
     with col_kpi1:
-        st.markdown("#### 🌡️ **市場多空溫度計**")
+        st.markdown("#### 🌡️ **綜合多空溫度計**")
         
-        # 使用真實均線數據計算分數
-        bull_score = 50
-        if S_current > ma20: bull_score += 20 # 站上月線
-        if ma20 > ma60: bull_score += 20      # 均線多頭
-        if S_current > ma60: bull_score += 10 # 站上季線
+        # --- 因子 1: 趨勢分數 (Trend) ---
+        trend_score = 0
+        bias_20 = (S_current - ma20) / ma20 * 100
+        if S_current > ma20: trend_score += 15       # 站上月線
+        if ma20 > ma60: trend_score += 15            # 多頭排列
+        if S_current > ma60: trend_score += 10       # 站上季線
+        if bias_20 > 2.0: trend_score -= 5           # 乖離過大扣分(過熱)
+        
+        # --- 因子 2: 動能分數 (Momentum - KD) ---
+        # 簡易 KD 計算 (因為不想太複雜，這裡用最近9天模擬 RSV)
+        try:
+            rsv = (S_current - df_latest['min'].min()) / (df_latest['max'].max() - df_latest['min'].min()) * 100 if 'max' in df_latest else 50
+        except: rsv = 50
+        
+        mom_score = 0
+        if rsv > 80: mom_score = 10      # 超買區 (強勢但小心)
+        elif rsv < 20: mom_score = 5     # 超賣區 (反彈機會)
+        elif rsv > 50: mom_score = 20    # 多方強勢區
+        else: mom_score = 10             # 空方弱勢區
+        
+        # --- 因子 3: 籌碼分數 (Chip) ---
+        chip_score = 0
+        try:
+            last_chip = get_institutional_data(FINMIND_TOKEN)
+            net_buy = last_chip['net'].sum() if not last_chip.empty else 0
+            if net_buy > 50: chip_score = 20      # 大買 > 50億
+            elif net_buy > 0: chip_score = 15     # 小買
+            elif net_buy > -50: chip_score = 5    # 小賣
+            else: chip_score = 0                  # 大賣
+        except: chip_score = 10
+        
+        # --- 總分計算 ---
+        total_score = min(100, max(0, trend_score + mom_score + chip_score + 10)) # +10 為基礎分
         
         # 繪製儀表板
         fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = bull_score,
+            mode = "gauge+number+delta",
+            value = total_score,
+            delta = {'reference': 50, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
             domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "多空力道 ( >60 偏多 )", 'font': {'size': 20}},
+            title = {'text': "多空綜合評分", 'font': {'size': 20}},
             gauge = {
                 'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "white"},
-                'bar': {'color': "#ff4b4b" if bull_score < 40 else "#28a745" if bull_score > 60 else "#ffc107"},
+                'bar': {'color': "#ff4b4b" if total_score < 30 else "#28a745" if total_score > 70 else "#ffc107"},
                 'bgcolor': "rgba(0,0,0,0)",
                 'borderwidth': 2,
                 'bordercolor': "#333",
                 'steps': [
-                    {'range': [0, 40], 'color': '#550000'},   
-                    {'range': [40, 60], 'color': '#554400'},  
-                    {'range': [60, 100], 'color': '#003300'}], 
-                'threshold': {
-                    'line': {'color': "white", 'width': 4},
-                    'thickness': 0.75,
-                    'value': bull_score}
+                    {'range': [0, 30], 'color': 'rgba(255, 0, 0, 0.3)'},   
+                    {'range': [30, 70], 'color': 'rgba(255, 255, 0, 0.3)'},  
+                    {'range': [70, 100], 'color': 'rgba(0, 255, 0, 0.3)'}], 
             }
         ))
         
         fig_gauge.update_layout(
-            height=300, 
-            margin=dict(l=30, r=30, t=50, b=30),
+            height=280, 
+            margin=dict(l=30, r=30, t=30, b=30),
             paper_bgcolor="rgba(0,0,0,0)", 
             font={'color': "white"}
         )
         st.plotly_chart(fig_gauge, use_container_width=True)
+        
+        # 顯示細項得分
+        c1, c2, c3 = st.columns(3)
+        c1.metric("趨勢力", f"{trend_score}/40", help="均線與乖離")
+        c2.metric("動能力", f"{mom_score}/20", help="KD與RSV")
+        c3.metric("籌碼力", f"{chip_score}/20", help="法人買賣超")
 
     with col_kpi2:
-        st.markdown("#### 🤖 **貝伊果 AI 真實短評**")
+        st.markdown("#### 🤖 **貝伊果 AI 戰略解讀**")
         
-        # 根據真實分數給評語
-        if bull_score >= 70:
-            ai_comment = f"""
-            🔥 **多頭強勢格局**
-            目前指數 ({int(S_current)}) 站穩月線 ({int(ma20)}) 之上，且均線呈現多頭排列。
-            市場資金動能充沛，適合順勢操作。
-            **操作建議**：
-            1. 拉回不破月線皆為買點。
-            2. 可關注 Tab 2 的 Call 策略。
+        # 根據細膩分數給出精準建議
+        if total_score >= 75:
+            ai_title = "🚀 火力全開：強力多頭"
+            ai_desc = f"""
+            **評分 {total_score} 分：市場情緒極度樂觀！**
+            趨勢與籌碼同步偏多，這是利潤奔跑的時刻。
+            
+            ✅ **建議策略**：
+            1. **積極追價**：使用 Tab 2 的 Call 策略，可放大槓桿。
+            2. **移動停利**：沿著 MA10 線操作，不破不賣。
             """
-            box_color = "#d4edda"; text_color = "#155724"
-        elif bull_score <= 40:
-            ai_comment = f"""
-            ❄️ **空方壓力沈重**
-            目前指數 ({int(S_current)}) 落於月線 ({int(ma20)}) 之下，且上方套牢賣壓重。
-            **操作建議**：
-            1. 現金為王，切勿隨意摸底。
-            2. 等待指數站回 MA20 再考慮進場。
+            box_style = "border-left: 5px solid #28a745; background-color: rgba(40, 167, 69, 0.1);"
+        elif total_score >= 45:
+            ai_title = "⚖️ 步步為營：區間震盪"
+            ai_desc = f"""
+            **評分 {total_score} 分：多空勢力拉鋸中。**
+            雖然長線保護短線，但短線動能不足或籌碼鬆動。
+            
+            ⚠️ **建議策略**：
+            1. **高出低進**：接近箱型上緣減碼，回測支撐小買。
+            2. **賣方收租**：適合做 Credit Spread (價差單) 賺取時間價值。
             """
-            box_color = "#f8d7da"; text_color = "#721c24"
+            box_style = "border-left: 5px solid #ffc107; background-color: rgba(255, 193, 7, 0.1);"
         else:
-            ai_comment = f"""
-            ⚖️ **多空震盪整理**
-            指數在月線 ({int(ma20)}) 附近膠著，方向尚未明朗。
-            **操作建議**：
-            1. 區間操作，買黑賣紅。
-            2. 建議降低槓桿，或轉向 Tab 0 定投 ETF。
+            ai_title = "🛡️ 嚴防死守：空方來襲"
+            ai_desc = f"""
+            **評分 {total_score} 分：市場進入防禦狀態。**
+            趨勢破壞且法人賣壓湧現，下跌風險極高。
+            
+            ⛔ **建議策略**：
+            1. **現金為王**：清空所有短線多單。
+            2. **反向避險**：考慮買入 Put 或反向 ETF (如 00632R) 進行避險。
             """
-            box_color = "#fff3cd"; text_color = "#856404"
+            box_style = "border-left: 5px solid #dc3545; background-color: rgba(220, 53, 69, 0.1);"
 
         st.markdown(f"""
-        <div style="background-color: {box_color}; color: {text_color}; padding: 20px; border-radius: 10px; border-left: 5px solid {text_color};">
-            {ai_comment}
+        <div style="{box_style} padding: 15px; border-radius: 5px;">
+            <h3 style="margin:0; padding-bottom:10px;">{ai_title}</h3>
+            <p style="font-size: 16px; line-height: 1.6;">{ai_desc}</p>
         </div>
         """, unsafe_allow_html=True)
 
     st.divider()
 
-    # ================= 2. 真實籌碼與點位區 =================
+    # ================= 2. 真實籌碼與點位區 (維持原樣) =================
     col_chip, col_key = st.columns([1.5, 1])
 
     with col_chip:
@@ -703,12 +740,9 @@ with tabs[5]:
             df_chips = get_institutional_data(FINMIND_TOKEN)
             
         if not df_chips.empty:
-            # 處理名稱簡化
             name_map = {"Foreign_Investors": "外資", "Investment_Trust": "投信", "Dealer_Self": "自營商(自行)", "Dealer_Hedging": "自營商(避險)"}
-            # 注意：FinMind 回傳名稱可能略有不同，這裡做通用處理
             df_chips['name_tw'] = df_chips['name'].map(name_map).fillna(df_chips['name'])
             
-            # 繪圖
             fig_chips = px.bar(df_chips, x="name_tw", y="net", color="net",
                               color_continuous_scale=["green", "red"],
                               labels={"net": "買賣超(億)", "name_tw": "法人身分"},
@@ -717,7 +751,7 @@ with tabs[5]:
             fig_chips.update_layout(height=300)
             st.plotly_chart(fig_chips, use_container_width=True)
         else:
-            st.warning("⚠️ 暫無法人資料 (通常下午 3 點後更新)")
+            st.warning("⚠️ 暫無法人資料 (下午 3 點後更新)")
 
     with col_key:
         st.markdown("#### 🔑 **關鍵點位 (真實 K 線)**")
@@ -735,7 +769,7 @@ with tabs[5]:
 
     st.markdown("---")
     
-    # ================= 3. 真實新聞區 =================
+    # ================= 3. 真實新聞區 (維持原樣) =================
     st.markdown("#### 📰 **今日必讀頭條 (即時更新)**")
     
     with st.spinner("抓取最新新聞中..."):
@@ -757,6 +791,7 @@ with tabs[5]:
             st.divider()
     else:
         st.warning("⚠️ 目前無最新新聞，或 API 連線忙碌中。")
+
 
 # --------------------------
 # Tab 6~14: 擴充預留位
