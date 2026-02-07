@@ -229,10 +229,7 @@ with tabs[1]:
         else:
             st.error("🛑 **紅燈：風險過高，暫停槓桿操作**")
 # --------------------------
-# Tab 2: 新手 CALL 獵人 (整數顯示版)
-# --------------------------
-# --------------------------
-# Tab 2: 新手 CALL 獵人 (槓桿小數點修正版)
+# Tab 2: 新手 CALL 獵人 (拉桿小數點修正版)
 # --------------------------
 with tabs[2]:
     st.markdown("### 🔰 **Lead Call 策略選號**")
@@ -254,7 +251,10 @@ with tabs[2]:
         with c2: 
             sel_con = st.selectbox("合約月份", available_contracts, index=len(available_contracts)-1)
             
-        with c3: target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0)
+        with c3: 
+            # ✅ 槓桿拉桿：設定 format="%.1f" 顯示小數點後一位
+            target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0, 0.1, format="%.1f")
+            
         with c4: is_safe = st.checkbox("穩健濾網", True)
         
         if st.button("🎯 **尋找最佳 CALL**", type="primary", use_container_width=True):
@@ -289,7 +289,7 @@ with tabs[2]:
                     res.append({
                         "K": int(K), 
                         "P": int(round(P)), 
-                        "Lev": lev, # 保留浮點數以便計算
+                        "Lev": lev, 
                         "Delta": abs(d), 
                         "Win": int(calculate_win_rate(d, days)), 
                         "Diff": abs(lev - target_lev),
@@ -309,7 +309,6 @@ with tabs[2]:
                 with rc1:
                     st.markdown(f"#### 🏆 {sel_con} **{best['K']} CALL**")
                     
-                    # ✅ 槓桿顯示小數點後一位 (例如 5.2x)
                     st.metric(f"{best['Type']}", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
                     
                     if best['Vol'] == 0:
@@ -317,7 +316,6 @@ with tabs[2]:
                     else:
                         st.caption(f"成交量: {best['Vol']} | 勝率: {best['Win']}%")
                         
-                    # ✅ 分享按鈕也顯示小數點後一位
                     if st.button("📱 分享此策略", key="share_btn"):
                         st.balloons()
                         st.code(f"台指{int(S_current)}，我用貝伊果屋選了 {best['K']} CALL ({best['Type']})，槓桿{best['Lev']:.1f}x！")
@@ -331,15 +329,14 @@ with tabs[2]:
                 st.markdown("---")
                 st.caption("📋 其他候選合約")
                 other_df = pd.DataFrame(res[:5])
-                
-                # ✅ 表格內的槓桿也統一顯示小數點後一位
                 display_df = other_df[["K", "P", "Lev", "Type", "Win"]].copy()
-                display_df["Lev"] = display_df["Lev"].map(lambda x: f"{x:.1f}") # 格式化為字串
+                display_df["Lev"] = display_df["Lev"].map(lambda x: f"{x:.1f}")
                 
                 st.dataframe(display_df.rename(columns={"K":"履約價", "P":"價格", "Lev":"槓桿", "Type":"類型", "Win":"勝率"}), hide_index=True)
                 
             else:
                 st.warning(f"⚠️ {sel_con} 有資料，但篩選後無符合結果。")
+
 
 # --------------------------
 # Tab 3: 專業戰情 (Pro功能)
