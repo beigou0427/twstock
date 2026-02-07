@@ -495,68 +495,136 @@ with tabs[4]:
             st.metric("策略總報酬", "+145%", "夏普比率 1.8")
             st.success("✅ 回測結果：顯著優於大盤")
 # --------------------------
-# Tab 5: 市場快報 (原擴充功能 1)
+# Tab 5: 市場快報 (旗艦完善版)
 # --------------------------
 with tabs[5]:
-    st.markdown("## 📢 **市場快報中心**")
-    st.info("💡 專為忙碌投資人設計：30秒掌握今日重點")
+    st.markdown("## 📰 **市場快報中心**")
+    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 每日 15:00 更新數據")
 
-    # 1. 核心指標看板
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        change_pct = (S_current - ma20) / ma20 * 100
-        st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}% (vs月線)")
-    with col2:
-        ma_status = "🔥 多頭排列" if ma20 > ma60 else "❄️ 空頭/盤整"
-        st.metric("均線架構", ma_status, f"MA20: {int(ma20)}")
-    with col3:
-        # 模擬成交量變化 (實戰可接 API)
-        vol_change = "+15%" 
-        st.metric("預估成交量", "3,200億", vol_change)
-    with col4:
-        # AI 綜合建議
-        score = 0
-        if S_current > ma20: score += 1
-        if ma20 > ma60: score += 1
-        signal = "🟢 積極 Buy CALL" if score == 2 else "🟡 觀望/定投" if score == 1 else "🔴 現金為王"
-        st.metric("貝伊果 AI 建議", signal)
+    # ================= 1. 核心儀表板區 =================
+    col_kpi1, col_kpi2 = st.columns([1, 1.5])
+
+    with col_kpi1:
+        st.markdown("#### 🌡️ **市場多空溫度計**")
+        
+        # 計算多空分數 (0~100)
+        bull_score = 50
+        if S_current > ma20: bull_score += 20
+        if ma20 > ma60: bull_score += 20
+        if S_current > ma60: bull_score += 10
+        
+        # 繪製儀表板
+        fig_gauge = go.Figure(go.Indicator(
+            mode = "gauge+number",
+            value = bull_score,
+            domain = {'x': [0, 1], 'y': [0, 1]},
+            title = {'text': "多空力道 ( >60 偏多 )"},
+            gauge = {
+                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                'bar': {'color': "#ff4b4b" if bull_score < 40 else "#28a745" if bull_score > 60 else "#ffc107"},
+                'steps': [
+                    {'range': [0, 40], 'color': 'rgba(255, 75, 75, 0.2)'},
+                    {'range': [40, 60], 'color': 'rgba(255, 193, 7, 0.2)'},
+                    {'range': [60, 100], 'color': 'rgba(40, 167, 69, 0.2)'}],
+                'threshold': {
+                    'line': {'color': "red", 'width': 4},
+                    'thickness': 0.75,
+                    'value': 90}}))
+        fig_gauge.update_layout(height=250, margin=dict(l=20,r=20,t=30,b=20))
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+    with col_kpi2:
+        st.markdown("#### 🤖 **貝伊果 AI 每日短評**")
+        
+        # 根據技術面生成文案
+        if bull_score >= 70:
+            ai_comment = """
+            🔥 **多頭氣盛，順勢而為！**
+            目前指數站穩月線之上，且均線呈現多頭排列，顯示市場資金充沛。
+            **操作建議**：
+            1. 積極者可利用 Tab 2 尋找 Lead Call 機會。
+            2. 拉回不破 MA20 皆為買點。
+            """
+            box_color = "#d4edda" # 淺綠
+            text_color = "#155724"
+        elif bull_score <= 30:
+            ai_comment = """
+            ❄️ **空方控盤，保守為上！**
+            指數跌破重要支撐，上方套牢賣壓沈重。切勿隨意摸底。
+            **操作建議**：
+            1. 暫停所有 Call 買方策略。
+            2. 保留現金，或回到 Tab 0 進行小額定投。
+            """
+            box_color = "#f8d7da" # 淺紅
+            text_color = "#721c24"
+        else:
+            ai_comment = """
+            ⚖️ **多空拉鋸，區間震盪！**
+            目前指數在月線附近徘徊，方向不明確。
+            **操作建議**：
+            1. 減少操作頻率，多看少做。
+            2. 若要進場，建議選擇遠月合約降低時間價值耗損。
+            """
+            box_color = "#fff3cd" # 淺黃
+            text_color = "#856404"
+
+        st.markdown(f"""
+        <div style="background-color: {box_color}; color: {text_color}; padding: 20px; border-radius: 10px; border-left: 5px solid {text_color};">
+            {ai_comment}
+        </div>
+        """, unsafe_allow_html=True)
 
     st.divider()
 
-    # 2. 重點新聞摘要 (模擬數據)
-    col_news, col_sector = st.columns([1.5, 1])
+    # ================= 2. 籌碼與數據區 =================
+    col_chip, col_key = st.columns([1.5, 1])
+
+    with col_chip:
+        st.markdown("#### 💰 **法人籌碼動向 (模擬數據)**")
+        # 模擬三大法人數據
+        chips_data = {
+            "法人": ["外資", "投信", "自營商"],
+            "買賣超 (億)": [np.random.randint(-150, 150), np.random.randint(0, 50), np.random.randint(-50, 50)]
+        }
+        fig_chips = px.bar(chips_data, x="法人", y="買賣超 (億)", color="買賣超 (億)",
+                          color_continuous_scale=["green", "red"],
+                          text="買賣超 (億)", title="今日三大法人買賣超")
+        fig_chips.update_traces(texttemplate='%{text} 億', textposition='outside')
+        fig_chips.update_layout(height=300)
+        st.plotly_chart(fig_chips, use_container_width=True)
+
+    with col_key:
+        st.markdown("#### 🔑 **關鍵點位監控**")
+        
+        # 計算支撐壓力
+        pressure = int(S_current * 1.02 / 100) * 100 # 上方壓力 (整數關卡)
+        support = int(S_current * 0.98 / 100) * 100  # 下方支撐
+        
+        st.metric("🛑 上方壓力 (2%)", f"{pressure}", delta=f"{pressure-S_current:.0f}", delta_color="inverse")
+        st.metric("🏠 目前點位", f"{int(S_current)}")
+        st.metric("🛡️ 下方支撐 (-2%)", f"{support}", delta=f"{support-S_current:.0f}")
+        
+        st.caption("💡 支撐壓力僅供參考，請搭配量能判斷")
+
+    st.markdown("---")
     
-    with col_news:
-        st.markdown("### 📰 **今日必讀頭條**")
-        st.markdown("""
-        - **[台股]** 台積電法說會報喜，ADR 大漲 5%，預期帶動半導體族群。
-        - **[國際]** 聯準會暗示降息循環啟動，美元指數跌破 102 關卡。
-        - **[籌碼]** 外資昨日買超 150 億，期貨淨多單增加 3000 口。
-        - **[產業]** AI 伺服器需求強勁，散熱模組供不應求。
-        """)
-        st.caption(f"更新時間：{latest_date.strftime('%Y-%m-%d')} 08:30")
-
-    with col_sector:
-        st.markdown("### 🔥 **強勢族群**")
-        # 模擬強勢股數據
-        sector_data = pd.DataFrame({
-            "族群": ["半導體", "AI 組裝", "重電"],
-            "漲跌幅": ["+2.5%", "+1.8%", "+1.2%"],
-            "資金流向": ["🔥 流入", "🔥 流入", "⚖️ 持平"]
-        })
-        st.dataframe(sector_data, hide_index=True, use_container_width=True)
-
-    st.divider()
+    # ================= 3. 重點新聞區 =================
+    st.markdown("#### 📰 **今日必讀頭條**")
     
-    # 3. 恐慌貪婪指數 (模擬儀表板)
-    st.markdown("### 😨 **市場情緒：恐慌貪婪指數**")
-    sentiment_val = 65 # 模擬值
-    st.progress(sentiment_val / 100)
-    c_sent1, c_sent2, c_sent3 = st.columns([1, 8, 1])
-    with c_sent1: st.write("😨 恐慌")
-    with c_sent2: st.markdown(f"<div style='text-align: center; font-weight: bold; font-size: 20px;'>目前數值：{sentiment_val} (貪婪)</div>", unsafe_allow_html=True)
-    with c_sent3: st.write("🤑 貪婪")
-
+    # 模擬新聞
+    news_items = [
+        {"title": "台積電法說會報喜，先進製程產能滿載", "tag": "半導體", "time": "09:05"},
+        {"title": "聯準會暗示利率維持高檔，美債殖利率反彈", "tag": "總經", "time": "08:30"},
+        {"title": "AI 伺服器需求強勁，供應鏈股價齊揚", "tag": "AI", "time": "08:15"},
+        {"title": "新台幣早盤升值 5.2 分，外資熱錢回流", "tag": "匯市", "time": "09:10"},
+    ]
+    
+    for news in news_items:
+        col_n1, col_n2 = st.columns([4, 1])
+        with col_n1:
+            st.markdown(f"**[{news['tag']}]** {news['title']}")
+        with col_n2:
+            st.caption(f"{news['time']}")
 
 with tabs[6]:
     st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
