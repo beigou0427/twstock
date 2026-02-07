@@ -601,9 +601,8 @@ with tabs[4]:
                     recent_df['訊號'] = recent_df['Signal'].apply(lambda x: "🟢 持有" if x else "⚪ 空手")
                     recent_df['日期'] = pd.to_datetime(recent_df['date']).dt.strftime('%Y-%m-%d')
                     st.dataframe(recent_df[['日期', 'close', 'MA20', '訊號']].sort_values("日期", ascending=False), hide_index=True)
-
 # --------------------------
-# Tab 5: 市場快報 (旗艦升級版 - 多因子溫度計)
+# Tab 5: 市場快報 (旗艦升級版 - 多因子溫度計 + AI 戰略)
 # --------------------------
 with tabs[5]:
     st.markdown("## 📰 **市場快報中心**")
@@ -686,47 +685,112 @@ with tabs[5]:
     with col_kpi2:
         st.markdown("#### 🤖 **貝伊果 AI 戰略解讀**")
         
-        # 根據細膩分數給出精準建議
-        if total_score >= 75:
-            ai_title = "🚀 火力全開：強力多頭"
+        # --- 5 階動態戰略情境 ---
+        if total_score >= 80:
+            # 1. 極度狂熱 (80-100)
+            ai_title = "🔥 **多頭狂熱：利潤奔跑模式**"
+            ai_status = "極度樂觀"
             ai_desc = f"""
-            **評分 {total_score} 分：市場情緒極度樂觀！**
-            趨勢與籌碼同步偏多，這是利潤奔跑的時刻。
+            **市場進入「瘋狗浪」階段！** 資金瘋狂湧入，均線發散向上，這是順勢交易者的天堂。
+            但請注意：乖離率過大隨時可能急殺洗盤，**心臟小的不要追**。
             
-            ✅ **建議策略**：
-            1. **積極追價**：使用 Tab 2 的 Call 策略，可放大槓桿。
-            2. **移動停利**：沿著 MA10 線操作，不破不賣。
+            ⚔️ **攻擊策略**：
+            *   **期權**：Tab 2 積極買進價外 1-2 檔 Call，槓桿全開。
+            *   **現貨**：持有強勢股，沿 5 日線移動停利。
             """
-            box_style = "border-left: 5px solid #28a745; background-color: rgba(40, 167, 69, 0.1);"
-        elif total_score >= 45:
-            ai_title = "⚖️ 步步為營：區間震盪"
+            advice_list = ["✅ **追價要快**：猶豫就沒了", "🛑 **停利要狠**：破線就跑"]
+            box_color = "rgba(220, 53, 69, 0.1)" # 紅色底 (台股紅是漲)
+            border_color = "#dc3545"
+            
+        elif total_score >= 60:
+            # 2. 穩健多頭 (60-79)
+            ai_title = "🐂 **多頭排列：穩健獲利模式**"
+            ai_status = "樂觀偏多"
             ai_desc = f"""
-            **評分 {total_score} 分：多空勢力拉鋸中。**
-            雖然長線保護短線，但短線動能不足或籌碼鬆動。
+            **趨勢溫和向上，最舒服的盤勢。** 指數站穩月線，籌碼安定。
+            這時候不要頻繁進出，**「抱得住」才是贏家**。
             
-            ⚠️ **建議策略**：
-            1. **高出低進**：接近箱型上緣減碼，回測支撐小買。
-            2. **賣方收租**：適合做 Credit Spread (價差單) 賺取時間價值。
+            ⚔️ **攻擊策略**：
+            *   **期權**：Tab 2 選擇價平 Call，賺取波段漲幅。
+            *   **ETF**：Tab 0 的 0050/QQQ 放心續抱。
             """
-            box_style = "border-left: 5px solid #ffc107; background-color: rgba(255, 193, 7, 0.1);"
-        else:
-            ai_title = "🛡️ 嚴防死守：空方來襲"
-            ai_desc = f"""
-            **評分 {total_score} 分：市場進入防禦狀態。**
-            趨勢破壞且法人賣壓湧現，下跌風險極高。
-            
-            ⛔ **建議策略**：
-            1. **現金為王**：清空所有短線多單。
-            2. **反向避險**：考慮買入 Put 或反向 ETF (如 00632R) 進行避險。
-            """
-            box_style = "border-left: 5px solid #dc3545; background-color: rgba(220, 53, 69, 0.1);"
+            advice_list = ["✅ **拉回找買點**：靠近 MA20 是機會", "🛑 **減少當沖**：波段利潤更大"]
+            box_color = "rgba(40, 167, 69, 0.1)" # 綠色底
+            border_color = "#28a745"
 
+        elif total_score >= 40:
+            # 3. 混沌盤整 (40-59)
+            ai_title = "⚖️ **多空膠著：雙巴震盪模式**"
+            ai_status = "中立觀望"
+            ai_desc = f"""
+            **現在是「絞肉機」行情！** 均線糾結，忽漲忽跌，方向感極差。
+            這時候**「不做」就是「賺」**，頻繁交易只會被磨損本金。
+            
+            🛡️ **防禦策略**：
+            *   **期權**：切勿 Buy Call/Put！適合做 **Credit Spread (收租)** 賺時間價值。
+            *   **資金**：保留 7 成現金，等待突破。
+            """
+            advice_list = ["✅ **區間操作**：箱頂賣、箱底買", "🛑 **嚴禁追單**：突破往往是假突破"]
+            box_color = "rgba(255, 193, 7, 0.1)" # 黃色底
+            border_color = "#ffc107"
+
+        elif total_score >= 20:
+            # 4. 轉弱修正 (20-39)
+            ai_title = "🐻 **空方試探：保守防禦模式**"
+            ai_status = "謹慎偏空"
+            ai_desc = f"""
+            **支撐鬆動，風險正在堆積！** 指數跌破月線，反彈無力。
+            多單請務必減碼，不要與趨勢作對。
+            
+            🛡️ **防禦策略**：
+            *   **現貨**：反彈到壓力區（如 MA20）就減碼。
+            *   **避險**：可小量買進 00632R (台灣50反1) 或 Put。
+            """
+            advice_list = ["✅ **現金為王**：活著最重要", "🛑 **別急著抄底**：還沒跌完"]
+            box_color = "rgba(23, 162, 184, 0.1)" # 藍色冷靜底
+            border_color = "#17a2b8"
+
+        else:
+            # 5. 空頭崩盤 (0-19)
+            ai_title = "⛈️ **空頭屠殺：全面撤退模式**"
+            ai_status = "極度恐慌"
+            ai_desc = f"""
+            **警報響起！這是要在市場活下去的關鍵時刻。** 
+            均線蓋頭反壓，法人大舉提款。此刻**任何反彈都是逃命波**。
+            
+            ⚔️ **空方策略**：
+            *   **期權**：積極 Buy Put，但要快進快出。
+            *   **心態**：承認虧損，清空多單，留得青山在。
+            """
+            advice_list = ["✅ **果斷停損**：不要有僥倖心態", "🛑 **絕對禁止攤平**：會越攤越平"]
+            box_color = "rgba(52, 58, 64, 0.1)" # 深灰沈重底
+            border_color = "#343a40"
+
+        # --- 渲染 UI ---
         st.markdown(f"""
-        <div style="{box_style} padding: 15px; border-radius: 5px;">
-            <h3 style="margin:0; padding-bottom:10px;">{ai_title}</h3>
-            <p style="font-size: 16px; line-height: 1.6;">{ai_desc}</p>
+        <div style="border-left: 5px solid {border_color}; background-color: {box_color}; padding: 15px; border-radius: 5px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 style="margin:0; font-size: 1.3em;">{ai_title}</h3>
+                <span style="background-color:{border_color}; color:white; padding: 2px 8px; border-radius: 10px; font-size: 0.8em;">{ai_status}</span>
+            </div>
+            <p style="font-size: 15px; line-height: 1.6; margin-bottom: 10px;">{ai_desc}</p>
+            <div style="background-color: rgba(255,255,255,0.05); padding: 8px; border-radius: 5px;">
+                {'<br>'.join([item for item in advice_list])}
+            </div>
         </div>
         """, unsafe_allow_html=True)
+        
+        # --- 隨機操盤金句 ---
+        quotes = [
+            "「行情總在絕望中誕生，在半信半疑中成長。」",
+            "「截斷虧損，讓利潤奔跑。」",
+            "「不要預測行情，要跟隨行情。」",
+            "「新手看價，老手看量，高手看籌碼。」",
+            "「市場永遠是對的，錯的只有你的帳戶。」"
+        ]
+        import random
+        quote = random.choice(quotes)
+        st.caption(f"📜 **貝伊果心法**：{quote}")
 
     st.divider()
 
