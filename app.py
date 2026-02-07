@@ -811,21 +811,81 @@ with tabs[5]:
 
     st.markdown("---")
     
-    # ================= 3. 真實新聞區 (不變) =================
-    st.markdown("#### 📰 **今日必讀頭條 (即時更新)**")
-    with st.spinner("抓取最新新聞中..."):
-        real_news_df = get_real_news(FINMIND_TOKEN)
-    if not real_news_df.empty:
-        for _, row in real_news_df.iterrows():
-            col_n1, col_n2 = st.columns([4, 1])
-            with col_n1:
-                st.markdown(f"**[{row.get('source','新聞')}]** [{row.get('title','無標題')}]({row.get('link','#')})")
-                if 'description' in row and row['description']: st.caption(f"{row['description'][:60]}...")
-            with col_n2:
-                st.caption(f"🕒 {pd.to_datetime(row['date']).strftime('%m/%d %H:%M')}")
-            st.divider()
-    else:
-        st.warning("⚠️ 目前無最新新聞。")
+    # ================= 3. 全球市場情報中心 (旗艦版) =================
+    st.markdown("#### 🌍 **全球市場情報中心**")
+    
+    with st.spinner("📰 即時抓取全球財經情報中..."):
+        # === A. 台股新聞 (FinMind) ===
+        taiwan_news = get_real_news(FINMIND_TOKEN)
+        
+        # === B. 國際新聞 (RSS 多源) ===
+        global_news = []
+        rss_sources = {
+            "📈 Yahoo Finance": "https://tw.stock.yahoo.com/rss/index.rss",
+            "🌐 Reuters 全球": "https://feeds.reuters.com/reuters/businessNews",
+            "📊 CNBC Asia": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+            "💼 Bloomberg": "https://feeds.bloomberg.com/markets/news.rss"
+        }
+        
+        for title, url in list(rss_sources.items())[:3]:  # 取前3個避免超時
+            try:
+                feed = feedparser.parse(url)
+                for entry in feed.entries[:1]:  # 每源取最新1筆
+                    global_news.append({
+                        'title': entry.title,
+                        'link': entry.link,
+                        'source': title,
+                        'time': entry.get('published', 'N/A'),
+                        'summary': entry.get('summary', '')[:120] + '...'
+                    })
+            except:
+                pass
+        
+        # === C. 合併與情緒分析 ===
+        all_news = []
+        if not taiwan_news.empty:
+            for _, row in taiwan_news.head(3).iterrows():
+                all_news.append({
+                    'title': row.get('title', '無標題'),
+                    'link': row.get('link', '#'),
+                    'source': f"🇹🇼 {row.get('source', '台股新聞')}",
+                    'time': pd.to_datetime(row['date']).strftime('%m/%d %H:%M'),
+                    'summary': row.get('description', '')[:120] + '...'
+                })
+        
+        all_news.extend(global_news[:3])  # 國際新聞取前3
+        
+        # === D. 簡單情緒分析 (關鍵字計數) ===
+        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '買超', '強勢', '反彈']
+        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '賣超', '弱勢', '崩盤']
+        
+        pos_score, neg_score = 0, 0
+        for news in all_news:
+            text = news['title'] + news['summary']
+            for kw in pos_keywords: pos_score += text.count(kw)
+            for kw in neg_keywords: neg_score += text.count(kw)
+        
+        total_signals = pos_score + neg_score
+        sentiment = (pos_score - neg_score) / max(total_signals, 1)
+        sentiment_label = "🟢 看多共振" if sentiment > 0.3 else "🟡 中性" if sentiment > -0.3 else "🔴 看空恐慌"
+    
+    # === E. 情報總覽儀表板 ===
+    col_sent1, col_sent2 = st.columns([1, 1])
+    with col_sent1:
+        st.metric("📰 情報總數", f"{len(all_news)} 則", delta=f"({pos_score}+/{neg_score}-)")
+    with col_sent2:
+        st.metric("📊 市場情緒", sentiment_label, f"{sentiment*100:+.0f}%")
+    
+    st.divider()
+    
+    # === F. 新聞卡片展示 ===
+    for i, news in enumerate(all_news[:8]):  # 最多顯示8則
+        col_n1, col_n2 = st.columns([4, 1])
+        with col_n1:
+            source_emoji = "🇹🇼" if "台股" in news['source'] else "🌍"
+            st.markdown(f"**{source_emoji} {news['source']}** [{news['title']}]({news['link']})")
+            st.caption(f"{news['summary']}")
+        with
 
 # --------------------------
 # Tab 6~14: 擴充預留位
