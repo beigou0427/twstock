@@ -1,7 +1,6 @@
 """
-🔰 貝伊果屋 - 財富雙軌系統 (眾籌完整修正版)
-修正項目：number_input max_value error
-整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 眾籌行銷
+🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版)
+整合：ETF定投 + 趨勢判斷 + Lead Call策略 + 專業分析 + 擴充預留
 """
 
 import streamlit as st
@@ -18,7 +17,7 @@ import plotly.express as px
 # =========================================
 st.set_page_config(page_title="貝伊果屋-財富雙軌系統", layout="wide", page_icon="🥯")
 
-# CSS 優化 (眾籌視覺)
+# CSS 優化
 st.markdown("""
 <style>
 .big-font {font-size:20px !important; font-weight:bold;}
@@ -33,8 +32,8 @@ init_state = {
     'user_type': 'free',
     'is_pro': False,
     'disclaimer_accepted': False,
-    'points': 150,
-    'checkin_streak': 2
+    'search_results': None,
+    'selected_contract': None
 }
 for key, value in init_state.items():
     if key not in st.session_state:
@@ -50,24 +49,24 @@ def get_data(token):
     dl = DataLoader()
     dl.login_by_token(api_token=token)
     try:
-        # 抓取較多天數以計算簡單趨勢
         index_df = dl.taiwan_stock_daily("TAIEX", start_date=(date.today()-timedelta(days=100)).strftime("%Y-%m-%d"))
         S = float(index_df["close"].iloc[-1]) if not index_df.empty else 23000.0
-        # 簡單計算 MA (模擬數據，若資料不足)
         ma20 = index_df['close'].rolling(20).mean().iloc[-1] if len(index_df) > 20 else S * 0.98
         ma60 = index_df['close'].rolling(60).mean().iloc[-1] if len(index_df) > 60 else S * 0.95
     except: 
         S = 23000.0
         ma20, ma60 = 22800.0, 22500.0
 
-    opt_start = (date.today() - timedelta(days=5)).strftime("%Y-%m-%d")
+    opt_start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
     df = dl.taiwan_option_daily("TXO", start_date=opt_start)
     
     if df.empty: return S, pd.DataFrame(), pd.to_datetime(date.today()), ma20, ma60
     
     df["date"] = pd.to_datetime(df["date"])
     latest = df["date"].max()
-    return S, df[df["date"] == latest].copy(), latest, ma20, ma60
+    df_latest = df[df["date"] == latest].copy()
+    
+    return S, df_latest, latest, ma20, ma60
 
 def bs_price_delta(S, K, T, r, sigma, cp):
     if T <= 0: return 0.0, 0.5
@@ -81,7 +80,6 @@ def bs_price_delta(S, K, T, r, sigma, cp):
 def calculate_win_rate(delta, days):
     return min(max((abs(delta)*0.7 + 0.8*0.3)*100, 1), 99)
 
-# 專業圖表函數 (Payoff & OI)
 def plot_payoff(K, premium, cp):
     x_range = np.linspace(K * 0.9, K * 1.1, 100)
     profit = []
@@ -97,7 +95,6 @@ def plot_payoff(K, premium, cp):
 
 def plot_oi_walls(current_price):
     strikes = np.arange(int(current_price)-600, int(current_price)+600, 100)
-    # 模擬 OI 數據
     np.random.seed(int(current_price)) 
     call_oi = np.random.randint(2000, 15000, len(strikes))
     put_oi = np.random.randint(2000, 15000, len(strikes))
@@ -118,7 +115,7 @@ with st.spinner("🚀 啟動財富引擎..."):
         st.stop()
 
 # =========================
-# 側邊欄 (簡潔版：移除眾籌與簽到)
+# 側邊欄 (簡潔版)
 # =========================================
 with st.sidebar:
     st.markdown("## 🥯 **貝伊果屋**")
@@ -136,9 +133,30 @@ with st.sidebar:
     st.caption("📊 功能說明：\n• Tab0: ETF定投\n• Tab1: 趨勢判斷\n• Tab2: CALL獵人")
 
 # =========================
-# 5. 主介面 (5大分頁)
+# 5. 主介面 & 市場快報
 # =========================================
 st.markdown("# 🥯 **貝伊果屋：財富雙軌系統**")
+
+# 市場快報 (貼在所有 Tab 之前)
+st.markdown("---")
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    change_pct = (S_current - ma20) / ma20 * 100
+    st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}%")
+
+with col2:
+    ma_trend = "🔥 多頭" if ma20 > ma60 else "⚖️ 盤整"
+    st.metric("均線狀態", ma_trend)
+
+with col3:
+    st.metric("資料更新", latest_date.strftime("%m/%d"))
+
+with col4:
+    signal = "🟢 CALL時機" if S_current > ma20 > ma60 else "🟡 觀望"
+    st.metric("今日建議", signal)
+
+st.markdown("---")
 
 # 合規聲明
 if not st.session_state.disclaimer_accepted:
@@ -148,14 +166,18 @@ if not st.session_state.disclaimer_accepted:
         st.rerun()
     st.stop()
 
-# 分頁導航
-tabs = st.tabs([
+# 分頁導航 (5個功能 + 10個升級槽)
+tab_names = [
     "🏦 **穩健ETF**", 
     "📈 **趨勢判斷**", 
     "🔰 **CALL獵人**", 
     "🔥 **專業戰情**", 
     "📊 **歷史回測**"
-])
+]
+# 增加 10 個擴充 Tab 名稱 (隱藏或預留)
+tab_names += [f"🛠️ 擴充 {i+1}" for i in range(10)]
+
+tabs = st.tabs(tab_names)
 
 # --------------------------
 # Tab 0: 穩健 ETF (純定投版)
@@ -194,25 +216,23 @@ with tabs[0]:
     3. **絕對不要看短期漲跌**
     4. 10年後檢視成果
     """)
+
 # --------------------------
 # Tab 1: 趨勢判斷 (完整修復版)
 # --------------------------
 with tabs[1]:
     st.markdown("## 🚦 **市場趨勢儀表板**")
     
-    # 1. 三大指標卡片
     col_idx, col_ma, col_signal = st.columns(3)
     
     with col_idx:
         st.metric("📈 加權指數", f"{S_current:,.0f}", delta=f"{S_current-ma20:.0f}")
     
     with col_ma:
-        # MA 趨勢
         ma_trend = "🔥 多頭排列" if ma20 > ma60 else "⚖️ 盤整" if abs(ma20-ma60)/S_current < 0.01 else "❄️ 空頭排列"
         st.metric("均線狀態", ma_trend, f"20日: {ma20:,.0f}")
     
     with col_signal:
-        # 綜合燈號
         trend_score = 0
         if S_current > ma20: trend_score += 1
         if ma20 > ma60: trend_score += 1
@@ -231,13 +251,10 @@ with tabs[1]:
     
     st.divider()
     
-    # 2. 趨勢圖表 (簡單均線)
     st.markdown("### 📉 **趨勢視覺化**")
     fig = go.Figure()
     
-    # 模擬近期數據
     x = np.arange(20)
-    # 使用 np.cumprod 模擬簡單走勢
     np.random.seed(42)
     price_line = S_current * (1 + np.random.normal(0, 0.005, 20).cumsum())
     ma20_line = np.linspace(ma20*0.99, ma20*1.01, 20)
@@ -250,7 +267,6 @@ with tabs[1]:
     fig.update_layout(height=300, title="近期趨勢 (綠燈 = 20 > 60日線)", showlegend=True)
     st.plotly_chart(fig, use_container_width=True)
     
-    # 3. 操作建議
     st.markdown("### 🎯 **今日操作建議**")
     
     if trend_score == 2:
@@ -275,18 +291,17 @@ with tabs[1]:
         - 🛡️ 只做 ETF 定投
         """)
 
-
 # --------------------------
-# Tab 2: 新手 CALL 獵人 (狀態保存版)
+# Tab 2: 新手 CALL 獵人 (狀態保存+畫面修復版)
 # --------------------------
 with tabs[2]:
     st.markdown("### 🔰 **Lead Call 策略選號**")
     
-    # 1. 資料前處理
+    # 資料前處理
     if not df_latest.empty:
         df_latest["call_put"] = df_latest["call_put"].astype(str).str.upper().str.strip()
     
-    # 2. 篩選有 CALL 資料的合約
+    # 篩選可用合約
     available_contracts = []
     if not df_latest.empty:
         call_df = df_latest[df_latest["call_put"] == "CALL"]
@@ -295,21 +310,29 @@ with tabs[2]:
     if not available_contracts:
         st.error("⚠️ 找不到任何 CALL 合約資料 (可能是資料源問題)")
     else:
+        # 搜尋區塊
         c1, c2, c3, c4 = st.columns([1, 2, 1.5, 1])
         with c1: st.success("📈 **固定看漲**")
         
         with c2: 
-            sel_con = st.selectbox("合約月份", available_contracts, index=len(available_contracts)-1)
+            # 記憶合約選擇
+            default_idx = len(available_contracts)-1
+            if 'selected_contract' in st.session_state:
+                if st.session_state['selected_contract'] in available_contracts:
+                    default_idx = available_contracts.index(st.session_state['selected_contract'])
+            
+            sel_con = st.selectbox("合約月份", available_contracts, index=default_idx)
             
         with c3: 
             target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0, 0.1, format="%.1f")
             
         with c4: is_safe = st.checkbox("穩健濾網", True)
         
-        # 🔥 修改點：按鈕點擊後，將結果存入 session_state
+        # 🔥 按鈕點擊事件：只負責「算」跟「存」
         if st.button("🎯 **尋找最佳 CALL**", type="primary", use_container_width=True):
-            tdf = df_latest[(df_latest["contract_date"] == sel_con) & (df_latest["call_put"] == "CALL")]
+            st.session_state['selected_contract'] = sel_con # 記住選擇
             
+            tdf = df_latest[(df_latest["contract_date"] == sel_con) & (df_latest["call_put"] == "CALL")]
             y, m = int(sel_con[:4]), int(sel_con[4:6])
             expiry_date = date(y, m, 15)
             days = (expiry_date - latest_date.date()).days
@@ -320,7 +343,6 @@ with tabs[2]:
                 try:
                     K = float(row["strike_price"])
                     vol = float(row.get("volume", 0))
-                    
                     bs_p, d = bs_price_delta(S_current, K, days/365, 0.02, 0.2, "CALL")
                     
                     if vol > 0:
@@ -331,60 +353,50 @@ with tabs[2]:
                         price_type = "🔵 合理價"
                     
                     if P <= 0.1: continue
-                    
                     lev = (abs(d) * S_current) / P
-                    
                     if is_safe and abs(d) < 0.1: continue
                     
                     res.append({
-                        "K": int(K), 
-                        "P": int(round(P)), 
-                        "Lev": lev, 
-                        "Delta": abs(d), 
-                        "Win": int(calculate_win_rate(d, days)), 
-                        "Diff": abs(lev - target_lev),
-                        "Type": price_type, 
-                        "Vol": int(vol)
+                        "K": int(K), "P": int(round(P)), "Lev": lev, "Delta": abs(d), 
+                        "Win": int(calculate_win_rate(d, days)), "Diff": abs(lev - target_lev),
+                        "Type": price_type, "Vol": int(vol)
                     })
                 except: continue
             
             if res:
                 res.sort(key=lambda x: x['Diff'])
-                # 🔥 存入 Session State
-                st.session_state['search_results'] = res
-                st.session_state['selected_contract'] = sel_con
+                st.session_state['search_results'] = res # 存入結果
             else:
                 st.session_state['search_results'] = None
-                st.warning(f"⚠️ {sel_con} 有資料，但篩選後無符合結果。")
+                st.toast("⚠️ 找不到符合條件的合約")
 
-        # 🔥 檢查 Session State 是否有結果，有的話就顯示 (即使重整頁面也會保留)
+        # 🔥 顯示區塊：獨立於按鈕之外，只要 Session 有資料就顯示
         if st.session_state.get('search_results'):
             res = st.session_state['search_results']
             best = res[0]
-            sel_con_saved = st.session_state.get('selected_contract', sel_con)
-
+            
             st.divider()
             st.success(f"✅ 找到 {len(res)} 檔合約，最佳推薦：")
             
             rc1, rc2 = st.columns([1, 1])
             with rc1:
-                st.markdown(f"#### 🏆 {sel_con_saved} **{best['K']} CALL**")
-                
+                # 顯示推薦卡片
+                con_name = st.session_state.get('selected_contract', sel_con)
+                st.markdown(f"#### 🏆 {con_name} **{best['K']} CALL**")
                 st.metric(f"{best['Type']}", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
                 
                 if best['Vol'] == 0:
                     st.caption("⚠️ 此為理論價格 (無成交量)，請掛單等待")
                 else:
                     st.caption(f"成交量: {best['Vol']} | 勝率: {best['Win']}%")
-                    
+                
                 if st.button("📱 分享此策略", key="share_btn"):
                     st.balloons()
                     st.code(f"台指{int(S_current)}，我用貝伊果屋選了 {best['K']} CALL ({best['Type']})，槓桿{best['Lev']:.1f}x！")
 
             with rc2:
+                # 顯示風險模擬
                 st.markdown("#### 🛡️ **交易計畫模擬**")
-                
-                # 這裡的 Slider 互動不會再讓結果消失了！
                 col_sl, col_tp = st.columns(2)
                 with col_sl:
                     loss_pct = st.slider("停損幅度 %", 10, 50, 20, step=5)
@@ -394,20 +406,16 @@ with tabs[2]:
                 cost = best['P'] * 50
                 potential_loss = int(cost * (loss_pct/100))
                 potential_profit = int(cost * (profit_pct/100))
-                
                 rr_ratio = potential_profit / potential_loss if potential_loss > 0 else 0
                 
                 st.write(f"💰 **本金投入**: NT$ {int(cost):,}")
                 
                 if rr_ratio >= 3.0:
-                    rr_color = "#28a745"
-                    rr_msg = "🌟 優質交易 (賺賠比 > 3)"
+                    rr_color = "#28a745"; rr_msg = "🌟 優質交易 (>3)"
                 elif rr_ratio >= 1.5:
-                    rr_color = "#ffc107"
-                    rr_msg = "✅ 可接受 (賺賠比 > 1.5)"
+                    rr_color = "#ffc107"; rr_msg = "✅ 可接受 (>1.5)"
                 else:
-                    rr_color = "#dc3545"
-                    rr_msg = "⚠️ 風險過高 (賺賠比 < 1.5)"
+                    rr_color = "#dc3545"; rr_msg = "⚠️ 風險過高 (<1.5)"
 
                 st.markdown(f"""
                 <div style="background-color: #262730; padding: 10px; border-radius: 5px; border: 1px solid #444;">
@@ -420,20 +428,17 @@ with tabs[2]:
                         <span style="color: #4ecdc4; font-weight: bold;">+ NT$ {potential_profit:,}</span>
                     </div>
                     <div style="border-top: 1px solid #555; padding-top: 5px; text-align: center;">
-                        <span style="color: {rr_color}; font-weight: bold; font-size: 1.1em;">
-                            風報比 1 : {rr_ratio:.1f}
-                        </span><br>
+                        <span style="color: {rr_color}; font-weight: bold; font-size: 1.1em;">風報比 1 : {rr_ratio:.1f}</span><br>
                         <span style="font-size: 0.8em; color: #ccc;">{rr_msg}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                
+            
             st.markdown("---")
             st.caption("📋 其他候選合約")
             other_df = pd.DataFrame(res[:5])
             display_df = other_df[["K", "P", "Lev", "Type", "Win"]].copy()
             display_df["Lev"] = display_df["Lev"].map(lambda x: f"{x:.1f}")
-            
             st.dataframe(display_df.rename(columns={"K":"履約價", "P":"價格", "Lev":"槓桿", "Type":"類型", "Win":"勝率"}), hide_index=True)
 
 
@@ -452,7 +457,6 @@ with tabs[3]:
 
     with col_p2:
         st.markdown("#### 📉 **損益試算**")
-        # ✅ 修正：將最大值上限調高至 50000，避免當前指數超過上限報錯
         k_sim = st.number_input("模擬履約價", 15000, 50000, int(S_current))
         p_sim = st.number_input("權利金", 1, 1000, 150)
         st.plotly_chart(plot_payoff(k_sim, p_sim, "CALL"), use_container_width=True)
@@ -489,3 +493,27 @@ with tabs[4]:
             st.line_chart(pd.Series(returns, index=dates))
             st.metric("策略總報酬", "+145%", "夏普比率 1.8")
             st.success("✅ 回測結果：顯著優於大盤")
+
+# --------------------------
+# Tab 5~14: 擴充預留位 (10個)
+# --------------------------
+with tabs[5]:
+    st.info("🚧 擴充功能 1：AI 語音助理 (開發中)")
+with tabs[6]:
+    st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
+with tabs[7]:
+    st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
+with tabs[8]:
+    st.info("🚧 擴充功能 4：Line 推播 (開發中)")
+with tabs[9]:
+    st.info("🚧 擴充功能 5：期貨價差監控 (開發中)")
+with tabs[10]:
+    st.info("🚧 擴充功能 6：美股連動分析 (開發中)")
+with tabs[11]:
+    st.info("🚧 擴充功能 7：自定義策略腳本 (開發中)")
+with tabs[12]:
+    st.info("🚧 擴充功能 8：社群討論區 (開發中)")
+with tabs[13]:
+    st.info("🚧 擴充功能 9：課程學習中心 (開發中)")
+with tabs[14]:
+    st.info("🚧 擴充功能 10：VIP 專屬通道 (開發中)")
