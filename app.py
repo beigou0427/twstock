@@ -118,29 +118,22 @@ with st.spinner("🚀 啟動財富引擎..."):
         st.stop()
 
 # =========================
-# 4. 側邊欄 (眾籌行銷 & 簽到)
+# 側邊欄 (簡潔版：移除眾籌與簽到)
 # =========================================
 with st.sidebar:
-    st.image("https://via.placeholder.com/300x100?text=BeiGuoWu+Pro", use_container_width=True)
+    st.markdown("## 🥯 **貝伊果屋**")
+    st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
     
-    # 眾籌進度
-    st.markdown("### 🏆 嘖嘖眾籌中")
-    st.progress(0.68)
-    st.caption("目標 NT$50萬 | 目前: NT$34萬 (68%)")
-    st.markdown("**剩餘名額：127 / 200**")
-    if st.button("🔥 立即贊助 (NT$299)", type="primary"):
-        st.balloons()
-        st.session_state.is_pro = True
+    if not st.session_state.is_pro:
+        if st.button("⭐ 升級 Pro (NT$299)", type="primary"):
+            st.session_state.is_pro = True
+            st.balloons()
+            st.rerun()
+    else:
+        st.success("👑 Pro 會員")
     
     st.divider()
-    
-    # 每日任務
-    st.markdown(f"### 📅 每日簽到 (連簽 {st.session_state.checkin_streak} 天)")
-    if st.button("✅ 簽到領積分"):
-        st.session_state.points += 50
-        st.success(f"積分 +50！目前: {st.session_state.points}")
-    
-    st.info("💡 分享策略給好友，獲取 7 天 Pro 權限")
+    st.caption("📊 功能說明：\n• Tab0: ETF定投\n• Tab1: 趨勢判斷\n• Tab2: CALL獵人")
 
 # =========================
 # 5. 主介面 (5大分頁)
