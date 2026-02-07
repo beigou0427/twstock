@@ -228,18 +228,6 @@ with tabs[1]:
             st.warning("⚠️ **黃燈：建議回到「穩健ETF」定投**")
         else:
             st.error("🛑 **紅燈：風險過高，暫停槓桿操作**")
-# ================= 除錯面板 (立即貼在按鈕上方) =================
-with st.expander("🔧 **除錯：查看原始資料**", expanded=False):
-    st.write("**總合約數**：", len(df_latest))
-    st.write("**202609 總合約**：", len(df_latest[df_latest["contract_date"] == "202609"]))
-    st.write("**202609 CALL 數**：", len(df_latest[(df_latest["contract_date"] == "202609") & (df_latest["call_put"] == "CALL")]))
-    
-    # 顯示前 5 筆 202609 資料
-    debug_df = df_latest[df_latest["contract_date"] == "202609"].head()
-    st.dataframe(debug_df[["contract_date", "call_put", "strike_price", "close", "volume"]])
-    
-    # 檢查 call_put 欄位內容
-    st.write("**call_put 獨特值**：", df_latest["call_put"].unique())
 
 # --------------------------
 # Tab 2: 新手 CALL 獵人 (大小寫修正版)
