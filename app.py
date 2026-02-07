@@ -201,6 +201,71 @@ with tabs[0]:
     3. **絕對不要看短期漲跌**
     4. 10年後檢視成果
     """)
+# --------------------------
+# Tab 1: 趨勢判斷 (完整版)
+# --------------------------
+with tabs[1]:
+    st.markdown("## 🚦 **市場趨勢儀表板**")
+    
+    # 1. 三大指標卡片
+    col_idx, col_ma, col_signal = st.columns(3)
+    
+    with col_idx:
+        st.metric("📈 加權指數", f"{S_current:,.0f}", delta=f"{S_current-ma20:.0f}")
+    
+    with col_ma:
+        # MA 趨勢
+        ma_trend = "🔥 多頭排列" if ma20 > ma60 else "⚖️ 盤整" if abs(ma20-ma60)/S_current < 0.01 else "❄️ 空頭排列"
+        st.metric("均線狀態", ma_trend, f"20日: {ma20:,.0f}")
+    
+    with col_signal:
+        # 綜合燈號
+        trend_score = 0
+        if S_current > ma20: trend_score += 1
+        if ma20 > ma60: trend_score += 1
+        
+        if trend_score == 2:
+            signal = "🟢 強勢買點"
+            action = "立即前往 CALL 獵人"
+        elif trend_score == 1:
+            signal = "🟡 觀望整理"
+            action = "回穩健 ETF 定投"
+        else:
+            signal = "🔴 高風險區"
+            action = "現金為王"
+        
+        st.metric("交易燈號", signal, action)
+    
+    st.divider()
+    
+    # 2. 趨勢圖表 (簡單均線)
+    st.markdown("### 📉 **趨勢視覺化**")
+    fig = go.Figure()
+    
+    # 模擬近期數據
+    x = np.arange(20)
+    price_line = S_current * (1 + np.random.normal(0, 0.01, 20)).cumprod()
+    ma20_line = np.full(20, ma20)
+    ma60_line = np.full(20, ma60)
+    
+    fig.add_trace(go.Scatter(x=x, y=price_line, mode='lines', name='指數', line=dict(color='#1f77b4', width=2)))
+    fig.add_trace(go.Scatter(x=x, y=ma20_line, mode='lines', name='MA20', line=dict(color='#ff7f0e', width=2)))
+    fig.add_trace(go.Scatter(x=x, y=ma60_line, mode='lines', name='MA60', line=dict(color='#2ca02c', width=2)))
+    
+    fig.update_layout(height=300, title="近期趨勢 (綠燈 = 20 > 60日線)", showlegend=True)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # 3. 操作建議
+    st.markdown("### 🎯 **今日操作建議**")
+    
+    if trend_score == 2:
+        st.success("""
+        **🟢 強勢多頭環境**
+        - ✅ 適合操作 CALL 策略
+        - 🎯 點擊「CALL 獵人」尋找機會
+        - 💡 建議槓桿 3~7x
+        """)
+    elif trend_score
 
 # --------------------------
 # Tab 2: 新手 CALL 獵人 (狀態保存版)
