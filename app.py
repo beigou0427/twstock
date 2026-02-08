@@ -556,53 +556,64 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 平滑分佈戰情室 v18.1 (黃金區間)
+# Tab 2: 三重防護戰情室 v18.2 (自動修復極端)
 # --------------------------
 with tabs[2]:
     # 0. 全新 Session Key
-    KEY_RES = "results_smooth_v18_1"
-    KEY_BEST = "best_smooth_v18_1"
+    KEY_RES = "results_protect_v18_2"
+    KEY_BEST = "best_protect_v18_2"
     KEY_PF = "portfolio"
 
     if KEY_RES not in st.session_state: st.session_state[KEY_RES] = []
     if KEY_BEST not in st.session_state: st.session_state[KEY_BEST] = None
     if KEY_PF not in st.session_state: st.session_state[KEY_PF] = []
 
-    st.markdown("### ♟️ **平滑分佈戰情室 (15%~92%)**")
+    st.markdown("### ♟️ **三重防護戰情室 (自動修復極端)**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
 
-    # 🔥 平滑勝率公式 (階梯分佈)
-    def calculate_smooth_win(delta, days, volume, S, K, op_type):
-        # 1. Delta 基底 (0.1->10, 0.9->90)
-        base = abs(delta) * 100.0
+    # 🔥 1. 原始計算 (可能極端)
+    def calculate_raw_score(delta, days, volume, S, K, op_type):
+        # Delta (40%)
+        s_delta = abs(delta) * 100.0
         
-        # 2. Moneyness 微調 (±5%)
-        # 價內 +5%, 價外 -5%
-        if op_type == "CALL":
-            moneyness = (S - K) / S
+        # Moneyness (20%)
+        if op_type == "CALL": m = (S - K) / S
+        else: m = (K - S) / S
+        s_money = max(-10, min(m * 100 * 2, 10)) + 50 # 40~60
+        
+        # Time (20%)
+        s_time = min(days / 90.0 * 100, 100)
+        
+        # Vol (20%)
+        s_vol = min(volume / 5000.0 * 100, 100)
+        
+        # 原始總分
+        raw = (s_delta * 0.4 + s_money * 0.2 + s_time * 0.2 + s_vol * 0.2)
+        return raw
+
+    # 🔥 2. 自動修復與映射 (核心)
+    def normalize_scores(results):
+        if not results: return []
+        
+        scores = [r['raw_score'] for r in results]
+        min_s, max_s = min(scores), max(scores)
+        
+        # 檢測極端：如果差異太大 (例如 5 vs 92)
+        if max_s - min_s > 50:
+            # 啟動映射：將 min~max 映射到 15~92
+            for r in results:
+                # 線性插值公式
+                normalized = 15 + (92 - 15) * (r['raw_score'] - min_s) / (max_s - min_s)
+                r['勝率'] = round(normalized, 1)
         else:
-            moneyness = (K - S) / S
-        
-        # 3%價內 -> +5分
-        m_score = max(-5.0, min(moneyness * 100.0 * 2.0, 5.0))
-        
-        # 3. Time 微調 (+0~5%)
-        t_score = min(days / 90.0 * 5.0, 5.0)
-        
-        # 4. Volume 微調 (+0~3%)
-        v_score = min(volume / 5000.0 * 3.0, 3.0)
-        
-        # 總分
-        total = base + m_score + t_score + v_score
-        
-        # 🔥 平滑控制 (掐頭去尾)
-        # 讓分數集中在 15~92
-        final = max(15.0, min(total, 92.0))
-        
-        return round(final, 1)
+            # 差異不大，直接微調
+            for r in results:
+                r['勝率'] = round(max(15, min(r['raw_score'], 92)), 1)
+                
+        return results
 
     with col_search:
-        st.markdown("#### 🔍 **平滑掃描**")
+        st.markdown("#### 🔍 **防護掃描**")
         
         if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
         
@@ -614,22 +625,22 @@ with tabs[2]:
         # 參數區
         c1, c2, c3, c4 = st.columns([1, 1, 1, 0.6])
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="v181_dir")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="v182_dir")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="v181_con")
+            sel_con = st.selectbox("月份", available if available else [""], key="v182_con")
         with c3:
-            target_delta = st.slider("目標 Delta", 0.1, 1.0, 0.7, 0.05, key="v181_target")
+            target_delta = st.slider("目標 Delta", 0.1, 1.0, 0.7, 0.05, key="v182_target")
         with c4:
-            if st.button("🧹 重置", key="v181_reset"):
+            if st.button("🧹 重置", key="v182_reset"):
                 st.session_state[KEY_RES] = []
                 st.session_state[KEY_BEST] = None
                 st.rerun()
 
         # 掃描邏輯
-        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="v181_scan"):
+        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="v182_scan"):
             st.session_state[KEY_RES] = []
             st.session_state[KEY_BEST] = None
             
@@ -644,7 +655,7 @@ with tabs[2]:
                         T = days / 365.0
                     except: st.error("日期解析失敗"); st.stop()
 
-                    res = []
+                    raw_results = []
                     for _, row in tdf.iterrows():
                         try:
                             K = float(row["strike_price"])
@@ -672,17 +683,17 @@ with tabs[2]:
                             
                             if abs(delta) < 0.1: continue
 
-                            # 🔥 平滑勝率計算
-                            win_rate = calculate_smooth_win(delta, days, vol, S_current, K, op_type)
+                            # 1. 算出原始分數
+                            raw_score = calculate_raw_score(delta, days, vol, S_current, K, op_type)
                             status = "🟢成交" if vol > 0 else "🔵合理"
 
-                            res.append({
+                            raw_results.append({
                                 "履約價": int(K), 
                                 "價格": P, 
                                 "狀態": status, 
                                 "槓桿": lev,
                                 "Delta": delta,
-                                "勝率": win_rate, 
+                                "raw_score": raw_score, # 暫存原始分
                                 "Vol": int(vol),
                                 "差距": abs(abs(delta) - target_delta), 
                                 "合約": sel_con, 
@@ -690,12 +701,15 @@ with tabs[2]:
                             })
                         except: continue
                     
-                    if res:
-                        # 排序：差距優先
-                        res.sort(key=lambda x: (x['差距'], -x['勝率']))
-                        st.session_state[KEY_RES] = res[:15]
-                        st.session_state[KEY_BEST] = res[0]
-                        st.success(f"掃描完成")
+                    if raw_results:
+                        # 2. 🔥 執行自動修復 (Normalization)
+                        final_results = normalize_scores(raw_results)
+                        
+                        # 排序
+                        final_results.sort(key=lambda x: (x['差距'], -x['勝率']))
+                        st.session_state[KEY_RES] = final_results[:15]
+                        st.session_state[KEY_BEST] = final_results[0]
+                        st.success(f"掃描完成 (已自動修復極端值)")
                     else: st.warning("無資料")
 
         # 顯示區
@@ -713,7 +727,7 @@ with tabs[2]:
                 """)
             with cB:
                 st.write("")
-                if st.button("➕ 加入", key="add_pf_v181"):
+                if st.button("➕ 加入", key="add_pf_v182"):
                     exists = any(p['履約價'] == best['履約價'] and 
                                  p['合約'] == best['合約'] for p in st.session_state[KEY_PF])
                     if not exists:
@@ -721,7 +735,7 @@ with tabs[2]:
                         st.toast("已加入")
                     else: st.toast("⚠️ 已存在")
 
-            with st.expander("📋 平滑清單", expanded=True):
+            with st.expander("📋 修復後清單 (15-92%)", expanded=True):
                 df_show = pd.DataFrame(st.session_state[KEY_RES]).copy()
                 
                 df_show['權利金'] = df_show['價格'].round(0).astype(int)
@@ -752,16 +766,17 @@ with tabs[2]:
             
             c_clr, c_dl = st.columns(2)
             with c_clr:
-                if st.button("🗑️ 清空", key="clr_pf_v181"):
+                if st.button("🗑️ 清空", key="clr_pf_v182"):
                     st.session_state[KEY_PF] = []
                     st.rerun()
             with c_dl:
                 st.download_button("📥 CSV", pf.to_csv(index=False).encode('utf-8'), 
-                                   "pf_v181.csv", key="dl_pf_v181")
+                                   "pf_v182.csv", key="dl_pf_v182")
         else: st.info("無資料")
 
     st.markdown("---")
-    st.caption("📊 **平滑模式**：勝率強制分佈在 15%~92%，避免極端數值。")
+    st.caption("📊 **自動映射技術**：無論原始分數多極端，系統都會將其拉伸至 15%~92% 的合理區間，保證可讀性。")
+
 
 # --------------------------
 # Tab 3: 歷史回測
