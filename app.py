@@ -556,14 +556,14 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # ==========================================
-# TAB2 專業戰情室 (Delta優先，無差距欄)
+# TAB2 專業戰情室 (Delta優先顯示，徹底移除差距)
 # ==========================================
 
 with tab2:
     col_search, col_portfolio = st.columns([1.2, 0.8])
     
     # ---------------------------
-    # 左欄：搜尋
+    # 左欄：專業合約搜尋
     # ---------------------------
     with col_search:
         st.markdown("### 🔥 專業合約搜尋")
@@ -611,31 +611,32 @@ with tab2:
                         l = (d_abs * S_current) / cp
                         w = calculate_win_rate(d_abs, dl_2)
                         
+                        # ✅ 只存必要欄位，絕對無「差距」
                         res_2.append({
                             "合約": sel_con_2, 
                             "類型": target_cp_2, 
                             "履約價": int(K),
                             "價格": cp, 
                             "槓桿": round(l, 2), 
-                            "Delta": round(d_abs, 2), # Delta 數值
+                            "Delta": round(d_abs, 2),  # Delta絕對值
                             "勝率": round(w, 1),
                             "剩餘天": dl_2
                         })
                     except: continue
                 
                 if res_2:
-                    # ✅ Delta降序排序 (Delta越大越前面)
+                    # ✅ Delta降序排序（Delta越大越前面）
                     res_2.sort(key=lambda x: (-x['Delta'], x['槓桿']))
                     st.session_state.search_results = res_2
                     st.session_state.best_match = res_2[0]
         
-        # 顯示搜尋結果
+        # 顯示最佳匹配
         if 'best_match' in st.session_state and st.session_state.best_match:
             b = st.session_state.best_match
-            # 最佳匹配顯示 Delta
             st.success(f"🏆 {b['履約價']} {b['類型']} | Delta **{b['Delta']}** | 勝率 {b['勝率']:.0f}%")
             
-            if st.button("➕ 加入投組", key="add_pf"):
+            if st.button("➕ 加入投組", key="add_pf", use_container_width=True):
+                # 檢查重複（只比對合約+履約價）
                 exists = any(p['履約價'] == b['履約價'] and p['合約'] == b['合約'] 
                            for p in st.session_state.portfolio)
                 if not exists: 
@@ -645,21 +646,31 @@ with tab2:
                 else:
                     st.toast("⚠️ 重複")
             
-            # ✅ 表格：Delta 放第一欄，無差距欄
-            df_show = pd.DataFrame(st.session_state.search_results)
-            # 這裡調整欄位順序
-            cols_order = ["Delta", "履約價", "價格", "勝率", "槓桿", "剩餘天"]
-            st.dataframe(
-                df_show[cols_order],
-                use_container_width=True,
-                height=400 # 固定高度讓表頭排序更好操作
-            )
+            # ✅ 搜尋結果表格：Delta第一位，強制指定欄位
+            if 'search_results' in st.session_state:
+                df_show = pd.DataFrame(st.session_state.search_results)
+                # 強制只顯示這些欄位，Delta第一位
+                show_cols = ["Delta", "履約價", "價格", "勝率", "槓桿", "剩餘天"]
+                df_show = df_show[show_cols]
+                st.dataframe(df_show, use_container_width=True, height=400)
 
     # ---------------------------
-    # 右欄：投組 (無差距)
+    # 右欄：投組管理
     # ---------------------------
     with col_portfolio:
         st.markdown("### 💼 投組管理")
+        
+        # ✅ 重置按鈕：清理舊的「差距」資料
+        if st.button("🔄 清理舊資料", key="clean_old"):
+            new_pf = []
+            for item in st.session_state.portfolio:
+                # 只保留必要欄位，移除任何「差距」相關
+                clean_item = {k: v for k, v in item.items() 
+                             if k in ["合約", "類型", "履約價", "價格", "槓桿", "Delta", "勝率", "剩餘天"]}
+                new_pf.append(clean_item)
+            st.session_state.portfolio = new_pf
+            st.success("✅ 已清理舊資料")
+        
         if st.session_state.portfolio:
             pf = pd.DataFrame(st.session_state.portfolio)
             
@@ -669,40 +680,37 @@ with tab2:
             c2.metric("平均勝率", f"{pf['勝率'].mean():.0f}%")
             c3.metric("平均Delta", f"{pf['Delta'].mean():.2f}")
             
-            # ✅ 投組表格樣式與欄位
+            # ✅ 投組表格：Delta第一位，強制欄位控制
             def risk_color(val):
                 if val <= 30: return 'color: red; font-weight: bold'
                 elif val <= 60: return 'color: orange; font-weight: bold'
                 else: return 'color: green; font-weight: bold'
             
-            # Delta 放第一欄
-            display_cols = ["Delta", "合約", "履約價", "勝率", "槓桿", "剩餘天"]
+            # 強制指定顯示欄位（避免舊資料干擾）
+            show_cols = ["Delta", "合約", "履約價", "勝率", "槓桿", "剩餘天"]
+            # 只選存在的欄位
+            available_cols = [col for col in show_cols if col in pf.columns]
+            pf_display = pf[available_cols].copy()
             
-            # 確保欄位存在於 pf 中再顯示 (避免空投組報錯)
-            if not pf.empty:
-                styled_pf = pf.style.map(risk_color, subset=['剩餘天'])
-                # 使用 column_order 強制顯示順序
-                st.dataframe(
-                    styled_pf, 
-                    column_order=display_cols,
-                    use_container_width=True
-                )
+            # 樣式化
+            styled_pf = pf_display.style.map(risk_color, subset=['剩餘天'])
+            st.dataframe(styled_pf, use_container_width=True, height=400)
             
+            # 操作按鈕
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🗑️ 清空"):
+                if st.button("🗑️ 清空投組", key="clear_pf"):
                     st.session_state.portfolio = []
                     st.rerun()
             with col2:
-                st.download_button("📥 CSV", pf.to_csv(index=False).encode('utf-8'),
+                st.download_button("📥 CSV匯出", 
+                                 pf.to_csv(index=False).encode('utf-8'),
                                  f"投組_{date.today()}.csv")
         else:
-            st.info("👈 搜尋高Delta合約 → 加入")
+            st.info("👈 先搜尋高Delta合約 → 加入投組")
 
-# 更新 Caption
-st.caption("🔥 現Delta優先 | 勝率公式：|Δ|×70%+24% | 無差距欄位")
-
-
+# ✅ 更新 Caption
+st.caption("🔥 Delta優先顯示 | 勝率公式：|Δ|×70%+24% | ✅ 徹底移除差距欄位 | 🔄 先清理舊資料")
 
 # --------------------------
 # Tab 3: 歷史回測
