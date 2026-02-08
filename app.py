@@ -557,24 +557,38 @@ with tabs[1]:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 
 # --------------------------
-# Tab 2: 專業期權戰情室 (完整版 v8.1)
+# Tab 2: 專業期權戰情室 (防呆完整版 v8.2)
 # --------------------------
 with tabs[2]:
     # 初始化 Session State
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
     if 'pro_selected_contract' not in st.session_state: st.session_state.pro_selected_contract = ""
     if 'pro_search_results' not in st.session_state: st.session_state.pro_search_results = []
-    
+
     st.markdown("### ♟️ **專業期權戰情室**")
-    st.caption("📊 左：策略掃描 + Greeks分析 | 💼 右：投資組合風險管理")
+    st.caption("📊 左：策略掃描 | 💼 右：投組管理")
 
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
     # ==========================
-    # 左欄：策略搜尋
+    # 左欄：策略搜尋 (防呆版)
     # ==========================
     with col_search:
         st.markdown("#### 🔍 **策略雷達**")
+        
+        # ✅ 防呆：檢查資料格式
+        if df_latest.empty:
+            st.error("⚠️ 無期權資料，請檢查 Tab 1 或重新載入")
+            st.stop()
+        
+        # ✅ 修復：正確處理 call_put 欄位
+        df_work = df_latest.copy()
+        if 'call_put' not in df_work.columns:
+            st.error("❌ 資料缺少 'call_put' 欄位，請重新載入資料")
+            st.stop()
+        
+        # 清理 call_put 欄位
+        df_work["call_put"] = df_work["call_put"].astype(str).str.upper().str.strip()
         
         # 參數設定列
         c_p1, c_p2, c_p3 = st.columns([1, 1, 1])
@@ -584,12 +598,9 @@ with tabs[2]:
             
         with c_p2:
             # 獲取可用合約
-            available_contracts = []
-            if not df_latest.empty:
-                type_df = df_latest[df_latest["call_put"] == op_type]
-                available_contracts = sorted(type_df["contract_date"].unique())
+            available_contracts = sorted(df_work[df_work["call_put"] == op_type]["contract_date"].unique())
             
-            # ✅ 修復：記憶上次選擇的合約
+            # 記憶上次選擇
             default_contract = st.session_state.pro_selected_contract
             if default_contract not in available_contracts:
                 default_contract = available_contracts[0] if available_contracts else ""
@@ -606,104 +617,98 @@ with tabs[2]:
             target_lev = st.slider("目標槓桿", 2.0, 15.0, 8.0, 0.5, format="%.1fx", key="pro_lev")
 
         # 搜尋按鈕
-        if st.button(f"🔥 掃描最佳 {op_type} 機會 ({sel_con})", type="primary", use_container_width=True):
-            if not df_latest.empty and sel_con:
+        if st.button(f"🔥 掃描 {op_type} 機會 ({sel_con or '請選合約'})", type="primary", use_container_width=True):
+            if sel_con and len(available_contracts) > 0:
                 st.session_state.pro_selected_type = op_type
                 
-                tdf = df_latest[(df_latest["contract_date"] == sel_con) & (df_latest["call_put"] == op_type)]
+                tdf = df_work[(df_work["contract_date"] == sel_con) & (df_work["call_put"] == op_type)]
                 
-                y, m = int(sel_con[:4]), int(sel_con[4:6])
-                expiry_date = date(y, m, 15)
-                days = max((expiry_date - latest_date.date()).days, 1)
-                T = days / 365.0
-
-                res = []
-                for _, row in tdf.iterrows():
-                    try:
-                        K = float(row["strike_price"])
-                        vol = float(row.get("volume", 0))
-                        close_p = float(row["close"])
-                        
-                        # Greeks 計算 (安全版)
-                        r, sigma = 0.02, 0.2
-                        delta, gamma, theta, vega = 0.0, 0.0, 0.0, 0.0
-                        
-                        try:
-                            d1 = (np.log(S_current/K) + (r + 0.5*sigma**2)*T) / (sigma * np.sqrt(T))
-                            d2 = d1 - sigma * np.sqrt(T)
-                            
-                            if op_type == "CALL":
-                                bs_p = S_current * norm.cdf(d1) - K * np.exp(-r*T) * norm.cdf(d2)
-                                delta = norm.cdf(d1)
-                                theta = (- (S_current * sigma * np.exp(-d1**2/2)) / (2 * np.sqrt(2*np.pi*T)) - r * K * np.exp(-r*T) * norm.cdf(d2)) / 365
-                            else:
-                                bs_p = K * np.exp(-r*T) * norm.cdf(-d2) - S_current * norm.cdf(-d1)
-                                delta = -norm.cdf(-d1)
-                                theta = (- (S_current * sigma * np.exp(-d1**2/2)) / (2 * np.sqrt(2*np.pi*T)) + r * K * np.exp(-r*T) * norm.cdf(-d2)) / 365
-                            
-                            gamma = np.exp(-d1**2/2) / (S_current * sigma * np.sqrt(2*np.pi*T))
-                            vega = S_current * np.sqrt(T) * np.exp(-d1**2/2) / 100
-                        except:
-                            bs_p = close_p
-
-                        P = close_p if vol > 0 else bs_p
-                        if P <= 0.5: continue
-                        
-                        lev = (abs(delta) * S_current) / P if P > 0 else 0
-                        # 流動性過濾
-                        if vol < 5 and abs(lev - target_lev) > 3: continue
-
-                        res.append({
-                            "合約": sel_con, "類型": op_type, "履約價": int(K),
-                            "價格": P, "槓桿": lev, "Delta": delta, "Theta": theta,
-                            "Gamma": gamma, "Vega": vega, "Vol": int(vol), 
-                            "差距": abs(lev - target_lev), "剩餘天": days
-                        })
-                    except: continue
-                
-                if res:
-                    res.sort(key=lambda x: x['差距'])
-                    st.session_state.pro_search_results = res
-                    st.session_state.pro_best = res[0]
-                    st.balloons()
-                    st.toast("🎯 掃描完成！", icon="🔥")
+                if tdf.empty:
+                    st.warning("⚠️ 該合約無資料")
                 else:
-                    st.warning("查無符合資料")
+                    y, m = int(sel_con[:4]), int(sel_con[4:6])
+                    expiry_date = date(y, m, 15)
+                    days = max((expiry_date - latest_date.date()).days, 1)
+                    T = days / 365.0
 
-        # 顯示搜尋結果
+                    res = []
+                    for _, row in tdf.iterrows():
+                        try:
+                            K = float(row["strike_price"])
+                            vol = float(row.get("volume", 0))
+                            close_p = float(row["close"])
+                            
+                            # Greeks 計算
+                            r, sigma = 0.02, 0.2
+                            delta, theta = 0.0, 0.0
+                            
+                            try:
+                                d1 = (np.log(S_current/K) + (r + 0.5*sigma**2)*T) / (sigma * np.sqrt(T))
+                                d2 = d1 - sigma * np.sqrt(T)
+                                
+                                if op_type == "CALL":
+                                    bs_p = S_current * norm.cdf(d1) - K * np.exp(-r*T) * norm.cdf(d2)
+                                    delta = norm.cdf(d1)
+                                else:
+                                    bs_p = K * np.exp(-r*T) * norm.cdf(-d2) - S_current * norm.cdf(-d1)
+                                    delta = -norm.cdf(-d1)
+                                theta = abs(delta * 0.01) / 365  # 簡化計算
+                            except:
+                                bs_p = close_p
+
+                            P = close_p if vol > 0 else bs_p
+                            if P <= 0.5: continue
+                            
+                            lev = (abs(delta) * S_current) / P
+                            if vol < 5 and abs(lev - target_lev) > 3: continue
+
+                            res.append({
+                                "合約": sel_con, "類型": op_type, "履約價": int(K),
+                                "價格": P, "槓桿": lev, "Delta": delta, "Theta": theta,
+                                "Vol": int(vol), "差距": abs(lev - target_lev), "剩餘天": days
+                            })
+                        except Exception as e:
+                            st.caption(f"跳過異常合約: {e}")
+                            continue
+                    
+                    if res:
+                        res.sort(key=lambda x: x['差距'])
+                        st.session_state.pro_search_results = res
+                        st.session_state.pro_best = res[0]
+                        st.success(f"🎯 找到 {len(res)} 個機會！")
+                    else:
+                        st.warning("查無符合條件合約")
+
+        # 顯示結果
         if st.session_state.pro_search_results:
             best = st.session_state.pro_best
             
             st.markdown("---")
-            # 最佳推薦卡片
             col_res_1, col_res_2 = st.columns([2, 1])
             with col_res_1:
                 st.markdown(f"#### 🏆 **最佳推薦**")
-                st.markdown(f"**{best['履約價']} {best['類型']}** | 槓桿 `{best['槓桿']:.1f}x`")
+                st.markdown(f"`{best['履約價']} {best['類型']}` | `{best['槓桿']:.1f}x`")
                 
                 r1, r2, r3 = st.columns(3)
-                r1.metric("權利金", f"{best['價格']:.1f}", f"約 ${int(best['價格']*50):,}")
+                r1.metric("權利金", f"{best['價格']:.1f}")
                 r2.metric("Delta", f"{best['Delta']:.2f}")
-                r3.metric("Theta/日", f"{best['Theta']:.1f}", help="時間價值每日流失")
+                r3.metric("槓桿", f"{best['槓桿']:.1f}x")
                 
             with col_res_2:
-                st.write("") # Spacer
-                if st.button("➕ 加入投組", key="add_pf_btn", use_container_width=True):
+                if st.button("➕ 加入投組", key="add_pf_btn"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] 
                                for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
-                        st.snow()
-                        st.toast("✅ 已加入投組", icon="❄️")
+                        st.toast("✅ 已加入", icon="✅")
                     else:
-                        st.toast("⚠️ 已在投組中")
+                        st.toast("⚠️ 重複")
 
             # 候選列表
-            with st.expander(f"📋 {len(st.session_state.pro_search_results)} 個候選合約"):
-                res_df = pd.DataFrame(st.session_state.pro_search_results[:10])
-                show_df = res_df[["履約價", "價格", "槓桿", "Delta", "Theta", "Vol"]].copy()
-                show_df["槓桿"] = show_df["槓桿"].map(lambda x: f"{x:.1f}x")
-                st.dataframe(show_df, hide_index=True, use_container_width=True)
+            with st.expander("📋 候選合約"):
+                res_df = pd.DataFrame(st.session_state.pro_search_results[:8])
+                st.dataframe(res_df[["履約價", "價格", "槓桿", "Delta", "Vol"]], 
+                           hide_index=True, use_container_width=True)
 
     # ==========================
     # 右欄：投組管理
@@ -713,45 +718,35 @@ with tabs[2]:
         
         if st.session_state.portfolio:
             pf_df = pd.DataFrame(st.session_state.portfolio)
-            
-            # 總計
             total_premium = pf_df['價格'].sum() * 50
-            avg_days = pf_df['剩餘天'].mean()
-            st.metric("總權利金", f"${int(total_premium):,}")
-            st.caption(f"平均剩餘：{int(avg_days)}天 | 持倉數：{len(pf_df)}口")
             
-            # 風險監控表
+            st.metric("總投入", f"${int(total_premium):,}")
+            st.caption(f"持倉 {len(pf_df)} 口")
+            
+            # 風險表
             def risk_color(days):
-                if days <= 10: return 'background-color: #ffebee; color: #c62828; font-weight: bold'
-                elif days <= 30: return 'background-color: #fff3e0; color: #ef6c00'
-                return 'background-color: #e8f5e8; color: #2e7d32'
+                if days <= 10: return 'background-color: #ffebee; color: #d32f2f'
+                elif days <= 30: return 'background-color: #fff3e0; color: #f57c00'
+                return ''
             
-            display_pf = pf_df[["合約", "類型", "履約價", "槓桿", "剩餘天", "Delta"]].copy()
+            display_pf = pf_df[["合約", "類型", "履約價", "槓桿", "剩餘天"]].copy()
             display_pf["槓桿"] = display_pf["槓桿"].map(lambda x: f"{x:.1f}x")
             
-            styled_df = display_pf.style.map(risk_color, subset=['剩餘天'])
-            st.dataframe(styled_df, use_container_width=True, height=350)
+            st.dataframe(
+                display_pf.style.map(risk_color, subset=['剩餘天']),
+                use_container_width=True
+            )
             
-            # 操作按鈕
             col_btn1, col_btn2 = st.columns(2)
             with col_btn1:
-                if st.button("🗑️ 清空投組", use_container_width=True):
+                if st.button("🗑️ 清空", use_container_width=True):
                     st.session_state.portfolio = []
                     st.rerun()
             with col_btn2:
                 csv = pf_df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    "📥 匯出 CSV", csv, "portfolio.csv", "text/csv", 
-                    use_container_width=True
-                )
+                st.download_button("📥 CSV", csv, "portfolio.csv", use_container_width=True)
         else:
-            st.info("📭 投組為空")
-            st.markdown("""
-            **💡 使用教學**
-            1. 左側搜尋 → 找到喜歡的合約
-            2. 點擊「加入投組」
-            3. 右側自動監控風險 (顏色示警)
-            """)
+            st.info("尚無持倉")
 
 
 
