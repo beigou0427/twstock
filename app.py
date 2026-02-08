@@ -263,7 +263,7 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (純定投版 v5.1)
+# Tab 0: 穩健 ETF (完整引導版 v5.3)
 # --------------------------
 from FinMind.data import DataLoader
 import streamlit as st
@@ -274,6 +274,7 @@ from datetime import datetime, timedelta
 
 with tabs[0]:
     st.markdown("🐢 **ETF 定投計畫**")
+    st.info("💡 **新手專用**：每月自動買，10年變富翁")
     
     # === 即時報價 ===
     @st.cache_data(ttl=600)
@@ -281,7 +282,6 @@ with tabs[0]:
         api = DataLoader()
         etfs = ['0050', '006208', '00662', '00757', '00646']
         data = []
-        
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
         
@@ -293,7 +293,6 @@ with tabs[0]:
                 prev = df.iloc[-2]['close'] if len(df) > 1 else current
                 change = current - prev
                 pct = (change / prev) * 100
-                
                 data.append({
                     'ETF': stock_id,
                     '名稱': {'0050':'台灣50','006208':'富邦台50','00662':'富邦NASDAQ',
@@ -302,24 +301,25 @@ with tabs[0]:
                     '漲跌': f"{change:+.2f}",
                     '漲跌幅': f"{pct:+.2f}%"
                 })
-        
         return pd.DataFrame(data)
     
     st.markdown("### 📡 **即時報價**")
+    st.caption("👆 **第一步**：挑喜歡的ETF")
     quotes = get_finmind_etf()
     st.dataframe(quotes, use_container_width=True)
     
-    if st.button("🔄 刷新"): st.rerun()
+    if st.button("🔄 刷新報價"): st.rerun()
     
     st.markdown("---")
     
     # === ETF比較 ===
-    st.markdown("### 📊 **ETF 選擇**")
+    st.markdown("### 📊 **ETF 一覽**")
+    st.caption("💡 **第二步**：了解各檔特色")
     etf_compare = pd.DataFrame({
         "ETF": ["0050", "006208", "00662", "00757", "00646"],
         "指數": ["台灣50", "台灣50", "NASDAQ100", "FANG+", "S&P500"],
         "年費率": ["0.42%", "0.23%", "0.60%", "0.99%", "0.48%"],
-        "風險": ["低", "低", "中", "高", "中"]
+        "風險": ["低⭐", "低⭐", "中⭐⭐", "高⭐⭐⭐", "中⭐⭐"]
     })
     st.dataframe(etf_compare, use_container_width=True)
     
@@ -327,6 +327,7 @@ with tabs[0]:
     
     # === 定投試算 ===
     st.markdown("### 💰 **定投試算器**")
+    st.caption("🧮 **第三步**：模擬你的財富")
     col1, col2, col3 = st.columns(3)
     with col1: monthly = st.number_input("每月投入", 10000, 100000, 30000)
     with col2: years = st.slider("年數", 5, 30, 10)
@@ -334,50 +335,57 @@ with tabs[0]:
     
     r = rate / 100
     final = monthly * 12 * (( (1 + r)**years - 1 ) / r )
-    st.metric(f"{years}年後", f"NT$ {final:,.0f}")
+    st.metric(f"{years}年總資產", f"NT$ {final:,.0f}")
     
-    # 曲線圖
+    st.caption("📈 **複利魔法**：時間就是你的超能力")
     periods = np.arange(1, years+1)
     values = monthly * 12 * (( (1 + r)**periods - 1 ) / r )
     px.line(pd.DataFrame({'年':periods, '資產':values}), 
-            title=f"每月NT${monthly:,} @ {rate}%").show()
+            title=f"你的財富成長路").show()
     
     st.markdown("---")
     
     # === 持續對比 ===
-    st.markdown("### 🆚 **停止 vs 持續**")
+    st.markdown("### 🆚 **最重要：堅持到底**")
+    st.caption("⚠️ **99%失敗在這裡**：看到數字就懂")
     col1, col2 = st.columns(2)
     with col1:
-        stop_y = st.slider("停止年", 1, years-1, 3)
+        stop_y = st.slider("❌ 停止年份", 1, years-1, 3)
         stop_v = monthly * 12 * (( (1 + r)**stop_y - 1 ) / r )
-        st.metric("停止時", f"NT${stop_v:,.0f}")
+        st.error(f"NT${stop_v:,.0f}")
     with col2:
         gain = ((final / stop_v)-1)*100
-        st.success(f"持續多{gain:.0f}%")
+        st.success(f"✅ 多{gain:.0f}%")
     
     st.markdown("---")
     
-    # === 定投計畫 ===
-    st.markdown("### 📅 **執行計畫**")
-    st.success("""
-    1. **每月5號**定投
-    2. **漲跌都買**
-    3. **不看短期**
-    4. **10年檢視**
-    """)
+    # === 行動計畫 + 導航 ===
+    st.markdown("### 🚀 **立即開始**")
+    col_plan, col_next = st.columns([1.5,1])
     
-    if st.button("承諾定投10年！"): 
-        st.balloons()
-        st.success("加入贏家行列！")
+    with col_plan:
+        st.success("""
+        **4步致富法**：
+        ✅ 每月5號定投
+        ✅ 漲跌都買
+        ✅ 絕不看短期
+        ✅ 10年後檢視
+        """)
+    
+    with col_next:
+        st.markdown("**下一步**")
+        if st.button("📊 **管理持倉** ⏭️ Tab1", type="primary", use_container_width=True):
+            st.session_state.selected_tab_index = 1
+            st.rerun()
+        
+        st.button("⚡ **進階期權** ⏭️ Tab2", use_container_width=True)
     
     st.markdown("---")
     
-    st.warning("""
-    ⚠️ 風險提醒：
-    - 股市短期波動大
-    - 匯率/稅務成本
-    - 過去不代表未來
-    """)
+    st.warning("⚠️ **溫馨提醒**：投資有風險，定投不保證獲利")
+    
+    st.markdown("---")
+    st.caption("💪 **恭喜完成定投啟蒙！按鈕跳轉進階功能**")
 
 
 # --------------------------
