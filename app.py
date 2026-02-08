@@ -336,7 +336,7 @@ with tabs[0]:
         st.markdown("""
         <div class="nav-card card-danger">
             <div class="nav-title" style="color: #ff4b4b;">⚡ 進階期權戰室</div>
-            <div class="nav-desc">微觀勝率模型 + 槓桿交易<br>適合追求高報酬者</div>
+            <div class="nav-desc">大盤槓桿對照期權轉化器<br>適合追求高報酬者</div>
         </div>
         """, unsafe_allow_html=True)
         
