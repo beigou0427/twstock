@@ -556,13 +556,13 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: Delta 衰退戰情室 v16.0
+# Tab 2: Delta 戰情室 v16.2 (絕對 Delta 版)
 # --------------------------
 with tabs[2]:
-    # 全新 Session Key (Delta版)
-    KEY_RES = "results_delta_v16"
-    KEY_BEST = "best_delta_v16"
-    KEY_PF = "portfolio"
+    # 0. 強制全新 Session Key (確保不讀舊資料)
+    KEY_RES = "results_delta_v16_2"
+    KEY_BEST = "best_delta_v16_2"
+    KEY_PF = "portfolio"  # 投組保留
 
     if KEY_RES not in st.session_state: st.session_state[KEY_RES] = []
     if KEY_BEST not in st.session_state: st.session_state[KEY_BEST] = None
@@ -571,41 +571,38 @@ with tabs[2]:
     st.markdown("### ♟️ **Delta 戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
 
-    # 🔥 Delta 勝率核心 (越價內勝率越高)
-    def calculate_delta_win_rate(delta, days, d2_prob):
-        # 1. 基礎 BSPOP
-        base_win = d2_prob * 100.0
+    # 🔥 勝率公式：只看 Delta，完全不看槓桿
+    def calculate_pure_delta_win_rate(delta, days, d2_prob):
+        # 1. 基礎: d2_prob (約0.1~0.9) * 100
+        base = d2_prob * 100.0
         
-        # 2. Delta 修正 (核心邏輯)
-        # Delta 直接反映獲利機率
+        # 2. Delta 嚴格修正
         abs_d = abs(delta)
         
         if abs_d >= 0.7:
-            # 深價內 (0.7~1.0)：穩健，給予加成
-            # 0.7 -> +0%
-            # 1.0 -> +10%
-            adj = (abs_d - 0.7) * 33.3
+            # 深價內: 穩健加成 (最大+10)
+            adj = (abs_d - 0.7) * 33.3 
         elif abs_d >= 0.4:
-            # 中性區 (0.4~0.7)：不獎不罰
+            # 價平: 不動
             adj = 0
         else:
-            # 價外區 (0.1~0.4)：快速衰退
-            # 0.4 -> 0%
-            # 0.2 -> -20%
-            # 0.1 -> -30%
+            # 價外: 快速扣分
+            # 0.4 -> 0
+            # 0.3 -> -10
+            # 0.2 -> -20
             adj = (abs_d - 0.4) * 100.0
             
-        # 3. 時間微調 (長天期稍微容錯)
+        # 3. 時間微調
         time_adj = min(days / 90.0 * 3.0, 5.0)
         
-        final_win = base_win + adj + time_adj
-        
-        # 上限95 (深價內也不會100%)，下限5
-        return round(max(min(final_win, 95.0), 5.0), 1)
+        final = base + adj + time_adj
+        # 絕對範圍 5 ~ 95
+        return round(max(min(final, 95.0), 5.0), 1)
 
     with col_search:
         st.markdown("#### 🔍 **Delta 掃描**")
         
+        # 檢查資料
         if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
         
         df_work = df_latest.copy()
@@ -614,19 +611,26 @@ with tabs[2]:
             df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
 
         # 參數區
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 0.6])
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="delta_dir")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="d16_dir")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="delta_con")
+            sel_con = st.selectbox("月份", available if available else [""], key="d16_con")
         with c3:
-            target_delta = st.slider("目標 Delta", 0.1, 1.0, 0.7, 0.05, key="delta_target")
+            target_delta = st.slider("目標 Delta", 0.1, 1.0, 0.7, 0.05, key="d16_target")
+        with c4:
+            # 這裡放一個手動清空按鈕，讓你安心
+            if st.button("🧹 重置", key="d16_reset"):
+                st.session_state[KEY_RES] = []
+                st.session_state[KEY_BEST] = None
+                st.rerun()
 
-        # 掃描按鈕
-        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="delta_scan"):
+        # 掃描邏輯
+        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="d16_scan"):
+            # 1. 先清空舊結果
             st.session_state[KEY_RES] = []
             st.session_state[KEY_BEST] = None
             
@@ -639,7 +643,7 @@ with tabs[2]:
                         y, m = int(str(sel_con)[:4]), int(str(sel_con)[4:6])
                         days = max((date(y,m,15)-latest_date.date()).days, 1)
                         T = days / 365.0
-                    except: st.error("日期錯誤"); st.stop()
+                    except: st.error("日期解析失敗"); st.stop()
 
                     res = []
                     for _, row in tdf.iterrows():
@@ -670,12 +674,12 @@ with tabs[2]:
                             if P <= 0.5: continue
                             lev = (abs(delta)*S_current)/P
                             
-                            # 過濾 (只看 Delta > 0.15 避免垃圾)
+                            # Delta 過濾 (只看 > 0.15)
                             if abs(delta) < 0.15: continue
-                            if lev > 50: continue
+                            if lev > 60: continue
 
-                            # 🔥 Delta 勝率計算
-                            win_rate = calculate_delta_win_rate(delta, days, prob)
+                            # 🔥 計算 Delta 勝率
+                            win_rate = calculate_pure_delta_win_rate(delta, days, prob)
                             status = "🟢成交" if vol > 0 else "🔵合理"
 
                             res.append({
@@ -685,7 +689,7 @@ with tabs[2]:
                                 "槓桿": lev,
                                 "Delta": delta,
                                 "勝率": win_rate, 
-                                "差距": abs(abs(delta) - target_delta), # 找最接近目標Delta的
+                                "差距": abs(abs(delta) - target_delta), 
                                 "合約": sel_con, 
                                 "類型": op_type
                             })
@@ -696,8 +700,8 @@ with tabs[2]:
                         res.sort(key=lambda x: (x['差距'], -x['勝率']))
                         st.session_state[KEY_RES] = res[:15]
                         st.session_state[KEY_BEST] = res[0]
-                        st.success(f"掃描完成")
-                    else: st.warning("無資料")
+                        st.success(f"掃描完成，找到 {len(res)} 筆")
+                    else: st.warning("無符合條件合約")
 
         # 顯示區
         if st.session_state[KEY_RES]:
@@ -709,12 +713,12 @@ with tabs[2]:
                 st.markdown("#### 🏆 **最佳推薦**")
                 p_int = int(round(best['價格']))
                 st.markdown(f"""
-                `{best['履約價']} {best['類型']}` **{p_int}點**  
+                `{best['履約價']} {best['類型']}` **{p_int}點 {best['狀態']}**  
                 Delta `{best['Delta']:.2f}` | 槓桿 `{best['槓桿']:.1f}x` | 勝率 `{best['勝率']:.0f}%`
                 """)
             with cB:
                 st.write("")
-                if st.button("➕ 加入", key="add_pf_delta"):
+                if st.button("➕ 加入", key="add_pf_d16"):
                     exists = any(p['履約價'] == best['履約價'] and 
                                  p['合約'] == best['合約'] for p in st.session_state[KEY_PF])
                     if not exists:
@@ -722,7 +726,7 @@ with tabs[2]:
                         st.toast("已加入")
                     else: st.toast("⚠️ 已存在")
 
-            with st.expander("📋 Delta 清單", expanded=True):
+            with st.expander("📋 詳細 Delta 清單", expanded=True):
                 df_show = pd.DataFrame(st.session_state[KEY_RES]).copy()
                 
                 df_show['權利金'] = df_show['價格'].round(0).astype(int)
@@ -730,7 +734,7 @@ with tabs[2]:
                 df_show['Delta'] = df_show['Delta'].map(lambda x: f"{x:.2f}")
                 df_show['勝率'] = df_show['勝率'].map(lambda x: f"{x:.0f}%")
                 
-                cols = ["履約價", "權利金", "Delta", "槓桿", "勝率", "差距"]
+                cols = ["履約價", "權利金", "狀態", "Delta", "槓桿", "勝率", "差距"]
                 st.dataframe(df_show[cols], use_container_width=True, hide_index=True)
 
     with col_portfolio:
@@ -741,34 +745,34 @@ with tabs[2]:
             avg_win = pf['勝率'].mean()
             
             st.metric("總權利金", f"${int(total):,}")
-            st.caption(f"{len(pf)}口 | Avg Win: {avg_win:.0f}%")
+            st.caption(f"{len(pf)}口 | Avg Win {avg_win:.0f}%")
             
             pf_s = pf.copy()
             pf_s['權利金'] = pf_s['價格'].round(0).astype(int)
-            pf_s['Delta'] = pf_s['Delta'].map(lambda x: f"{x:.2f}")
-            pf_s['勝率'] = pf_s['勝率'].map(lambda x: f"{x:.0f}%")
+            pf_s['Delta'] = pf_s['Delta'].map(lambda x: f"{float(x):.2f}")
+            pf_s['勝率'] = pf_s['勝率'].map(lambda x: f"{float(x):.0f}%")
             
             st.dataframe(pf_s[["履約價", "權利金", "Delta", "勝率"]], 
                          use_container_width=True, hide_index=True)
             
             c_clr, c_dl = st.columns(2)
             with c_clr:
-                if st.button("🗑️ 清空", key="clr_pf_delta"):
+                if st.button("🗑️ 清空", key="clr_pf_d16"):
                     st.session_state[KEY_PF] = []
                     st.rerun()
             with c_dl:
                 st.download_button("📥 CSV", pf.to_csv(index=False).encode('utf-8'), 
-                                   "pf_delta.csv", key="dl_pf_delta")
-        else: st.info("無投組")
+                                   "pf_delta.csv", key="dl_pf_d16")
+        else: st.info("無資料")
 
     # Delta 說明表
     st.markdown("---")
     st.markdown("#### 📊 **Delta 風險對照表**")
+    st.caption("Delta 越高，到期獲利機率越大")
     delta_ref = pd.DataFrame({
         'Delta': ['> 0.8', '0.6 ~ 0.8', '0.4 ~ 0.6', '< 0.4'],
-        '類型': ['深價內 (ITM)', '價內 (ITM)', '價平 (ATM)', '價外 (OTM)'],
-        '勝率預期': ['85% - 95%', '65% - 85%', '45% - 65%', '< 45%'],
-        '特性': ['類現貨，槓桿低', '攻守兼備', '賭方向，高波動', '彩券性質，高風險']
+        '類型': ['深價內', '價內', '價平', '價外'],
+        '預期勝率': ['85%+', '65% ~ 85%', '45% ~ 65%', '< 45%']
     })
     st.table(delta_ref)
 
