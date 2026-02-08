@@ -263,144 +263,144 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (終極版 v3.1 - 清淨版)
+# Tab 0: 穩健 ETF (終極版 v4.0 - ETF 導覽 + 實時報價)
 # --------------------------
 import plotly.express as px
 import numpy as np
 import streamlit as st
-# 注意：需 import pandas as pd (全域已定義)
+# 注意：需 import pandas as pd, import yfinance as yf (全域已定義)
 
 with tabs[0]:
-    st.markdown("## 🐢 **ETF 定投計畫 - 漲跌都買，十年致富**")
+    st.markdown("## 🐢 **長期定投 ETF 導覽**")
+    st.markdown("*台股+美股經典選擇，漲跌都買的最佳標的*")
     
-    # 最新績效數據 (2026 YTD 截至 2/8)
-    st.markdown("### 📊 **三大 ETF 比較 (2026 最新)**")
+    # 實時報價區 (台灣上市ETF + 美股)
+    st.markdown("### 📡 **實時報價 (2026/2/8 17:55)**")
     
-    etf_df = pd.DataFrame({
-        "ETF": ["0050 (台灣50)", "SPY (標普500)", "QQQ (納指100)"],
-        "2026 YTD": ["+11.13%", "+1.28%", "-0.76%"],
-        "年化報酬 (長期)": ["~12%", "~10%", "~14%"],
-        "建議比重": ["50%", "30%", "20%"],
-        "風險": ["🟢 低", "🟢 低", "🟡 中"]
+    # 台股ETF 代碼 (TWSE上市)
+    taiwan_etfs = ['0050.TW', '006208.TW', '00662.TW', '00757.TW', '00646.TW']
+    us_etfs = ['SPY', 'QQQ']
+    
+    etf_quotes = {}
+    
+    # 獲取台股ETF報價
+    for symbol in taiwan_etfs:
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.history(period='1d')['Close'].iloc[-1]
+            change = ticker.history(period='1d')['Close'].iloc[-1] - ticker.history(period='2d')['Close'].iloc[-1]
+            pct_change = (change / ticker.history(period='2d')['Close'].iloc[-1]) * 100
+            etf_quotes[symbol.replace('.TW','')] = {
+                'price': f"NT${info:.2f}",
+                'change': f"{change:+.2f}",
+                'pct': f"{pct_change:+.2f}%"
+            }
+        except:
+            etf_quotes[symbol.replace('.TW','')] = {'price': 'N/A', 'change': 'N/A', 'pct': 'N/A'}
+    
+    # 美股ETF報價
+    for symbol in us_etfs:
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.history(period='1d')['Close'].iloc[-1]
+            change = ticker.history(period='1d')['Close'].iloc[-1] - ticker.history(period='2d')['Close'].iloc[-1]
+            pct_change = (change / ticker.history(period='2d')['Close'].iloc[-1]) * 100
+            etf_quotes[symbol] = {
+                'price': f"${info:.2f}",
+                'change': f"{change:+.2f}",
+                'pct': f"{pct_change:+.2f}%"
+            }
+        except:
+            etf_quotes[symbol] = {'price': 'N/A', 'change': 'N/A', 'pct': 'N/A'}
+    
+    # 顯示實時報價表
+    quote_df = pd.DataFrame({
+        "ETF": ["0050", "006208", "00662", "00757", "00646", "SPY", "QQQ"],
+        "名稱": ["台灣50", "富邦台50", "富邦NASDAQ", "統一FANG+", "元大S&P500", "標普500", "納指100"],
+        "最新價": [etf_quotes[s]['price'] for s in ["0050", "006208", "00662", "00757", "00646", "SPY", "QQQ"]],
+        "漲跌": [etf_quotes[s]['change'] for s in ["0050", "006208", "00662", "00757", "00646", "SPY", "QQQ"]],
+        "漲跌幅": [etf_quotes[s]['pct'] for s in ["0050", "006208", "00662", "00757", "00646", "SPY", "QQQ"]]
     })
-    st.dataframe(etf_df, use_container_width=True, hide_index=True)
+    st.dataframe(quote_df, use_container_width=True, hide_index=True)
     
-    # 定投試算器升級：比重分配 + 圖表
-    st.markdown("### 💰 **定投試算器 (複利模擬)**")
+    st.caption("💹 即時資料來自Yahoo Finance，延遲5-15分鐘")
+    
+    st.markdown("---")
+    
+    # 台股ETF介紹
+    st.markdown("### 🇹🇼 **台股長期定投首選**")
+    taiwan_intro = """
+    | ETF | 追蹤指數 | 適合族群 | 年費率 |
+    |-----|----------|----------|--------|
+    | **0050** | 台灣50大 | 穩健新手 | 0.42% |
+    | **006208** | 台灣50 | 低費率鐵粉 | 0.23% |
+    | **00662** | NASDAQ100 | 科技成長 | 0.60% |
+    """
+    st.markdown(taiwan_intro)
+    
+    # 美股ETF介紹 (台灣可買)
+    st.markdown("### 🇺🇸 **美股經典 (台灣上市版)**")
+    us_intro = """
+    | ETF | 追蹤指數 | 適合族群 | 年費率 |
+    |-----|----------|----------|--------|
+    | **00757** | FANG+科技 | 高成長 | 0.99% |
+    | **00646** | S&P500 | 美股核心 | 0.48% |
+    | **SPY/00662** | 標普500 | 全球龍頭 | 0.09% |
+    | **QQQ** | NASDAQ100 | 科技領軍 | 0.20% |
+    """
+    st.markdown(us_intro)
+    
+    st.markdown("---")
+    
+    # 定投試算器
+    st.markdown("### 💰 **定投試算器**")
     col1, col2, col3 = st.columns(3)
     with col1:
-        monthly = st.number_input("每月投入", 10000, 100000, 30000, key="monthly")
+        monthly = st.number_input("每月投入", 10000, 100000, 30000)
     with col2:
-        years = st.slider("持續年數", 5, 30, 10, key="years")
+        years = st.slider("持續年數", 5, 30, 10)
     with col3:
-        rate = st.slider("預期年化 (%)", 8.0, 20.0, 12.0, key="rate")
+        rate = st.slider("預期年化 (%)", 8.0, 20.0, 12.0)
     
-    # 計算總價值
     r = rate / 100
     final_value = monthly * 12 * (( (1 + r)**years - 1 ) / r )
-    st.metric(f"**{years} 年後總資產**", f"NT$ {final_value:,.0f}", delta=f"{rate}% 年化")
+    st.metric(f"{years}年後", f"NT$ {final_value:,.0f}")
     
-    # 資產成長圖表
-    st.markdown("#### 📈 **資產成長模擬**")
+    # 成長圖
     periods = np.arange(1, years+1)
     values = monthly * 12 * (( (1 + r)**periods - 1 ) / r )
     df_plot = pd.DataFrame({'年份': periods, '資產': values})
-    chart_data = px.line(df_plot, x='年份', y='資產', 
-                        title=f'每月 NT${monthly:,} 定投 @ {rate}% 年化',
-                        markers=True)
-    chart_data.update_layout(showlegend=False, height=350, 
-                           xaxis_title="年份", yaxis_title="總資產 NT$")
+    chart_data = px.line(df_plot, x='年份', y='資產', markers=True, height=300)
     st.plotly_chart(chart_data, use_container_width=True)
     
-    st.caption("💡 定時定額，漲跌都買。模擬假設穩定年化報酬，不保證未來績效")
-    
     st.markdown("---")
     
-    # 停止 vs 持續對比 (核心訴求)
-    st.markdown("### 🆚 **中途停止 vs 持續到底**")
+    # 持續買進信仰
+    st.markdown("### 🆚 **中途停止 vs 堅持到底**")
     col_a, col_b = st.columns(2)
-    
     with col_a:
-        st.markdown("#### ❌ **常見錯誤：中途停止**")
-        stop_years = st.slider("停止於第幾年", 1, years-1, 3, key="stop_years")
+        st.markdown("#### ❌ 中途停止")
+        stop_years = st.slider("停止於第幾年", 1, years-1, 3)
         stop_value = monthly * 12 * (( (1 + r)**stop_years - 1 ) / r )
-        st.metric("停止時資產", f"NT$ {stop_value:,.0f}")
-        regret = final_value - stop_value
-        st.error(f"**錯過複利：損失 NT$ {regret:,.0f}**")
-    
+        st.metric("資產", f"NT$ {stop_value:,.0f}")
     with col_b:
-        st.markdown("#### ✅ **堅持到底：致富路徑**")
-        st.metric("最終資產", f"NT$ {final_value:,.0f}")
-        gain_pct = (final_value / stop_value - 1) * 100
-        st.success(f"**多賺 {gain_pct:.0f}%！**")
+        st.markdown("#### ✅ 持續定投")
+        gain = ((final_value / stop_value) - 1) * 100
+        st.metric("最終", f"NT$ {final_value:,.0f}")
+        st.success(f"多賺 {gain:.0f}%")
     
-    # 真實案例表格
-    st.markdown("### 🏆 **真實定投成功案例**")
-    cases_df = pd.DataFrame({
-        "案例": ["台灣50 DCA", "美股 SPY (2009-2026)", "你的計畫"],
-        "標的": ["0050", "SPY", f"50/30/20 配置"],
-        "期間": ["21個月", "17年", f"{years}年"],
-        "總投入": ["NT$126K", "$204K", f"NT${monthly*12*years:,.0f}"],
-        "最終價值": ["NT$163K", "$1.2M", f"NT${final_value:,.0f}"],
-        "年化": ["+30%", "12.5%", f"{rate}%"]
-    })
-    st.dataframe(cases_df, use_container_width=True, hide_index=True)
-    
-    st.markdown("---")
-    
-    # 建議資產配置
-    st.markdown("### ⚖️ **階段性資產配置**")
-    alloc_df = pd.DataFrame({
-        '階段': ['新手 (1-3年)', '成長 (3-10年)', '進階 (10年+)'],
-        '0050': ['70%', '50%', '40%'],
-        'SPY': ['20%', '30%', '30%'],
-        'QQQ': ['10%', '20%', '30%']
-    })
-    st.dataframe(alloc_df, use_container_width=True, hide_index=True)
-    
-    # 心理錨定
-    st.markdown("### 🧠 **為什麼想停止？如何戰勝**")
-    psycho_tips = [
-        "📉 **恐慌賣**：跌20%時停？歷史100%會反彈，持續買更便宜",
-        "📈 **追高停**：漲多就鎖？錯過最大回報年(年漲30%+)",
-        "⏰ **忘記投**：設定**銀行自動扣款**，永不中斷"
-    ]
-    for tip in psycho_tips:
-        st.info(tip)
-    
-    st.markdown("---")
-    
-    # 我的定投計畫 + 誓言
-    st.markdown("### 📅 **我的定投計畫**")
+    # 計畫 + 誓言
+    st.markdown("### 📅 **執行計畫**")
     st.success("""
-    **🚀 執行步驟**：
-    1. **每月 5 號** 定投 (避開月初波動)
-    2. **初始配置**：0050:50%、SPY:30%、QQQ:20%
-    3. **紀律原則**：**絕對不要看短期漲跌** (忽略日K、周K)
-    4. **年度檢視**：每年底再平衡一次比重
-    5. **長期目標**：10年後檢視，預期翻倍以上成長
+    1. **每月5號**定投任一ETF
+    2. **漲跌都買**，永不停止
+    3. **不看短期**波動
+    4. **10年後檢視**
     """)
     
-    # 互動誓言按鈕
-    if st.button("🖋️ **我承諾：漲跌都買，10年不看盤！**", type="primary"):
+    if st.button("🖋️ 我承諾持續定投！", type="primary"):
         st.balloons()
-        st.balloons()
-        st.success("🎉 恭喜加入1%堅持者！複利將獎賞你百倍回報。")
-    
-    st.markdown("---")
-    
-    # 風險提醒
-    st.markdown("### ⚠️ **風險提醒**")
-    st.warning("""
-    - **貨幣風險**：SPY/QQQ 受美元匯率影響 (台幣升值時損失)
-    - **市場風險**：股市長期上漲，但短期可跌20-50%
-    - **通膨調整**：預期年化已扣除~2%通膨
-    - **稅務**：海外ETF有30%股息稅 + 0.1%證交稅
-    """)
-    
-    st.caption("""
-    投資有風險，請依個人情況評估。持續定投勝率 >95%。
-    """)
+        st.success("加入1%贏家行列！")
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
