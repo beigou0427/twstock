@@ -294,6 +294,8 @@ if not st.session_state.get('disclaimer_accepted', False):
     # 推薦書籍在按鈕下方
     st.markdown("##  🔥**強烈建議**🔥")
     st.markdown("##  **閱讀下列書籍後!才投資!**")
+    st.markdown("##  **才開始投資!**")
+
     col1, col2 = st.columns(2)
     with col1:
         st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="持續買進: 資料科學家的投資終極解答, 存錢及致富的實證方法", use_container_width=True)
