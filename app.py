@@ -230,7 +230,7 @@ with st.spinner("🚀 啟動財富引擎..."):
 # =========================================
 with st.sidebar:
     st.markdown("## 🥯 **貝伊果屋**")
-    st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
+    st.markdown("##  **強烈推薦購買後!才投資!**")
     
     # 方案一：圖片 + 連結
     st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="持續買進: 資料科學家的投資終極解答, 存錢及致富的實證方法", use_container_width=True)
