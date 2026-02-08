@@ -556,7 +556,7 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (KeyError 修復版 v10.1)
+# Tab 2: 專業期權戰情室 (最終完美修復版 v10.2)
 # --------------------------
 with tabs[2]:
     # 初始化
@@ -605,8 +605,7 @@ with tabs[2]:
             if vol > 100: score += 5
             elif vol < 10: score -= 5
             if price > 50: score += 5
-        except: score = 50 # 計算失敗給中間分
-        
+        except: score = 50
         return min(max(score, 1), 99)
 
     with col_search:
@@ -615,14 +614,13 @@ with tabs[2]:
         if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
         
         df_work = df_latest.copy()
-        # 清理資料
         df_work['call_put'] = df_work['call_put'].astype(str).str.upper().str.strip()
         for col in ['close', 'volume', 'strike_price']:
             df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
             
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_10_fix")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_10_safe")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
@@ -631,10 +629,10 @@ with tabs[2]:
             if default not in available: default = available[0] if available else ""
             sel_con = st.selectbox("月份", available if available else [""],
                                  index=available.index(default) if available and default in available else 0,
-                                 key="pro_con_10_fix")
+                                 key="pro_con_10_safe")
             st.session_state.pro_selected_contract = sel_con
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_10_fix")
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_10_safe")
             st.session_state.pro_lev_multi = target_lev
 
         if st.button(f"🔥 啟動 Alpha-10 運算", type="primary", use_container_width=True):
@@ -654,14 +652,13 @@ with tabs[2]:
 
                     res = []
                     for _, row in tdf.iterrows():
-                        alpha_score = 0 # 預設值
+                        alpha_score = 0
                         try:
                             K = float(row["strike_price"])
                             vol = float(row["volume"])
                             close_p = float(row["close"])
                             if K<=0: continue
                             
-                            # BS Model
                             try:
                                 r, sigma = 0.02, 0.2
                                 d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
@@ -683,22 +680,19 @@ with tabs[2]:
                             if P <= 0.5: continue
                             
                             lev = (abs(delta)*S_current)/P
-                            
-                            # ✅ 確保算出分數
                             alpha_score = calculate_alpha_10_score(delta, gamma, theta, vega, days, lev, P, vol, K, S_current)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
                                 "履約價": int(K), "價格": P, "狀態": status, "槓桿": lev,
                                 "Delta": delta, "Theta": theta, "Gamma": gamma, "Vega": vega,
-                                "評分": alpha_score, "Vol": int(vol), # ✅ 確保 key 存在
+                                "評分": alpha_score, "Vol": int(vol),
                                 "差距": abs(lev - current_target_lev),
                                 "合約": sel_con, "類型": op_type, "剩餘天": days
                             })
                         except: continue
                     
                     if res:
-                        # 排序
                         res.sort(key=lambda x: (-x['評分'], x['差距']))
                         st.session_state.pro_search_results = res[:15]
                         st.session_state.pro_best = res[0]
@@ -714,8 +708,6 @@ with tabs[2]:
                 st.markdown("#### 🏆 **Alpha-10 精選合約**")
                 price_int = int(round(best['價格']))
                 lev_str = f"{best['槓桿']:.1f}x"
-                
-                # ✅ 安全讀取評分 (修復點)
                 score_val = best.get('評分', 0)
                 score_str = f"{score_val:.0f}"
                 status_display = best.get('狀態', '成交價')
@@ -734,7 +726,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_10_fix"):
+                if st.button("➕ 加入投組", key="add_pf_10_safe"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -744,34 +736,53 @@ with tabs[2]:
             with st.expander("📋 因子詳細數據 (Greeks)", expanded=True):
                 res_df = pd.DataFrame(st.session_state.pro_search_results)
                 
-                def score_color(s):
-                    return 'background-color: #dcedc8' if s >= 80 else ''
-                
+                # ✅ 安全格式化 (使用 apply + try-except)
+                def safe_format(val, fmt):
+                    try: return fmt.format(val)
+                    except: return str(val)
+
                 show_df = res_df.copy()
-                show_df['權利金'] = show_df['價格'].round(0).astype(int)
-                show_df['槓桿'] = show_df['槓桿'].map(lambda x: f"{x:.1f}x")
-                show_df['評分'] = show_df['評分'].map(lambda x: f"{x:.0f}")
-                show_df['Delta'] = show_df['Delta'].map(lambda x: f"{x:.2f}")
-                show_df['Theta'] = show_df['Theta'].map(lambda x: f"{x:.1f}")
+                show_df['權利金'] = show_df['價格'].apply(lambda x: int(round(x)))
+                show_df['槓桿'] = show_df['槓桿'].apply(lambda x: safe_format(x, "{:.1f}x"))
+                
+                # ✅ 關鍵修復：處理評分欄位，預設為 0
+                if '評分' not in show_df.columns: show_df['評分'] = 0
+                show_df['評分'] = show_df['評分'].fillna(0).apply(lambda x: safe_format(x, "{:.0f}"))
+                
+                if 'Delta' not in show_df.columns: show_df['Delta'] = 0
+                show_df['Delta'] = show_df['Delta'].apply(lambda x: safe_format(x, "{:.2f}"))
+                
+                if 'Theta' not in show_df.columns: show_df['Theta'] = 0
+                show_df['Theta'] = show_df['Theta'].apply(lambda x: safe_format(x, "{:.1f}"))
+                
+                # ✅ 確保狀態列存在
+                if '狀態' not in show_df.columns: show_df['狀態'] = '成交價'
+
+                def score_color(row):
+                    try:
+                        score = float(row['評分'])
+                        return ['background-color: #dcedc8' if score >= 80 else ''] * len(row)
+                    except: return [''] * len(row)
                 
                 final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "評分", "Delta", "Theta", "Vol"]]
-                st.dataframe(final_show.style.map(score_color, subset=['評分']), use_container_width=True)
+                st.dataframe(final_show.style.apply(score_color, axis=1), use_container_width=True)
 
     with col_portfolio:
         st.markdown("#### 💼 **投組**")
         if st.session_state.portfolio:
             pf_df = pd.DataFrame(st.session_state.portfolio)
             total = pf_df['價格'].sum() * 50
-            # ✅ 安全讀取評分
-            avg_score = pf_df['評分'].mean() if '評分' in pf_df else 0
+            avg_score = pf_df['評分'].mean() if '評分' in pf_df.columns else 0
             
             st.metric("總金", f"${int(total):,}")
             st.caption(f"{len(pf_df)}口 | 平均Alpha {avg_score:.0f}")
             
             pf_show = pf_df.copy()
             pf_show['權利金'] = pf_df['價格'].round(0).astype(int)
-            pf_show['槓桿'] = pf_df['槓桿'].map(lambda x: f"{x:.1f}x")
-            pf_show['評分'] = pf_df['評分'].map(lambda x: f"{x:.0f}")
+            pf_show['槓桿'] = pf_df['槓桿'].apply(lambda x: safe_format(x, "{:.1f}x"))
+            
+            if '評分' not in pf_show.columns: pf_show['評分'] = 0
+            pf_show['評分'] = pf_show['評分'].fillna(0).apply(lambda x: safe_format(x, "{:.0f}"))
             
             def risk_color(d):
                 return 'background-color: #ffebee' if d<=10 else ('background-color: #fff3e0' if d<=30 else '')
@@ -781,13 +792,13 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_10_fix"): 
+                if st.button("清空", key="clr_pf_10_safe"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_10_fix")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_10_safe")
         else: st.info("空投組")
-
+        
     # 10因子說明書
     with st.expander("🧬 **Alpha-10 因子權重表**"):
         st.markdown("""
