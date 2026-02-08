@@ -557,7 +557,7 @@ with tabs[1]:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 
 # --------------------------
-# Tab 2: 專業期權戰情室 (終極完整 v8.9)
+# Tab 2: 專業期權戰情室 (語法修復版 v9.0)
 # --------------------------
 with tabs[2]:
     # 初始化
@@ -593,7 +593,7 @@ with tabs[2]:
         # 參數
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0)
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_fix")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
@@ -601,12 +601,13 @@ with tabs[2]:
             default = st.session_state.pro_selected_contract
             if default not in available: default = available[0] if available else ""
             sel_con = st.selectbox("月份", available if available else [""],
-                                 index=available.index(default) if available and default in available else 0)
+                                 index=available.index(default) if available and default in available else 0,
+                                 key="pro_con_fix")
             st.session_state.pro_selected_contract = sel_con
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 15.0, 8.0, 0.5)
+            target_lev = st.slider("槓桿", 2.0, 15.0, 8.0, 0.5, key="pro_lev_fix")
 
-        if st.button(f"🔥 掃描{op_type}({sel_con or '-'})", type="primary"):
+        if st.button(f"🔥 掃描{op_type}({sel_con or '-'})", type="primary", use_container_width=True):
             if sel_con and len(str(sel_con))==6 and sel_con.isdigit():
                 st.session_state.pro_selected_type = op_type
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
@@ -627,7 +628,7 @@ with tabs[2]:
                             close_p = float(row["close"])
                             if K<=0: continue
                             
-                            # Greeks
+                            # Greeks (這裡加上了 except)
                             try:
                                 r, sigma = 0.02, 0.2
                                 d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
@@ -636,7 +637,103 @@ with tabs[2]:
                                     bs_p = S_current*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d2)
                                     delta = norm.cdf(d1)
                                 else:
-                                    bs_p
+                                    bs_p = K*np.exp(-r*T)*norm.cdf(-d2)-S_current*norm.cdf(-d1)
+                                    delta = -norm.cdf(-d1)
+                            except:
+                                bs_p, delta = close_p, 0.3
+
+                            P = close_p if vol > 0 else bs_p
+                            if P <= 0.5: continue
+                            
+                            lev = (abs(delta)*S_current)/P
+                            if vol < 5 or lev < 1 or lev > 30: continue
+                            
+                            win_rate = calculate_win_rate(delta, days)
+                            status = "🟢成交價" if vol > 0 else "🔵合理價"
+
+                            res.append({
+                                "合約": sel_con, "類型": op_type, "履約價": int(K),
+                                "價格": P, "狀態": status, "槓桿": lev, 
+                                "Delta": delta, "勝率": win_rate, "Vol": int(vol),
+                                "差距": abs(lev-target_lev), "剩餘天": days
+                            })
+                        except: continue
+                    
+                    if res:
+                        res.sort(key=lambda x: x['差距'])
+                        st.session_state.pro_search_results = res[:10]
+                        st.session_state.pro_best = res[0]
+                        st.success(f"🎯 找到 {len(res)} 個機會")
+                    else: st.warning("無結果")
+
+        # 結果顯示
+        if st.session_state.pro_search_results:
+            best = st.session_state.pro_best
+            st.markdown("---")
+            
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                st.markdown("#### 🏆 **最佳推薦**")
+                price_int = int(round(best['價格']))
+                lev_str = f"{best['槓桿']:.1f}x"
+                win_str = f"{best['勝率']:.0f}%"
+                
+                st.markdown(f"""
+                `{best['履約價']} {best['類型']}`
+                **{price_int}點 {best['狀態']}**
+                槓桿 `{lev_str}` | 勝率 `{win_str}`
+                """)
+                
+            with col2:
+                if st.button("➕ 加入投組", key="add_pf_fix"):
+                    exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
+                    if not exists:
+                        st.session_state.portfolio.append(best)
+                        st.toast("✅ 加入")
+                    else: st.toast("⚠️ 重複")
+            
+            with st.expander("📋 完整清單"):
+                res_df = pd.DataFrame(st.session_state.pro_search_results)
+                
+                def status_color(s):
+                    return 'background-color: #e8f5e8' if "成交價" in s else 'background-color: #e3f2fd'
+                
+                show_df = res_df.copy()
+                show_df['權利金'] = show_df['價格'].round(0).astype(int)
+                show_df['槓桿'] = show_df['槓桿'].map(lambda x: f"{x:.1f}x")
+                show_df['勝率'] = show_df['勝率'].map(lambda x: f"{x:.0f}%")
+                
+                final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "Vol"]]
+                st.dataframe(final_show.style.map(status_color, subset=['狀態']), use_container_width=True)
+
+    # 右欄投組
+    with col_portfolio:
+        st.markdown("#### 💼 **投組**")
+        if st.session_state.portfolio:
+            pf_df = pd.DataFrame(st.session_state.portfolio)
+            total = pf_df['價格'].sum() * 50
+            avg_win = pf_df['勝率'].mean()
+            st.metric("總金", f"${int(total):,}")
+            st.caption(f"{len(pf_df)}口 | 勝率{avg_win:.0f}%")
+            
+            pf_show = pf_df.copy()
+            pf_show['權利金'] = pf_df['價格'].round(0).astype(int)
+            pf_show['槓桿'] = pf_df['槓桿'].map(lambda x: f"{x:.1f}x")
+            pf_show['勝率'] = pf_df['勝率'].map(lambda x: f"{x:.0f}%")
+            
+            def risk_color(d):
+                return 'background-color: #ffebee' if d<=10 else ('background-color: #fff3e0' if d<=30 else '')
+            
+            st.dataframe(pf_show[["合約","履約價","權利金","狀態","槓桿","勝率","剩餘天"]].style.map(risk_color, subset=['剩餘天']), use_container_width=True)
+            
+            b1, b2 = st.columns(2)
+            with b1: 
+                if st.button("清空", key="clr_pf_fix"): 
+                    st.session_state.portfolio = []
+                    st.rerun()
+            with b2:
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_fix")
+        else: st.info("空投組")
 
 # --------------------------
 # Tab 3: 歷史回測
