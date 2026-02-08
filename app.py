@@ -272,7 +272,7 @@ with col4:
 st.markdown("---")
 
 # 合規聲明
-# 合規聲明（放在 app 最上方，st.sidebar 之前）
+# 合規聲明（放在 app 最上方）
 if not st.session_state.get('disclaimer_accepted', False):
     st.warning("🚨 **重要聲明**：本工具僅供教育，非投資建議。新手請先閱讀「穩健ETF」章節。")
     
@@ -285,10 +285,21 @@ if not st.session_state.get('disclaimer_accepted', False):
         st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="方案二", use_container_width=True)
         st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
     
-    if st.button("✅ 我了解，開始使用", type="primary"):
-        st.session_state.disclaimer_accepted = True
-        st.rerun()
+    # 按鈕放在書籍下方
+    st.button("✅ 我了解，開始使用", type="primary", use_container_width=True)
+    
     st.stop()
+
+# 原側邊欄內容
+with st.sidebar:
+    st.markdown("## 🥯 **貝伊果屋**")
+    st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
+    
+    if st.session_state.get('is_pro', False):
+        st.success("👑 Pro 會員")
+    
+    st.divider()
+    st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
 
 # 原側邊欄內容（移到 disclaimer 通過後）
 with st.sidebar:
