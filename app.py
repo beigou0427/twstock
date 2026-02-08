@@ -263,8 +263,11 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (首屏雙軌導航版 v6.0)
+# Tab 0: 穩健 ETF (強制重繪終極版 v6.1)
 # --------------------------
+# 請將此完整代碼替換原有的 with tabs[0]: 區塊
+# 確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1, time
+
 with tabs[0]:
     # === 0. 首屏核心導航 (第一眼就看到) ===
     st.markdown("## 🐢 **ETF 定投計畫**")
@@ -315,24 +318,33 @@ with tabs[0]:
         </div>
         """, unsafe_allow_html=True)
         
-        # 🔥 超大按鈕 (視覺焦點)
-        if st.button("🚀 **立即進入戰場 (Tab 2)** ⏭️", type="primary", use_container_width=True, key="btn_top_jump"):
+        # 🔥 動態 Key 生成 (確保每次按鈕都是新的實例，解決只有第一次有效問題)
+        import time
+        btn_key = f"btn_jump_{int(time.time())}"
+        
+        # 🔥 超大按鈕
+        if st.button("🚀 **立即進入戰場 (Tab 2)** ⏭️", type="primary", use_container_width=True, key=btn_key):
             import streamlit.components.v1 as components
-            import time
-            rnd = int(time.time())
+            
+            # JS 邏輯：先點 Tab 0 (重置) -> 再點 Tab 2 (觸發)
             js = f'''
             <script>
-                setTimeout(function() {{
-                    var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                    if (tabs.length > 2) {{
+                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                if (tabs.length > 2) {{
+                    // 重置狀態 hack
+                    tabs[0].click();
+                    setTimeout(function() {{
                         tabs[2].click();
                         window.scrollTo(0, 0);
-                    }}
-                }}, 150);
+                        console.log("Force Jump to Tab 2");
+                    }}, 100);
+                }}
             </script>
             '''
             components.html(js, height=0)
-            st.toast("🔥 正在載入戰情室...", icon="🚀")
+            st.toast("🔥 戰情室載入中...", icon="🚀")
+            # 強制 rerun 更新狀態
+            st.rerun()
 
     st.markdown("---")
 
@@ -427,7 +439,6 @@ with tabs[0]:
     
     st.markdown("---")
     st.caption("💪 **恭喜！您已完成定投啟蒙。**")
-
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
