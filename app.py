@@ -333,7 +333,7 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (純前端JS導航版 v6.6 - 新手強化版)
+# Tab 0: 穩健 ETF (純前端JS導航版 v6.6 - 新手強化版，無web）
 # --------------------------
 # 請確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1
 # 注意：此版本無需在程式開頭加額外代碼，直接替換 tabs[0] 即可
@@ -342,9 +342,9 @@ with tabs[0]:
     # === 0. 新手入門檢查 + 首屏核心導航 ===
     if not st.session_state.get('etf_newbie_done', False):
         st.markdown("### 🚨 **股票完全新手必讀！（1分鐘）**")
-        st.info("**什麼是股票？** 公司股份，漲跌像買賣房子 [web:15][web:16]")
-        st.info("**什麼是ETF？** 一籃子股票（50家公司），一次分散風險，低門檻 [web:16][web:18]")
-        st.info("**什麼是定投？** 每月固定買（如薪水存股），避開高點，低點多買，長期穩贏 [web:17][web:22]")
+        st.info("**什麼是股票？** 公司股份，漲跌像買賣房子")
+        st.info("**什麼是ETF？** 一籃子股票（50家公司），一次分散風險，低門檻")
+        st.info("**什麼是定投？** 每月固定買（如薪水存股），避開高點，低點多買，長期穩贏")
         
         st.markdown("---")
         if st.button("✅ **我懂了！開始定投計畫**", type="primary"):
@@ -389,7 +389,7 @@ with tabs[0]:
             <div class="nav-desc">每月自動買，10年變富翁<br>適合新手、上班族<br>像每月存錢一樣簡單</div>
         </div>
         """, unsafe_allow_html=True)
-        st.caption("**為什麼定投好？** 市場跌時多買便宜貨，漲時少買，平均成本低 [web:25]")
+        st.caption("**為什麼定投好？** 市場跌時多買便宜貨，漲時少買，平均成本低")
 
     # 右側：進階戰室
     with col_risk:
@@ -480,7 +480,7 @@ with tabs[0]:
         return pd.DataFrame(data)
 
     st.markdown("### 📡 **即時報價**（每10分更新）")
-    st.caption("**新手提示：** 綠色漲=好消息，但定投不看短期漲跌，只看長期 [web:17]")
+    st.caption("**新手提示：** 綠色漲=好消息，但定投不看短期漲跌，只看長期")
     try:
         quotes = get_etf_quotes()
         st.dataframe(quotes, use_container_width=True, hide_index=True)
@@ -503,13 +503,13 @@ with tabs[0]:
         "適合誰": ["上班族定投", "長期省費", "科技迷", "成長追求者", "分散全球"]
     })
     st.dataframe(etf_compare, use_container_width=True, hide_index=True)
-    st.caption("*資料來源：投信官網 [web:11][web:18]。0050最穩，適合第一次買股票 [web:15]*")
+    st.caption("0050最穩，適合第一次買股票")
     
     st.markdown("---")
 
     # === 3. 定投試算 ===
     st.markdown("### 💰 **定投試算器**（輸入你的薪水試試）")
-    st.info("**怎麼用？** 像每月繳房貸一樣，設定後自動扣款，忘記它10年 [web:16][web:22]")
+    st.info("**怎麼用？** 像每月繳房貸一樣，設定後自動扣款，忘記它10年")
     c1, c2, c3 = st.columns(3)
     with c1: monthly = st.number_input("每月投入", 1000, 500000, 10000, step=1000, key="t0_m")  # 降到1000新手友善
     with c2: years = st.slider("持續年數", 5, 30, 10, key="t0_y")
@@ -529,7 +529,7 @@ with tabs[0]:
 
     # === 4. 心理建設（強化） ===
     st.markdown("### 🧠 **堅持就是贏家！（真實案例）**")
-    st.info("**股市真理：** 90%人輸在不堅持。像存錢一樣，每月買就對了 [web:25]")
+    st.info("**股市真理：** 90%人輸在不堅持。像存錢一樣，每月買就對了")
     c_stop, c_go = st.columns(2)
     with c_stop:
         stop_y = st.slider("❌ 假如第幾年停止？", 1, years-1, 3, key="t0_stop")
@@ -546,14 +546,14 @@ with tabs[0]:
     # === 5. 風險須知 + 行動 ===
     st.markdown("### ⚠️ **風險提醒（必讀）**")
     st.warning("""
-- **市場風險：** 短期可跌20-50%，但長期上漲機率95% [web:17]
+- **市場風險：** 短期可跌20-50%，但長期上漲機率95%
 - **匯率風險：** 美股ETF（如00662）受美元影響
-- **不保證獲利：** 過去績效不代表未來，每月1000元起投 [web:20]
-- **開戶步驟：** 下載券商App > 開證券戶 > 設定定期定額（永豐/富邦最低100元） [web:16]
+- **不保證獲利：** 過去績效不代表未來，每月1000元起投
+- **開戶步驟：** 下載券商App > 開證券戶 > 設定定期定額（永豐/富邦最低100元）
     """)
     
     st.markdown("---")
-    st.success("💪 **恭喜完成定投啟蒙！** 現在去開戶，每月投10000元，10年後謝謝自己 [cite:2]")
+    st.success("💪 **恭喜完成定投啟蒙！** 現在去開戶，每月投10000元，10年後謝謝自己")
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
