@@ -556,7 +556,7 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (回本機率優化版 v14.0)
+# Tab 2: 專業期權戰情室 (勝率優化版 v14.2)
 # --------------------------
 with tabs[2]:
     # 初始化
@@ -567,37 +567,26 @@ with tabs[2]:
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # ✅ v14.0 核心：損益兩平機率 (Probability of Breakeven)
-    def calculate_breakeven_win_rate(S, K, Price, T, r, sigma, op_type):
-        try:
-            # 1. 計算損益兩平點 (Breakeven Price)
-            # 買 Call 必須漲過 (K + Price) 才開始賺錢
-            # 買 Put 必須跌破 (K - Price) 才開始賺錢
-            if op_type == "CALL":
-                BE = K + Price
-                # 計算達到 BE 的機率 (使用 BS d2 公式，但把 K 換成 BE)
-                d2_be = (np.log(S/BE) + (r - 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-                prob_be = norm.cdf(d2_be) * 100
-            else:
-                BE = K - Price
-                d2_be = (np.log(S/BE) + (r - 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-                prob_be = norm.cdf(-d2_be) * 100
-
-            # 2. 長期漂移紅利 (Drift Bonus)
-            # BS模型假設期望值是無風險利率，但大盤長期有風險溢酬 (約年化 5~8%)
-            # 對於 Call，時間越長，吃到趨勢紅利的機會越高
-            if op_type == "CALL":
-                # 簡單估算：每 30 天增加 1.5% 勝率 (反映大盤長期向上)
-                drift_bonus = min((T * 365) / 30 * 1.5, 15)
-                final_win = prob_be + drift_bonus
-            else:
-                # Put 逆勢操作，長期持有反而勝率會隨時間下降 (被通膨吃掉)
-                drift_penalty = min((T * 365) / 30 * 0.5, 5)
-                final_win = prob_be - drift_penalty
-
-            return min(max(final_win, 5), 92) # 上限 92%
-        except:
-            return 50
+    # ✅ 優化版勝率 (Balance between Realistic & Optimistic)
+    def calculate_balanced_win_rate(delta, days, d2_prob):
+        # 1. 基礎獲利機率 (BSPOP) 權重 90%
+        base_pop = d2_prob * 100 * 0.9
+        
+        # 2. Delta 加成 (深價內更穩)
+        # Delta 0.5 -> +5%, Delta 0.9 -> +9%
+        delta_bonus = abs(delta) * 10
+        
+        # 3. 時間紅利 (長期持有優勢)
+        # 每30天+2%，最高+10%
+        time_bonus = min(days / 30 * 2, 10)
+        
+        # 4. 趨勢加成 (Call 自帶多頭優勢)
+        trend_bonus = 5 if delta > 0 else 0
+        
+        final_win = base_pop + delta_bonus + time_bonus + trend_bonus
+        
+        # ✅ 上限鎖定 92% (您的要求)
+        return min(max(final_win, 10), 92)
 
     with col_search:
         st.markdown("#### 🔍 **策略雷達**")
@@ -612,20 +601,20 @@ with tabs[2]:
         # 1. 參數區
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_v14")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_bal")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_v14")
+            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_bal")
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_v14")
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_bal")
 
         # 2. 掃描按鈕
-        def on_scan_v14():
+        def on_scan_bal():
             st.session_state.bspop_locked_results = []
             
-        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_v14):
+        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_bal):
             if sel_con and len(str(sel_con))==6:
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
@@ -645,7 +634,6 @@ with tabs[2]:
                             close_p = float(row["close"])
                             if K<=0: continue
                             
-                            # BS Model
                             try:
                                 r, sigma = 0.02, 0.2
                                 d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
@@ -654,23 +642,25 @@ with tabs[2]:
                                 if op_type=="CALL":
                                     bs_p = S_current*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d2)
                                     delta = norm.cdf(d1)
+                                    bspop_prob = norm.cdf(d2)
                                 else:
                                     bs_p = K*np.exp(-r*T)*norm.cdf(-d2)-S_current*norm.cdf(-d1)
                                     delta = -norm.cdf(-d1)
+                                    bspop_prob = norm.cdf(-d2)
                             except: 
-                                bs_p, delta, sigma = close_p, 0.5, 0.2
+                                bs_p, delta, bspop_prob = close_p, 0.5, 0.5
 
                             P = close_p if vol > 0 else bs_p
                             if P <= 0.5: continue
                             
                             lev = (abs(delta)*S_current)/P
                             
-                            # 過濾邏輯 (保留5倍以下)
+                            # 過濾邏輯
                             if abs(delta) < 0.15: continue
                             if lev > 50: continue
 
-                            # ✅ 計算真實回本勝率
-                            win_rate = calculate_breakeven_win_rate(S_current, K, P, T, r, sigma, op_type)
+                            # ✅ 計算勝率
+                            win_rate = calculate_balanced_win_rate(delta, days, bspop_prob)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
@@ -710,7 +700,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_v14"):
+                if st.button("➕ 加入投組", key="add_pf_bal"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -753,11 +743,11 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_v14"): 
+                if st.button("清空", key="clr_pf_bal"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_v14")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_bal")
         else: st.info("空投組")
 
 # --------------------------
