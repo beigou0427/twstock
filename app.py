@@ -556,7 +556,7 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (勝率優化版 v14.2)
+# Tab 2: 專業期權戰情室 (3倍槓桿衰退版 v14.4)
 # --------------------------
 with tabs[2]:
     # 初始化
@@ -567,25 +567,32 @@ with tabs[2]:
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # ✅ 優化版勝率 (Balance between Realistic & Optimistic)
-    def calculate_balanced_win_rate(delta, days, d2_prob):
-        # 1. 基礎獲利機率 (BSPOP) 權重 90%
-        base_pop = d2_prob * 100 * 0.9
+    # ✅ 3x 槓桿衰退勝率模型
+    def calculate_lev_decay_win_rate(delta, days, d2_prob, lev):
+        # 1. 基礎勝率 (BSPOP * 0.9)
+        base_win = d2_prob * 100 * 0.9
         
-        # 2. Delta 加成 (深價內更穩)
-        # Delta 0.5 -> +5%, Delta 0.9 -> +9%
+        # 2. Delta 加成
         delta_bonus = abs(delta) * 10
         
-        # 3. 時間紅利 (長期持有優勢)
-        # 每30天+2%，最高+10%
+        # 3. 時間紅利
         time_bonus = min(days / 30 * 2, 10)
         
-        # 4. 趨勢加成 (Call 自帶多頭優勢)
+        # 4. 趨勢紅利
         trend_bonus = 5 if delta > 0 else 0
         
-        final_win = base_pop + delta_bonus + time_bonus + trend_bonus
+        raw_win = base_win + delta_bonus + time_bonus + trend_bonus
         
-        # ✅ 上限鎖定 92% (您的要求)
+        # 📉 5. 關鍵優化：槓桿衰退 (從 3x 開始)
+        if lev <= 3:
+            decay = 0 # 3倍以下神聖領域，不扣分
+        else:
+            # 線性懲罰：每超過1倍，勝率扣 1.2%
+            # 例如 13x -> (13-3)*1.2 = 12% 扣分
+            decay = (lev - 3) * 1.2
+            
+        final_win = raw_win - decay
+        
         return min(max(final_win, 10), 92)
 
     with col_search:
@@ -601,20 +608,20 @@ with tabs[2]:
         # 1. 參數區
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_bal")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_decay")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_bal")
+            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_decay")
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_bal")
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_decay")
 
         # 2. 掃描按鈕
-        def on_scan_bal():
+        def on_scan_decay():
             st.session_state.bspop_locked_results = []
             
-        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_bal):
+        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_decay):
             if sel_con and len(str(sel_con))==6:
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
@@ -634,6 +641,7 @@ with tabs[2]:
                             close_p = float(row["close"])
                             if K<=0: continue
                             
+                            # BS Model
                             try:
                                 r, sigma = 0.02, 0.2
                                 d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
@@ -655,12 +663,12 @@ with tabs[2]:
                             
                             lev = (abs(delta)*S_current)/P
                             
-                            # 過濾邏輯
+                            # 過濾
                             if abs(delta) < 0.15: continue
                             if lev > 50: continue
 
-                            # ✅ 計算勝率
-                            win_rate = calculate_balanced_win_rate(delta, days, bspop_prob)
+                            # ✅ 計算槓桿衰退勝率
+                            win_rate = calculate_lev_decay_win_rate(delta, days, bspop_prob, lev)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
@@ -700,7 +708,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_bal"):
+                if st.button("➕ 加入投組", key="add_pf_decay"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -743,11 +751,11 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_bal"): 
+                if st.button("清空", key="clr_pf_decay"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_bal")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_decay")
         else: st.info("空投組")
 
 # --------------------------
