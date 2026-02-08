@@ -332,144 +332,188 @@ tab_names = [
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 # --------------------------
-# Tab 0: 穩健 ETF (v6.9 - 修復版，無中文特殊符號)
+# Tab 0: 穩健 ETF (v7.0 - 中文化版)
 # --------------------------
 
 with tabs[0]:
-    # 新手檢查
+    # 新手閘門
     if not st.session_state.get('etf_newbie_done', False):
-        st.markdown("### Newbie Check (1 min)")
-        st.info("Stock=company share | ETF=basket | DCA=monthly buy")
-        if st.button("OK Start"): 
+        st.markdown("### 🚨 股票新手必讀！（1分鐘）")
+        st.info("**股票**：公司股份，漲跌像買賣房子")
+        st.info("**ETF**：一籃子股票，分散風險")
+        st.info("**定投**：每月固定買，長期平均成本低")
+        if st.button("✅ 我懂了！開始定投", type="primary"):
             st.session_state.etf_newbie_done = True
             st.rerun()
         st.stop()
 
-    st.markdown("## ETF DCA Plan")
+    st.markdown("## 🐢 ETF 定投計畫 - 新手專用")
 
-    # Navigation
+    # 導航卡片
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown('<div style="border-radius:10px;padding:15px;background:rgba(40,167,69,0.1);border:1px solid #28a745;text-align:center;"><div style="color:#28a745;font-size:20px;font-weight:bold;">Safe DCA</div><div style="font-size:13px;color:#ccc;">Monthly auto<br>10yr wealth</div></div>', unsafe_allow_html=True)
+        st.markdown('''
+        <div style="border-radius:10px;padding:20px;background:rgba(40,167,69,0.1);border:2px solid #28a745;text-align:center;">
+            <div style="color:#28a745;font-size:22px;font-weight:bold;margin-bottom:8px;">🐢 穩健定投區</div>
+            <div style="font-size:14px;color:#666;">每月自動買<br>10年變富翁</div>
+        </div>
+        ''', unsafe_allow_html=True)
     with col2:
-        st.markdown('<div style="border-radius:10px;padding:15px;background:linear-gradient(135deg,#2b0f0f 0%,#1a1a1a 100%);border:2px solid #ff4b4b;text-align:center;"><div style="color:#ff4b4b;font-size:20px;font-weight:bold;">Advanced</div><div style="font-size:13px;color:#ccc;">Leverage science</div></div>', unsafe_allow_html=True)
+        st.markdown('''
+        <div style="border-radius:10px;padding:20px;background:linear-gradient(135deg,#2b0f0f 0%,#1a1a1a 100%);border:2px solid #ff4b4b;text-align:center;">
+            <div style="color:#ff4b4b;font-size:22px;font-weight:bold;margin-bottom:8px;">⚡ 進階戰室</div>
+            <div style="font-size:14px;color:#ccc;">槓桿科學<br>（有經驗者）</div>
+        </div>
+        ''', unsafe_allow_html=True)
+        
+        # Tab2跳轉按鈕
         import streamlit.components.v1 as components
-        components.html('''<button style="width:100%;height:40px;background:#ff4b4b;color:white;border-radius:8px;font-weight:600;cursor:pointer;" onclick="jumpToTab2()">Go Tab2</button><script>function jumpToTab2(){try{var t=window.parent.document.querySelectorAll(\'button[data-baseweb="tab"]\');t[2]&&t[2].click()}catch(e){}}</script>''', height=50)
+        components.html('''
+        <button style="width:100%;height:45px;background:#ff4b4b;color:white;border:none;border-radius:10px;font-size:16px;font-weight:600;cursor:pointer;margin-top:10px;transition:all 0.3s;"
+        onmouseover="this.style.background=\'#ff3333\';this.style.transform=\'scale(1.02)\'" 
+        onmouseout="this.style.background=\'#ff4b4b\';this.style.transform=\'scale(1)\'"
+        onclick="jumpToTab2()">🚀 立即進入戰場 (Tab 2)</button>
+        <script>
+        function jumpToTab2(){
+            try{
+                var tabs=window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                if(tabs.length>2){tabs[2].click();window.parent.scrollTo(0,0);}
+            }catch(e){console.error(e);}
+        }
+        </script>
+        ''', height=80)
 
     st.markdown("---")
 
-    # ETF Info
-    st.markdown("### 5 ETFs Detail")
-    etf_list = {
-        "0050": "TW50 | TSMC 64% | Beginner",
-        "006208": "TW50 LowFee | TSMC 57% | Save 0.23%",
-        "00662": "NASDAQ | AAPL9%/MSFT9% | Tech 15%",
-        "00757": "FANG+ | META11%/NVDA10% | Growth",
-        "00646": "SP500 | AAPL7%/MSFT6% | Stable 12%"
+    # ETF介紹
+    st.markdown("### 🎯 5大ETF權威解析")
+    etf_info = {
+        "0050": "🇹🇼 元大台灣50 | 台積電64% | **新手首選**",
+        "006208": "💰 富邦台灣50 | 台積電57% | **費率最低0.23%**", 
+        "00662": "📱 NASDAQ100 | 蘋果9%/微軟9% | **科技成長15%**",
+        "00757": "🚀 FANG+ | META11%/輝達10% | **高報酬**",
+        "00646": "🌍 S&P500 | 蘋果7%/微軟6% | **全球最穩12%**"
     }
     cols = st.columns(5)
-    for i, (code, info) in enumerate(etf_list.items()):
+    for i, (code, info) in enumerate(etf_info.items()):
         with cols[i]:
-            st.caption(f"**{info}**")
+            st.markdown(f"**{info}**")
 
     st.markdown("---")
 
-    # Quotes
+    # 即時報價
     @st.cache_data(ttl=600)
-    def get_quotes():
+    def get_etf_quotes():
         from FinMind.data import DataLoader
         from datetime import date, timedelta
         api = DataLoader()
         etfs = ['0050','006208','00662','00757','00646']
         data = []
-        end = date.today().strftime('%Y-%m-%d')
-        start = (date.today() - timedelta(90)).strftime('%Y-%m-%d')
-        for sid in etfs:
+        end_date = date.today().strftime('%Y-%m-%d')
+        start_date = (date.today() - timedelta(days=90)).strftime('%Y-%m-%d')
+        
+        for stock_id in etfs:
             try:
-                df = api.taiwan_stock_daily(sid, start, end)
-                if df.empty: continue
-                l, p = df.iloc[-1], df.iloc[-2] if len(df)>1 else df.iloc[-1]
-                data.append({
-                    'ETF': sid,
-                    'Name': {'0050':'TW50','006208':'TW50L','00662':'NAS','00757':'FANG','00646':'SP500'}[sid],
-                    'Price': f"NT${l.close:.2f}",
-                    'Chg': f"{l.close-p.close:+.2f}",
-                    '%': f"{(l.close/p.close-1)*100:+.2f}%"
-                })
-            except: pass
+                df = api.taiwan_stock_daily(stock_id=stock_id, start_date=start_date, end_date=end_date)
+                if not df.empty:
+                    latest = df.iloc[-1]
+                    prev = df.iloc[-2] if len(df) > 1 else latest
+                    change = latest['close'] - prev['close']
+                    pct = (change / prev['close']) * 100
+                    data.append({
+                        'ETF': stock_id,
+                        '名稱': {'0050':'台灣50','006208':'富邦台50','00662':'NASDAQ','00757':'FANG+','00646':'S&P500'}.get(stock_id, stock_id),
+                        '最新價': f"NT${latest['close']:.2f}",
+                        '漲跌': f"{change:+.2f}",
+                        '漲跌幅': f"{pct:+.2f}%"
+                    })
+            except:
+                pass
         return pd.DataFrame(data)
 
-    st.markdown("### Live Quotes")
+    st.markdown("### 📡 即時報價（每10分更新）")
+    st.caption("**新手提示**：綠色=漲，但定投只看長期")
     try:
-        st.dataframe(get_quotes(), use_container_width=True, hide_index=True)
+        quotes = get_etf_quotes()
+        st.dataframe(quotes, use_container_width=True, hide_index=True)
     except:
-        st.error("Load failed")
-    if st.button("Refresh"):
+        st.error("報價載入失敗")
+    
+    if st.button("🔄 立即刷新"):
         st.cache_data.clear()
         st.rerun()
 
     st.markdown("---")
 
-    # DCA Calculator with ETF Returns
-    st.markdown("### DCA Calculator")
+    # 定投試算器（ETF年化選擇）
+    st.markdown("### 💰 定投試算器")
+    st.info("**操作**：選ETF→設金額→看10年成果")
 
     etf_returns = {
-        "0050 TW50": 0.10,
-        "006208 TW50 LowFee": 0.102,
-        "00662 NASDAQ": 0.15,
-        "00757 FANG+": 0.18,
-        "00646 SP500": 0.12
+        "0050 (台灣50)": 10.0,     # 保守10%
+        "006208 (富邦台50)": 10.2, # 略高
+        "00662 (NASDAQ)": 15.0,    # 科技成長
+        "00757 (FANG+)": 18.0,     # 高風險高報酬
+        "00646 (S&P500)": 12.0     # 美股基準
     }
-
+    
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        monthly = st.number_input("Monthly", 1000, 50000, 10000, 1000, key="mon")
+        monthly = st.number_input("每月投入", 1000, 500000, 10000, 1000, key="monthly")
     with col2:
-        years = st.slider("Years", 5, 30, 10, key="yrs")
+        years = st.slider("投資年數", 5, 30, 10, key="years")
     with col3:
-        etf_sel = st.selectbox("ETF Return", list(etf_returns.keys()), key="etf")
+        selected_etf = st.selectbox("選擇ETF", list(etf_returns.keys()), key="etf_select")
     with col4:
-        rate = st.slider("Custom %", 5.0, 20.0, etf_returns[etf_sel]*100, 0.5, key="rate") / 100
+        rate = st.slider("年化報酬%", 5.0, 20.0, etf_returns[selected_etf], 0.5, key="rate") / 100
 
-    # Calculate
+    # 計算結果
     r = rate
-    final = monthly * 12 * (((1 + r)**years - 1) / r)
-    st.metric(f"{years}yr Total", f"NT${final:,.0f}")
+    final_amount = monthly * 12 * (((1 + r)**years - 1) / r)
+    st.metric(f"💎 {years}年後總資產", f"NT${final_amount:,.0f}")
 
-    # Chart
+    # 財富曲線圖
     import plotly.express as px
     import numpy as np
     periods = np.arange(1, years + 1)
     values = [monthly * 12 * (((1 + r)**p - 1) / r) for p in periods]
-    fig = px.line(pd.DataFrame({'Year': periods, 'Value': values}), x='Year', y='Value',
-                  title=f"{etf_sel} DCA Path", markers=True)
-    fig.update_layout(height=300, showlegend=False)
+    fig = px.line(
+        pd.DataFrame({'年份': periods, '資產': values}), 
+        x='年份', y='資產',
+        markers=True,
+        title=f"{selected_etf} 定投財富曲線"
+    )
+    fig.update_layout(height=320, showlegend=False, margin=dict(t=50))
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
 
-    # Persistence
-    st.markdown("### Stay = Win")
-    c1, c2 = st.columns(2)
-    with c1:
-        stop_y = st.slider("Stop Early", 1, years-1, 3, key="stop")
-        stop_v = monthly * 12 * (((1 + r)**stop_y - 1) / r)
-        st.error(f"NT${stop_v:,.0f}")
-    with c2:
-        gain = ((final / stop_v) - 1) * 100
-        st.success(f"+{gain:.0f}% More!")
+    # 堅持對比
+    st.markdown("### 🧠 堅持就是勝利！")
+    col_stop, col_go = st.columns(2)
+    with col_stop:
+        stop_year = st.slider("❌ 假如第幾年停止？", 1, years-1, 3, key="stop_year")
+        stop_value = monthly * 12 * (((1 + r)**stop_year - 1) / r)
+        st.error(f"🚨 資產停滯：**NT${stop_value:,.0f}**")
+    with col_go:
+        gain_percentage = ((final_amount / stop_value) - 1) * 100
+        st.success(f"✅ 堅持到底：**多賺{gain_percentage:.0f}%**！💰")
 
     st.markdown("---")
 
+    # 風險提醒
+    st.markdown("### ⚠️ 風險須知（必讀）")
     st.warning("""
-### Risks
-- Short-term -30-50%, long-term +95%
-- USD ETFs have FX risk  
-- Start NT$100/mo
-- Broker app → auto DCA
+    - **市場風險**：短期可能跌30-50%，但長期上漲機率95%
+    - **匯率風險**：美股ETF（00662/00646）受美元波動影響  
+    - **起投門檻**：每月100元即可開始
+    - **開戶流程**：券商App → 開戶 → 設定自動定投
+    - **免責聲明**：過去績效不保證未來，投資有風險
     """)
 
-    st.success("DCA Ready! Start 0050+00662")
+    st.markdown("---")
+    st.success("🎉 **定投啟蒙完成！** 建議：**0050(70%) + 00662(30%)** 開始你的財富雪球")
+
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
