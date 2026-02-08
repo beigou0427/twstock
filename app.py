@@ -263,15 +263,79 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (單導Tab2版 v5.4)
-# --------------------------
-# --------------------------
-# Tab 0: 穩健 ETF (視覺究極強化版 v5.8)
+# Tab 0: 穩健 ETF (首屏雙軌導航版 v6.0)
 # --------------------------
 with tabs[0]:
+    # === 0. 首屏核心導航 (第一眼就看到) ===
     st.markdown("## 🐢 **ETF 定投計畫**")
-    st.info("💡 **新手專用**：每月自動買，10年變富翁！")
     
+    # CSS 樣式：定義呼吸燈與卡片
+    st.markdown("""
+    <style>
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(255, 75, 75, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0); }
+    }
+    .nav-card {
+        border-radius: 10px; padding: 15px; text-align: center; height: 100%;
+        display: flex; flex-direction: column; justify-content: space-between;
+    }
+    .card-safe {
+        background: rgba(40, 167, 69, 0.1); border: 1px solid #28a745;
+    }
+    .card-danger {
+        background: linear-gradient(135deg, #2b0f0f 0%, #1a1a1a 100%);
+        border: 2px solid #ff4b4b;
+        animation: pulse-red 2s infinite;
+    }
+    .nav-title { font-size: 20px; font-weight: bold; margin-bottom: 5px; }
+    .nav-desc { font-size: 13px; color: #ccc; margin-bottom: 10px; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col_safe, col_risk = st.columns(2)
+    
+    # 左側：新手定投 (當前頁面)
+    with col_safe:
+        st.markdown("""
+        <div class="nav-card card-safe">
+            <div class="nav-title" style="color: #28a745;">🐢 穩健定投區</div>
+            <div class="nav-desc">每月自動買，10年變富翁<br>適合新手、上班族</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.info("👇 **向下瀏覽定投教學**")
+
+    # 右側：進階戰室 (跳轉按鈕)
+    with col_risk:
+        st.markdown("""
+        <div class="nav-card card-danger">
+            <div class="nav-title" style="color: #ff4b4b;">⚡ 進階期權戰室</div>
+            <div class="nav-desc">微觀勝率模型 + 槓桿交易<br>適合追求高報酬者</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 🔥 超大按鈕 (視覺焦點)
+        if st.button("🚀 **立即進入戰場 (Tab 2)** ⏭️", type="primary", use_container_width=True, key="btn_top_jump"):
+            import streamlit.components.v1 as components
+            import time
+            rnd = int(time.time())
+            js = f'''
+            <script>
+                setTimeout(function() {{
+                    var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                    if (tabs.length > 2) {{
+                        tabs[2].click();
+                        window.scrollTo(0, 0);
+                    }}
+                }}, 150);
+            </script>
+            '''
+            components.html(js, height=0)
+            st.toast("🔥 正在載入戰情室...", icon="🚀")
+
+    st.markdown("---")
+
     # === 1. FinMind 即時報價 ===
     @st.cache_data(ttl=600)
     def get_etf_quotes():
@@ -305,7 +369,6 @@ with tabs[0]:
         return pd.DataFrame(data)
 
     st.markdown("### 📡 **即時報價**")
-    st.caption("👆 **第一步**：挑選您喜歡的標的 (資料來源: FinMind)")
     try:
         quotes = get_etf_quotes()
         st.dataframe(quotes, use_container_width=True, hide_index=True)
@@ -320,7 +383,6 @@ with tabs[0]:
 
     # === 2. ETF 比較 ===
     st.markdown("### 📊 **ETF 特色一覽**")
-    st.caption("💡 **第二步**：了解各檔 ETF 風險與費率")
     etf_compare = pd.DataFrame({
         "ETF": ["0050", "006208", "00662", "00757", "00646"],
         "追蹤指數": ["台灣50", "台灣50", "NASDAQ100", "FANG+", "S&P500"],
@@ -333,8 +395,6 @@ with tabs[0]:
 
     # === 3. 定投試算 ===
     st.markdown("### 💰 **定投試算器**")
-    st.caption("🧮 **第三步**：模擬您的財富自由之路")
-    
     c1, c2, c3 = st.columns(3)
     with c1: monthly = st.number_input("每月投入", 5000, 500000, 30000, step=1000, key="t0_m")
     with c2: years = st.slider("持續年數", 5, 30, 10, key="t0_y")
@@ -344,7 +404,6 @@ with tabs[0]:
     final = monthly * 12 * (( (1 + r)**years - 1 ) / r )
     st.metric(f"💎 {years}年後總資產", f"NT$ {final:,.0f}")
     
-    st.caption("📈 **複利魔法**：時間就是您的超能力")
     periods = np.arange(1, years+1)
     values = monthly * 12 * (( (1 + r)**periods - 1 ) / r )
     fig = px.line(pd.DataFrame({'年份':periods,'資產':values}), x='年份', y='資產', markers=True)
@@ -355,7 +414,6 @@ with tabs[0]:
 
     # === 4. 心理建設 ===
     st.markdown("### 🆚 **最重要：堅持到底**")
-    st.caption("⚠️ **99% 的人失敗在這裡**：中途停止定投")
     c_stop, c_go = st.columns(2)
     with c_stop:
         stop_y = st.slider("❌ 假如第幾年停止？", 1, years-1, 3, key="t0_stop")
@@ -366,108 +424,9 @@ with tabs[0]:
         st.write("")
         gain_pct = ((final / stop_val) - 1) * 100
         st.success(f"✅ 持續定投多賺：**{gain_pct:.0f}%** ！")
-
-    st.markdown("---")
-
-    # === 5. 行動導航 (視覺究極強化版) ===
-    st.markdown("### 🚀 **下一步行動**")
-    c_act, c_nav = st.columns([1, 1.2]) # 調整比例，讓右邊寬一點
     
-    with c_act:
-        st.success("""
-        **🏆 新手致富 4 步曲**：
-        1. **每月5號** 自動扣款
-        2. **漲跌都買** 累積股數
-        3. **絕不看盤** 忽略波動
-        4. **10年後** 享受成果
-        """)
-        
-    with c_nav:
-        # ✨ CSS 動態霓虹卡片
-        st.markdown("""
-        <style>
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0.4); }
-            70% { box-shadow: 0 0 0 15px rgba(255, 75, 75, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0); }
-        }
-        .war-room-card {
-            background: linear-gradient(135deg, #2b0f0f 0%, #1a1a1a 100%);
-            border: 2px solid #ff4b4b;
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
-            animation: pulse 2s infinite;
-        }
-        .war-room-card::before {
-            content: "";
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,75,75,0.1) 0%, rgba(0,0,0,0) 70%);
-            transform: rotate(45deg);
-            pointer-events: none;
-        }
-        .war-title {
-            color: #ff4b4b;
-            font-size: 24px;
-            font-weight: 900;
-            margin: 0;
-            text-shadow: 0 0 10px rgba(255, 75, 75, 0.5);
-            letter-spacing: 1px;
-        }
-        .war-desc {
-            color: #ccc;
-            font-size: 14px;
-            margin-top: 10px;
-            line-height: 1.5;
-        }
-        .highlight {
-            color: #4ECDC4;
-            font-weight: bold;
-            background: rgba(78, 205, 196, 0.1);
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-        </style>
-        
-        <div class="war-room-card">
-            <div class="war-title">⚡ 進階武器：期權戰室</div>
-            <p class="war-desc">
-                定投是防守，期權是進攻<br>
-                運用 <span class="highlight">微觀勝率模型</span> 放大收益
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.write("") # 間距
-        
-        # ⚡ JS 強制跳轉按鈕
-        if st.button("🔥 進入戰場 (Tab 2) ⏭️", type="primary", use_container_width=True, key="btn_jump_tab2_ultra"):
-            import streamlit.components.v1 as components
-            import time
-            rnd = int(time.time())
-            js = f'''
-            <script>
-                setTimeout(function() {{
-                    var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                    if (tabs.length > 2) {{
-                        tabs[2].click();
-                        window.scrollTo(0, 0);
-                        console.log("Tab 2 jump {rnd}");
-                    }}
-                }}, 150);
-            </script>
-            '''
-            components.html(js, height=0)
-            st.toast("🔥 正在載入戰情室...", icon="🚀")
-
     st.markdown("---")
-    st.caption("💪 **恭喜！定投打底完成，準備進階！**")
+    st.caption("💪 **恭喜！您已完成定投啟蒙。**")
 
 
 # --------------------------
