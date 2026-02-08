@@ -263,7 +263,7 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (FinMind穩定終極版 v5.0)
+# Tab 0: 穩健 ETF (純定投版 v5.1)
 # --------------------------
 from FinMind.data import DataLoader
 import streamlit as st
@@ -273,11 +273,10 @@ import numpy as np
 from datetime import datetime, timedelta
 
 with tabs[0]:
-    st.markdown("## 🐢 **台灣ETF 定投導覽**")
-    st.markdown("*實時報價 + 長期定投聖經*")
+    st.markdown("🐢 **ETF 定投計畫**")
     
-    # === 實時報價 (FinMind日頻，最穩定) ===
-    @st.cache_data(ttl=600)  # 10分快取
+    # === 即時報價 ===
+    @st.cache_data(ttl=600)
     def get_finmind_etf():
         api = DataLoader()
         etfs = ['0050', '006208', '00662', '00757', '00646']
@@ -287,149 +286,98 @@ with tabs[0]:
         start_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
         
         for stock_id in etfs:
-            try:
-                df = api.taiwan_stock_daily(
-                    stock_id=stock_id,
-                    start_date=start_date,
-                    end_date=end_date
-                )
+            df = api.taiwan_stock_daily(stock_id=stock_id, start_date=start_date, end_date=end_date)
+            if len(df) > 0:
+                latest = df.iloc[-1]
+                current = latest['close']
+                prev = df.iloc[-2]['close'] if len(df) > 1 else current
+                change = current - prev
+                pct = (change / prev) * 100
                 
-                if len(df) > 0:
-                    latest = df.iloc[-1]
-                    current = latest['close']
-                    
-                    if len(df) > 1:
-                        prev = df.iloc[-2]['close']
-                        change = current - prev
-                        pct = (change / prev) * 100
-                    else:
-                        change = 0
-                        pct = 0
-                    
-                    data.append({
-                        'ETF': stock_id,
-                        '名稱': {'0050':'台灣50','006208':'富邦台50','00662':'富邦NASDAQ',
-                                '00757':'統一FANG+','00646':'元大S&P500'}[stock_id],
-                        '最新價': f"NT${current:.2f}",
-                        '漲跌': f"{change:+.2f}",
-                        '漲跌幅': f"{pct:+.2f}%"
-                    })
-                else:
-                    data.append({'ETF': stock_id, '名稱': '暫無', '最新價': '-', '漲跌': '-', '漲跌幅': '-'})
-            except:
-                data.append({'ETF': stock_id, '名稱': 'API錯誤', '最新價': '-', '漲跌': '-', '漲跌幅': '-'})
+                data.append({
+                    'ETF': stock_id,
+                    '名稱': {'0050':'台灣50','006208':'富邦台50','00662':'富邦NASDAQ',
+                           '00757':'統一FANG+','00646':'元大S&P500'}[stock_id],
+                    '最新價': f"NT${current:.2f}",
+                    '漲跌': f"{change:+.2f}",
+                    '漲跌幅': f"{pct:+.2f}%"
+                })
         
         return pd.DataFrame(data)
     
-    # 顯示報價
     st.markdown("### 📡 **即時報價**")
     quotes = get_finmind_etf()
-    st.dataframe(quotes, use_container_width=True, hide_index=True)
+    st.dataframe(quotes, use_container_width=True)
     
-    if st.button("🔄 刷新報價"):
-        st.cache_data.clear()
-        st.rerun()
-    
-    st.caption("📊 FinMind日頻資料，台灣最穩定來源")
+    if st.button("🔄 刷新"): st.rerun()
     
     st.markdown("---")
     
-    # === ETF介紹 ===
-    st.markdown("### 🇹🇼 **長期定投首選**")
-    etf_guide = pd.DataFrame({
+    # === ETF比較 ===
+    st.markdown("### 📊 **ETF 選擇**")
+    etf_compare = pd.DataFrame({
         "ETF": ["0050", "006208", "00662", "00757", "00646"],
-        "追蹤指數": ["台灣50大", "台灣50", "NASDAQ100", "FANG+10", "S&P500"],
-        "適合對象": ["穩健新手", "低費鐵粉", "科技成長", "高成長", "美股核心"],
-        "年費率": ["0.42%", "0.23%", "0.60%", "0.99%", "0.48%"]
+        "指數": ["台灣50", "台灣50", "NASDAQ100", "FANG+", "S&P500"],
+        "年費率": ["0.42%", "0.23%", "0.60%", "0.99%", "0.48%"],
+        "風險": ["低", "低", "中", "高", "中"]
     })
-    st.dataframe(etf_guide, use_container_width=True, hide_index=True)
+    st.dataframe(etf_compare, use_container_width=True)
     
     st.markdown("---")
     
-    # === 定投試算器 ===
+    # === 定投試算 ===
     st.markdown("### 💰 **定投試算器**")
     col1, col2, col3 = st.columns(3)
-    with col1:
-        monthly = st.number_input("每月投入", 10000, 100000, 30000, key="monthly")
-    with col2:
-        years = st.slider("持續年數", 5, 30, 10, key="years")
-    with col3:
-        rate = st.slider("預期年化(%)", 8.0, 20.0, 12.0, key="rate")
+    with col1: monthly = st.number_input("每月投入", 10000, 100000, 30000)
+    with col2: years = st.slider("年數", 5, 30, 10)
+    with col3: rate = st.slider("年化%", 8, 20, 12)
     
     r = rate / 100
-    final_value = monthly * 12 * (( (1 + r)**years - 1 ) / r )
-    st.metric(f"**{years}年總資產**", f"NT$ {final_value:,.0f}", f"{rate}% 年化")
+    final = monthly * 12 * (( (1 + r)**years - 1 ) / r )
+    st.metric(f"{years}年後", f"NT$ {final:,.0f}")
     
-    # 成長曲線
-    st.markdown("#### 📈 **資產成長**")
+    # 曲線圖
     periods = np.arange(1, years+1)
     values = monthly * 12 * (( (1 + r)**periods - 1 ) / r )
-    fig = px.line(pd.DataFrame({'年份': periods, '資產': values}), 
-                  x='年份', y='資產', markers=True,
-                  title=f"每月 NT${monthly:,} 定投 @ {rate}% 年化")
-    fig.update_layout(height=350, showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
+    px.line(pd.DataFrame({'年':periods, '資產':values}), 
+            title=f"每月NT${monthly:,} @ {rate}%").show()
     
     st.markdown("---")
     
-    # === 持續信仰 ===
-    st.markdown("### 🆚 **中途停止 vs 堅持到底**")
-    col_a, col_b = st.columns(2)
-    
-    with col_a:
-        st.markdown("#### ❌ **中途停止**")
-        stop_years = st.slider("停止於第幾年", 1, years-1, 3, key="stop")
-        stop_value = monthly * 12 * (( (1 + r)**stop_years - 1 ) / r )
-        st.metric("停止資產", f"NT$ {stop_value:,.0f}")
-    
-    with col_b:
-        st.markdown("#### ✅ **持續到底**")
-        gain_pct = ((final_value / stop_value) - 1) * 100
-        st.metric("最終資產", f"NT$ {final_value:,.0f}")
-        st.success(f"**多賺 {gain_pct:.0f}%**")
-    
-    st.markdown("---")
-    
-    # === 心理錨定 ===
-    st.markdown("### 🧠 **為何想停止？怎麼戰勝**")
-    tips = [
-        "📉 **恐慌時**：跌20%正是買入機會",
-        "📈 **貪婪時**：漲多繼續買，複利最大化", 
-        "⏰ **懶惰時**：銀行自動扣款，零負擔"
-    ]
-    for tip in tips:
-        st.info(tip)
+    # === 持續對比 ===
+    st.markdown("### 🆚 **停止 vs 持續**")
+    col1, col2 = st.columns(2)
+    with col1:
+        stop_y = st.slider("停止年", 1, years-1, 3)
+        stop_v = monthly * 12 * (( (1 + r)**stop_y - 1 ) / r )
+        st.metric("停止時", f"NT${stop_v:,.0f}")
+    with col2:
+        gain = ((final / stop_v)-1)*100
+        st.success(f"持續多{gain:.0f}%")
     
     st.markdown("---")
     
     # === 定投計畫 ===
-    st.markdown("### 📅 **我的定投計畫**")
+    st.markdown("### 📅 **執行計畫**")
     st.success("""
-    **🚀 5步驟執行**：
-    1. **每月5號**定投任一ETF
-    2. **漲跌都買**，永不停止
-    3. **忽略短期**日K/周K波動
-    4. **每年檢視**一次配置
-    5. **10年後慶祝**成果
+    1. **每月5號**定投
+    2. **漲跌都買**
+    3. **不看短期**
+    4. **10年檢視**
     """)
     
-    if st.button("🖋️ **我承諾：漲跌都買10年！**", type="primary"):
+    if st.button("承諾定投10年！"): 
         st.balloons()
-        st.balloons()
-        st.success("🎉 歡迎加入1%贏家！複利會獎賞你")
+        st.success("加入贏家行列！")
     
     st.markdown("---")
     
-    # === 風險提醒 ===
-    st.markdown("### ⚠️ **風險須知**")
     st.warning("""
-    - **市場風險**：短期可跌20-50%，長期上漲機率95%
-    - **匯率風險**：美股ETF受美元波動
-    - **稅務**：海外ETF股息稅30% + 證交稅0.1%
-    - **不保證**：過去績效不代表未來
+    ⚠️ 風險提醒：
+    - 股市短期波動大
+    - 匯率/稅務成本
+    - 過去不代表未來
     """)
-    
-    st.caption("資料來源：FinMind API | 投資有風險，請自行評估")
 
 
 # --------------------------
