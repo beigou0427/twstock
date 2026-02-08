@@ -556,13 +556,15 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # ==========================================
-# TAB2 專業戰情室 (無差距欄，顯示Delta)
+# TAB2 專業戰情室 (Delta優先，無差距欄)
 # ==========================================
 
 with tab2:
     col_search, col_portfolio = st.columns([1.2, 0.8])
     
+    # ---------------------------
     # 左欄：搜尋
+    # ---------------------------
     with col_search:
         st.markdown("### 🔥 專業合約搜尋")
         c1, c2, c3 = st.columns(3)
@@ -615,23 +617,23 @@ with tab2:
                             "履約價": int(K),
                             "價格": cp, 
                             "槓桿": round(l, 2), 
-                            "Delta": round(d_abs, 2),
+                            "Delta": round(d_abs, 2), # Delta 數值
                             "勝率": round(w, 1),
                             "剩餘天": dl_2
-                            # ✅ 完全移除差距欄位
                         })
                     except: continue
                 
                 if res_2:
-                    # ✅ Delta降序排序
+                    # ✅ Delta降序排序 (Delta越大越前面)
                     res_2.sort(key=lambda x: (-x['Delta'], x['槓桿']))
                     st.session_state.search_results = res_2
                     st.session_state.best_match = res_2[0]
         
-        # 顯示結果 (無差距)
+        # 顯示搜尋結果
         if 'best_match' in st.session_state and st.session_state.best_match:
             b = st.session_state.best_match
-            st.success(f"🏆 {b['履約價']} {b['類型']} | Delta **{b['Delta']}** | {b['勝率']:.0f}%")
+            # 最佳匹配顯示 Delta
+            st.success(f"🏆 {b['履約價']} {b['類型']} | Delta **{b['Delta']}** | 勝率 {b['勝率']:.0f}%")
             
             if st.button("➕ 加入投組", key="add_pf"):
                 exists = any(p['履約價'] == b['履約價'] and p['合約'] == b['合約'] 
@@ -643,32 +645,48 @@ with tab2:
                 else:
                     st.toast("⚠️ 重複")
             
-            # ✅ 表格：履約價,價格,Delta,勝率,槓桿,剩餘天 (無差距)
+            # ✅ 表格：Delta 放第一欄，無差距欄
             df_show = pd.DataFrame(st.session_state.search_results)
-            st.dataframe(df_show[["履約價","價格","Delta","勝率","槓桿","剩餘天"]],
-                        use_container_width=True)
+            # 這裡調整欄位順序
+            cols_order = ["Delta", "履約價", "價格", "勝率", "槓桿", "剩餘天"]
+            st.dataframe(
+                df_show[cols_order],
+                use_container_width=True,
+                height=400 # 固定高度讓表頭排序更好操作
+            )
 
+    # ---------------------------
     # 右欄：投組 (無差距)
+    # ---------------------------
     with col_portfolio:
         st.markdown("### 💼 投組管理")
         if st.session_state.portfolio:
             pf = pd.DataFrame(st.session_state.portfolio)
             
-            # 總覽
+            # 總覽 Metrics
             c1, c2, c3 = st.columns(3)
             c1.metric("總權利金", f"{pf['價格'].sum():,} 點")
             c2.metric("平均勝率", f"{pf['勝率'].mean():.0f}%")
             c3.metric("平均Delta", f"{pf['Delta'].mean():.2f}")
             
-            # ✅ 表格：無差距欄
+            # ✅ 投組表格樣式與欄位
             def risk_color(val):
                 if val <= 30: return 'color: red; font-weight: bold'
                 elif val <= 60: return 'color: orange; font-weight: bold'
                 else: return 'color: green; font-weight: bold'
             
-            display_cols = ["合約", "履約價", "Delta", "勝率", "槓桿", "剩餘天"]
-            styled_pf = pf[display_cols].style.map(risk_color, subset=['剩餘天'])
-            st.dataframe(styled_pf, use_container_width=True)
+            # Delta 放第一欄
+            display_cols = ["Delta", "合約", "履約價", "勝率", "槓桿", "剩餘天"]
+            
+            # 確保欄位存在於 pf 中再顯示 (避免空投組報錯)
+            if not pf.empty:
+                styled_pf = pf.style.map(risk_color, subset=['剩餘天'])
+                # 使用 column_order 強制顯示順序
+                st.dataframe(
+                    styled_pf, 
+                    column_order=display_cols,
+                    use_container_width=True
+                )
             
             col1, col2 = st.columns(2)
             with col1:
@@ -681,7 +699,9 @@ with tab2:
         else:
             st.info("👈 搜尋高Delta合約 → 加入")
 
-st.caption("🔥 Delta降序 | 勝率公式：|Δ|×70%+24% | 無差距欄位")
+# 更新 Caption
+st.caption("🔥 現Delta優先 | 勝率公式：|Δ|×70%+24% | 無差距欄位")
+
 
 
 # --------------------------
