@@ -239,8 +239,8 @@ with st.sidebar:
     st.divider()  # 分隔方案
     
     # 方案二：圖片 + 連結
-    st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="方案二", use_container_width=True)
-    st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
+    st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="長期買進：財金教授周冠男的42堂自制力投資課", use_container_width=True)
+    st.markdown("[🛒 購買長期買進](https://s.shopee.tw/6KypLiCjuy)")
     
     if st.session_state.get('is_pro', False):
         st.success("👑 Pro 會員")
