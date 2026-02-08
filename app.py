@@ -332,139 +332,129 @@ tab_names = [
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 # --------------------------
-# Tab 0: 穩健 ETF (v7.2 - 修復回測版)
+# Tab 0: 穩健 ETF (v7.3 - 最終穩定版)
 # --------------------------
 
 with tabs[0]:
-    # 新手閘門
+    # 新手檢查
     if not st.session_state.get('etf_newbie_done', False):
         st.markdown("### 🚨 新手必讀")
         st.info("股票=公司股份 | ETF=股票籃子 | 定投=每月自動買")
-        if st.button("✅ 開始"): 
+        if st.button("開始定投"): 
             st.session_state.etf_newbie_done = True
             st.rerun()
         st.stop()
 
     st.markdown("## 🐢 ETF 定投計畫")
 
-    # 導航
+    # 簡化導航
     col1,col2=st.columns(2)
-    with col1:st.markdown('<div style="border-radius:10px;padding:15px;background:rgba(40,167,69,0.1);border:1px solid #28a745;text-align:center;"><div style="color:#28a745;font-size:20px;font-weight:bold;">穩健定投</div><div style="color:#666;">每月自動</div></div>',unsafe_allow_html=True)
+    with col1:st.markdown('<div style="padding:15px;border-radius:10px;background:#e8f5e8;border:1px solid #28a745;text-align:center;"><b style="color:#28a745;font-size:20px;">穩健定投</b><br><small>每月自動</small></div>',unsafe_allow_html=True)
     with col2:
-        st.markdown('<div style="border-radius:10px;padding:15px;background:#2b0f0f;border:2px solid #ff4b4b;text-align:center;"><div style="color:#ff4b4b;font-size:20px;font-weight:bold;">進階戰室</div><div style="color:#ccc;">槓桿策略</div></div>',unsafe_allow_html=True)
+        st.markdown('<div style="padding:15px;border-radius:10px;background:#2b0f0f;border:2px solid #ff4b4b;text-align:center;"><b style="color:#ff4b4b;font-size:20px;">進階戰室</b><br><small>槓桿策略</small></div>',unsafe_allow_html=True)
         import streamlit.components.v1 as components
-        components.html('''<button style="width:100%;height:40px;background:#ff4b4b;color:white;border-radius:8px;font-weight:600;" onclick="jumpToTab2()">進入Tab2</button><script>function jumpToTab2(){try{var t=window.parent.document.querySelectorAll(\'button[data-baseweb="tab"]\');t[2]&&t[2].click()}catch(e){}}</script>''',height=50)
+        components.html('<button style="width:100%;height:40px;background:#ff4b4b;color:white;border-radius:8px;font-weight:600;" onclick="jumpToTab2()">進入Tab2</button><script>function jumpToTab2(){try{var t=window.parent.document.querySelectorAll(\'button[data-baseweb="tab"]\');t[2]&&t[2].click()}catch(e){}}</script>',height=50)
 
     st.markdown("---")
 
-    # === 真實回測（修復版） ===
-    st.markdown("### 📊 真實10年績效")
+    # 真實回測
+    st.markdown("### 📊 10年真實績效")
 
     @st.cache_data(ttl=1800)
-    def get_backtest_data():
+    def backtest_etfs():
         from FinMind.data import DataLoader
         from datetime import date, timedelta
         import pandas as pd
-        import numpy as np
         
-        api = DataLoader()
-        etfs = ['0050', '006208', '00662', '00757', '00646']
-        end = date.today().strftime('%Y-%m-%d')
-        start = (date.today() - timedelta(days=365*10 + 100)).strftime('%Y-%m-%d')
+        api=DataLoader()
+        etfs=['0050','006208','00662','00757','00646']
+        end=date.today().strftime('%Y-%m-%d')
+        start=(date.today()-timedelta(days=365*10+100)).strftime('%Y-%m-%d')
         
-        data_list = []
+        results=[]
         for etf in etfs:
             try:
-                df = api.taiwan_stock_daily(etf, start, end)
-                if len(df) < 50: 
-                    data_list.append([etf, 'N/A', 'N/A', 'N/A', 'N/A'])
-                    continue
+                df=api.taiwan_stock_daily(etf,start,end)
+                if len(df)<50:continue
                 
-                first_p = df['close'].iloc[0]
-                last_p = df['close'].iloc[-1]
-                days = (df.index[-1] - df.index[0]).days
-                years = days / 365.25
+                first=df['close'].iloc[0]
+                last=df['close'].iloc[-1]
+                days=(df.index[-1]-df.index[0]).days
+                yrs=days/365.25
                 
-                total_ret = (last_p / first_p - 1) * 100
-                ann_ret = ((last_p / first_p) ** (1/years) - 1) * 100 if years > 0 else 0
+                total_ret=(last/first-1)*100
+                ann_ret=((last/first)**(1/yrs)-1)*100 if yrs>0 else 0
                 
-                # 最大回撤
-                cum_max = df['close'].expanding().max()
-                dd = (df['close'] - cum_max) / cum_max * 100
-                max_dd = dd.min()
+                cum_max=df['close'].expanding().max()
+                drawdown=(df['close']/cum_max-1)*100
+                max_dd=drawdown.min()
                 
-                data_list.append([etf, f"{total_ret:.1f}%", f"{ann_ret:.1f}%", f"{years:.1f}", f"{max_dd:.1f}%"])
+                results.append([etf,f"{total_ret:.1f}%",f"{ann_ret:.1f}%",f"{yrs:.1f}",f"{max_dd:.1f}%"])
             except:
-                data_list.append([etf, 'N/A', 'N/A', 'N/A', 'N/A'])
+                results.append([etf,"N/A","N/A","N/A","N/A"])
         
-        df_result = pd.DataFrame(data_list, columns=['ETF', '總報酬', '年化報酬', '年數', '最大回撤'])
-        return df_result
+        return pd.DataFrame(results,columns=['ETF','總報酬','年化','年數','最大回撤'])
 
-    backtest_df = get_backtest_data()
-    st.dataframe(backtest_df, use_container_width=True, hide_index=True)
-    
-    col_r1, col_r2 = st.columns(2)
-    with col_r1:
-        st.caption("📈 **綠色年化=好** | 紅色回撤=風險")
-    with col_r2:
-        if st.button("🔄 更新回測"):
-            st.cache_data.clear()
-            st.rerun()
+    bt_df=backtest_etfs()
+    st.dataframe(bt_df,use_container_width=True,hide_index=False)
+
+    if st.button("更新數據"):
+        st.cache_data.clear()
+        st.rerun()
 
     st.markdown("---")
 
-    # === 定投試算（真實年化） ===
-    st.markdown("### 💰 定投試算器")
-    st.info("用上方**真實年化**計算你的成果")
+    # 定投試算
+    st.markdown("### 💰 定投試算")
 
-    col1, col2, col3 = st.columns(3)
-    with col1: monthly_amt = st.number_input("每月投入", 1000, 50000, 10000, 1000)
-    with col2: invest_years = st.slider("年數", 5, 30, 10)
-    with col3: 
-        etf_choice = st.selectbox("選ETF", backtest_df['ETF'].tolist())
-        # 安全取年化（處理N/A）
-        ann_rate_str = backtest_df[backtest_df['ETF']==etf_choice]['年化報酬'].values[0]
-        ann_rate = float(ann_rate_str.replace('%',''))/100 if ann_rate_str != 'N/A' else 0.10
+    c1,c2,c3=st.columns(3)
+    with c1:monthly=st.number_input("每月投入",1000,50000,10000,1000)
+    with c2:years=st.slider("年數",5,30,10)
+    with c3:
+        etf_idx=st.selectbox("選ETF",bt_df['ETF'].tolist())
+        ann_str=bt_df[bt_df['ETF']==etf_idx]['年化'].values[0]
+        rate=0.10  # 預設10%
+        if ann_str!='N/A':
+            rate=float(ann_str.replace('%',''))/100
 
     # 計算
-    r = ann_rate
-    final_value = monthly_amt * 12 * (((1 + r)**invest_years - 1) / r)
-    st.metric(f"💎 {invest_years}年總資產", f"NT${final_value:,.0f}")
+    final_val=monthly*12*(((1+rate)**years-1)/rate)
+    st.metric(f"{years}年總額",f"NT${final_val:,.0f}")
 
-    # 曲線
+    # 圖表
     import plotly.express as px
     import numpy as np
-    years_range = np.arange(1, invest_years + 1)
-    value_curve = [monthly_amt * 12 * (((1 + r)**y - 1) / r) for y in years_range]
-    fig = px.line(pd.DataFrame({'年份': years_range, '資產': value_curve}), 
-                  x='年份', y='資產', markers=True, title=f"{etf_choice} 定投（年化{r*100:.1f}%）")
-    fig.update_layout(height=300)
-    st.plotly_chart(fig, use_container_width=True)
+    yr_range=np.arange(1,years+1)
+    vals=[monthly*12*(((1+rate)**y-1)/rate)for y in yr_range]
+    fig=px.line(pd.DataFrame({'年':yr_range,'資產':vals}),x='年',y='資產',title=f"{etf_idx} 定投")
+    fig.update_layout(height=280)
+    st.plotly_chart(fig,use_container_width=True)
 
     st.markdown("---")
 
     # 堅持
-    st.markdown("### 🧠 堅持=財富")
-    cs, cg = st.columns(2)
+    st.markdown("### 🧠 堅持效果")
+    cs,cg=st.columns(2)
     with cs:
-        early_stop = st.slider("提早停", 1, invest_years-1, 3)
-        early_val = monthly_amt * 12 * (((1 + r)**early_stop - 1) / r)
-        st.error(f"NT${early_val:,.0f}")
+        stop_yr=st.slider("早停年份",1,years-1,3)
+        stop_val=monthly*12*(((1+rate)**stop_yr-1)/rate)
+        st.error(f"NT${stop_val:,.0f}")
     with cg:
-        extra_gain = ((final_value/early_val)-1)*100
-        st.success(f"多{gain:.0f}%！")
+        gain_pct=((final_val/stop_val)-1)*100
+        st.success(f"多賺 **{gain_pct:.0f}%**")
 
     st.markdown("---")
 
     st.warning("""
 ### ⚠️ 風險
-• 最大回撤見上方表格
-• 短期震盪大，用閒錢
-• 美股有匯率風險
+• 最大回撤見上表
+• 短期大震盪
+• 用閒錢投資
 • 每月100元起
     """)
 
-    st.success("🎉 真實數據定投！每月買0050就對了")
+    st.success("定投完成！每月買0050")
+
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
