@@ -556,24 +556,16 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # ==========================================
-# TAB2 專業戰情室 - 簡化版 (純原版勝率公式)
-# 只用 def calculate_win_rate(delta, days)，無多因子
+# TAB2 專業戰情室 (整合原版勝率公式)
+# 直接覆蓋 with tab2: 整段
 # ==========================================
-
-def calculate_win_rate(delta, days):
-    """
-    原版勝率公式：Delta加權估計 (CALL獲利機率)
-    Delta 0.1→31%, 0.5→59%, 0.9→87% (自然階梯，無堆疊)
-    """
-    return min(max((abs(delta)*0.7 + 0.8*0.3)*100, 1), 99)
 
 with tab2:
     col_search, col_portfolio = st.columns([1.2, 0.8])
     
-    # 左欄：搜尋 (純原版勝率)
+    # 左欄：搜尋 (原版勝率精準顯示)
     with col_search:
-        st.markdown("### 1️⃣ 合約搜尋 (原版Delta勝率)")
-        
+        st.markdown("### 🔥 專業合約搜尋")
         c1, c2, c3 = st.columns(3)
         with c1:
             dir_mode = st.selectbox("方向", ["CALL 📈", "PUT 📉"], key="pro_dir")
@@ -616,14 +608,19 @@ with tab2:
                         if cp <= 0: continue
                         
                         l = (d_abs * S_current) / cp
-                        # ✅ 純原版勝率公式
+                        # ✅ 整合原版勝率公式
                         w = calculate_win_rate(d_abs, dl_2)
                         
                         res_2.append({
-                            "合約": sel_con_2, "類型": target_cp_2, "履約價": int(K),
-                            "價格": cp, "槓桿": round(l, 2), "Delta": round(d_abs, 2),
-                            "勝率": round(w, 1),  # 改用float顯示
-                            "剩餘天": dl_2, "差距": abs(l - lev_2)
+                            "合約": sel_con_2, 
+                            "類型": target_cp_2, 
+                            "履約價": int(K),
+                            "價格": cp, 
+                            "槓桿": round(l, 2), 
+                            "Delta": round(d_abs, 2),
+                            "勝率": round(w, 1),  # ✅ float精準顯示
+                            "剩餘天": dl_2, 
+                            "差距": abs(l - lev_2)
                         })
                     except: continue
                 
@@ -632,10 +629,12 @@ with tab2:
                     st.session_state.search_results = res_2
                     st.session_state.best_match = res_2[0]
         
-        # 顯示結果
+        # 顯示搜尋結果
         if 'best_match' in st.session_state and st.session_state.best_match:
             b = st.session_state.best_match
-            st.success(f"🏆 推薦：{b['履約價']} {b['類型']} ({b['槓桿']}x | {b['勝率']:.0f}%)")
+            # ✅ 勝率完整展示
+            st.success(f"🏆 最佳：{b['履約價']} {b['類型']} | {b['槓桿']}x | **{b['勝率']:.0f}%**")
+            st.caption(f"💡 Delta {b['Delta']} → 勝率 {b['勝率']:.0f}% (原版公式)")
             
             if st.button("➕ 加入投組", key="add_pf"):
                 exists = any(p['履約價'] == b['履約價'] and p['合約'] == b['合約'] 
@@ -643,40 +642,59 @@ with tab2:
                 if not exists: 
                     st.session_state.portfolio.append(b)
                     st.snow()
-                    st.toast("✅ 已加入投組")
+                    st.toast("✅ 已加入投組", icon="💼")
                 else:
-                    st.toast("⚠️ 已在投組")
+                    st.toast("⚠️ 重複持倉")
             
-            # ✅ 勝率說明 (原公式特性)
-            st.info(f"📊 Delta勝率：{b['Delta']} → {b['勝率']:.0f}%")
-            
+            # ✅ 完整表格 (新增勝率+Delta)
             df_show = pd.DataFrame(st.session_state.search_results)
             st.dataframe(df_show[["履約價","價格","槓桿","勝率","Delta","剩餘天"]],
                         use_container_width=True)
 
-    # 右欄：投組 (原版)
+    # 右欄：投組管理 (勝率整合)
     with col_portfolio:
-        st.markdown("### 2️⃣ 投組管理")
+        st.markdown("### 💼 投組管理")
         if st.session_state.portfolio:
             pf = pd.DataFrame(st.session_state.portfolio)
-            st.metric("總權利金", f"{pf['價格'].sum():,} 點")
             
+            # ✅ 總覽指標 (新增勝率)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("總權利金", f"{pf['價格'].sum():,} 點")
+            c2.metric("平均勝率", f"{pf['勝率'].mean():.0f}%")
+            c3.metric("持倉數", len(pf))
+            
+            # ✅ 風險色塊表格 (含勝率)
             def risk_color(val):
-                color = 'red' if val <= 30 else 'orange' if val <= 90 else 'green'
-                return f'color: {color}; font-weight: bold'
+                if val <= 30: return 'color: red; font-weight: bold'
+                elif val <= 60: return 'color: orange; font-weight: bold'
+                else: return 'color: green; font-weight: bold'
             
-            # ✅ 顯示勝率欄
-            display_cols = ["合約","履約價","槓桿","勝率","剩餘天"]
-            st.dataframe(pf[display_cols].style.map(risk_color, subset=['剩餘天']), 
-                        use_container_width=True)
+            display_cols = ["合約", "履約價", "槓桿", "勝率", "剩餘天"]
+            styled_pf = pf[display_cols].style.map(risk_color, subset=['剩餘天'])
+            st.dataframe(styled_pf, use_container_width=True)
             
-            if st.button("🗑️ 清空"):
-                st.session_state.portfolio = []
-                st.rerun()
+            # 操作按鈕
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🗑️ 清空投組"):
+                    st.session_state.portfolio = []
+                    st.rerun()
+            with col2:
+                st.download_button("📥 匯出CSV", 
+                                 pf.to_csv(index=False).encode('utf-8'),
+                                 f"台指投組_{date.today()}.csv")
         else:
-            st.info("投組為空")
+            st.info("👈 先搜尋優質合約 → 加入投組")
 
-st.caption("🔰 原版Delta勝率 | Delta 0.1=31%, 0.5=59%, 0.9=87% | 自然階梯無堆疊")
+# 勝率公式說明 (TAB2底部)
+st.markdown("---")
+st.caption("""
+🔰 **原版Delta勝率公式**：`min(max(|Δ|×70% + 24%, 1%), 99%)`
+- Delta 0.1=31%, 0.5=59%, 0.9=87%
+- **自然階梯**：每0.01Δ差 → 0.7%勝率差 → **零堆疊**
+- **投組平均勝率**：即時監控持倉品質
+""")
+
 
 
 # --------------------------
