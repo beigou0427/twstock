@@ -556,35 +556,31 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (長期多因子勝率版 v9.5)
+# Tab 2: 專業期權戰情室 (槓桿修復版 v9.6)
 # --------------------------
 with tabs[2]:
     # 初始化
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
     if 'pro_selected_contract' not in st.session_state: st.session_state.pro_selected_contract = ""
     if 'pro_search_results' not in st.session_state: st.session_state.pro_search_results = []
+    
+    # 確保槓桿變數存在
+    if 'pro_lev_multi' not in st.session_state: st.session_state.pro_lev_multi = 8.0
 
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # ✅ 多因子勝率系統 (Lead Call 專用)
+    # 完美勝率公式 (長期買進版)
     def calculate_multifactor_win_rate(delta, days, lev):
-        # 1. ⏳ 時間因子 (50%): 鼓勵長期持有 (>100天滿分)
+        # 1. ⏳ 時間 (50%)
         time_score = min(days, 100) / 100 * 50
-        
-        # 2. 🎯 機率因子 (30%): Delta 即真實機率
+        # 2. 🎯 機率 (30%)
         prob_score = abs(delta) * 30
-        
-        # 3. ⚡ 效率因子 (20%): 槓桿甜蜜點 (3-12倍)
-        if 3 <= lev <= 12:
-            lev_score = 20
-        elif lev > 20: 
-            lev_score = 5  # 槓桿太高(危險)
-        else:
-            lev_score = 10 # 槓桿太低(無效率)
-            
-        total = time_score + prob_score + lev_score
-        return min(max(total, 1), 99)
+        # 3. ⚡ 效率 (20%)
+        if 3 <= lev <= 12: lev_score = 20
+        elif lev > 20: lev_score = 5
+        else: lev_score = 10
+        return min(max(time_score + prob_score + lev_score, 1), 99)
 
     with col_search:
         st.markdown("#### 🔍 **策略雷達**")
@@ -595,6 +591,7 @@ with tabs[2]:
         for col in ['call_put', 'contract_date', 'strike_price', 'close', 'volume']:
             if col not in df_work: st.error(f"缺少{col}"); st.stop()
         
+        # 清理資料
         df_work['call_put'] = df_work['call_put'].astype(str).str.upper().str.strip()
         df_work['close'] = pd.to_numeric(df_work['close'], errors='coerce').fillna(0)
         df_work['volume'] = pd.to_numeric(df_work['volume'], errors='coerce').fillna(0)
@@ -602,7 +599,7 @@ with tabs[2]:
         
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_multi")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_fix3")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
@@ -611,12 +608,16 @@ with tabs[2]:
             if default not in available: default = available[0] if available else ""
             sel_con = st.selectbox("月份", available if available else [""],
                                  index=available.index(default) if available and default in available else 0,
-                                 key="pro_con_multi")
+                                 key="pro_con_fix3")
             st.session_state.pro_selected_contract = sel_con
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_multi")
+            # ✅ 修復：直接使用 session_state 來接收值
+            target_lev = st.slider("目標槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_multi")
 
         if st.button(f"🔥 掃描{op_type}({sel_con or '-'})", type="primary", use_container_width=True):
+            # ✅ 再次確認讀取最新的槓桿值
+            current_target_lev = st.session_state.pro_lev_multi
+            
             if sel_con and len(str(sel_con))==6 and sel_con.isdigit():
                 st.session_state.pro_selected_type = op_type
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
@@ -651,12 +652,11 @@ with tabs[2]:
 
                             P = close_p if vol > 0 else bs_p
                             if P <= 0.5: continue
-                            lev = (abs(delta)*S_current)/P
                             
-                            # 寬鬆濾網
+                            lev = (abs(delta)*S_current)/P
                             if lev < 1 or lev > 50: continue
 
-                            # ✅ 使用多因子勝率
+                            # 計算勝率
                             win_rate = calculate_multifactor_win_rate(delta, days, lev)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
@@ -664,16 +664,17 @@ with tabs[2]:
                                 "合約": sel_con, "類型": op_type, "履約價": int(K),
                                 "價格": P, "狀態": status, "槓桿": lev,
                                 "Delta": delta, "勝率": win_rate, "Vol": int(vol),
-                                "差距": abs(lev-target_lev), "剩餘天": days
+                                "差距": abs(lev - current_target_lev), # ✅ 使用最新槓桿計算差距
+                                "剩餘天": days
                             })
                         except: continue
                     
                     if res:
-                        # 排序：優先推 時間長 + 勝率高 的
-                        res.sort(key=lambda x: -x['勝率'])
+                        # 排序：差距越小越前
+                        res.sort(key=lambda x: (x['差距'], -x['勝率']))
                         st.session_state.pro_search_results = res[:15]
                         st.session_state.pro_best = res[0]
-                        st.success(f"🎯 依據「長期買進」模型分析完成")
+                        st.success(f"🎯 依據槓桿 {current_target_lev}x 掃描完成") # ✅ 顯示確認
                     else: st.warning("無結果")
 
         if st.session_state.pro_search_results:
@@ -688,10 +689,9 @@ with tabs[2]:
                 win_str = f"{best['勝率']:.0f}%"
                 status_display = best.get('狀態', '成交價')
                 
-                # 根據勝率給評語
-                if best['勝率'] > 80: comment = "💎 鑽石級 (長線極佳)"
-                elif best['勝率'] > 60: comment = "🥇 黃金級 (適合持有)"
-                else: comment = "⚠️ 投機級 (短線操作)"
+                if best['勝率'] > 80: comment = "💎 鑽石級"
+                elif best['勝率'] > 60: comment = "🥇 黃金級"
+                else: comment = "⚠️ 投機級"
 
                 st.markdown(f"""
                 `{best['履約價']} {best['類型']}`
@@ -701,7 +701,7 @@ with tabs[2]:
                 """)
                 
             with col2:
-                if st.button("➕ 加入投組", key="add_pf_multi"):
+                if st.button("➕ 加入投組", key="add_pf_fix3"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -719,7 +719,8 @@ with tabs[2]:
                 show_df['槓桿'] = show_df['槓桿'].map(lambda x: f"{x:.1f}x")
                 show_df['勝率'] = show_df['勝率'].map(lambda x: f"{x:.0f}%")
                 
-                final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "Vol"]]
+                # 顯示差距欄位，確認排序是否正確
+                final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "差距"]]
                 st.dataframe(final_show.style.map(status_color, subset=['狀態']), use_container_width=True)
 
     with col_portfolio:
@@ -744,20 +745,12 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_multi"): 
+                if st.button("清空", key="clr_pf_fix3"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_multi")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_fix3")
         else: st.info("空投組")
-    
-    with st.expander("📊 **多因子勝率系統 (Lead Call Model)**"):
-        st.markdown("""
-        **設計理念**：長期買進 (Buy & Hold) 策略，權重分配如下：
-        1.  ⏳ **時間因子 (50%)**：剩餘天數越長越安全 (`>100天` 滿分)。
-        2.  🎯 **機率因子 (30%)**：Delta 越高，到期獲利機率越高。
-        3.  ⚡ **效率因子 (20%)**：獎勵槓桿甜蜜點 `3~12倍`，避免過度投機。
-        """)
 
 
 # --------------------------
