@@ -555,116 +555,234 @@ with tabs[1]:
             with col_news_left: st.markdown(card_html, unsafe_allow_html=True)
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
-# ==========================================
-# TAB2 專業戰情室 - 最小可執行版 (防錯)
-# ==========================================
+# --------------------------
+# Tab 2: 頂部微觀展開版 v18.3 (90-95% 精細化)
+# --------------------------
+with tabs[2]:
+    KEY_RES = "results_micro_v183"
+    KEY_BEST = "best_micro_v183"
+    KEY_PF = "portfolio"
 
-with tab2:
-    col_search, col_portfolio = st.columns([1.2, 0.8])
-    
-    # ---------------------------
-    # 左欄：搜尋
-    # ---------------------------
+    if KEY_RES not in st.session_state: st.session_state[KEY_RES] = []
+    if KEY_BEST not in st.session_state: st.session_state[KEY_BEST] = None
+    if KEY_PF not in st.session_state: st.session_state[KEY_PF] = []
+
+    st.markdown("### ♟️ **微觀戰情室 (頂部 90-95% 展開)**")
+    col_search, col_portfolio = st.columns([1.3, 0.7])
+
+    # 1. 原始評分 (Delta主導)
+    def calculate_raw_score(delta, days, volume, S, K, op_type):
+        s_delta = abs(delta) * 100.0
+        
+        if op_type == "CALL": m = (S - K) / S
+        else: m = (K - S) / S
+        s_money = max(-10, min(m * 100 * 2, 10)) + 50
+        
+        s_time = min(days / 90.0 * 100, 100)
+        s_vol = min(volume / 5000.0 * 100, 100)
+        
+        raw = (s_delta * 0.4 + s_money * 0.2 + s_time * 0.2 + s_vol * 0.2)
+        return raw
+
+    # 🔥 2. 微觀展開 (核心技術)
+    def micro_expand_scores(results):
+        if not results: return []
+        
+        # 先根據原始分數排序 (高到低)
+        results.sort(key=lambda x: x['raw_score'], reverse=True)
+        
+        n = len(results)
+        if n == 0: return results
+        
+        # 分成兩群：頂部群(前50%) 和 底部群(後50%)
+        # 頂部強制展開到 90~95
+        # 底部強制展開到 15~85
+        
+        top_n = max(1, int(n * 0.4)) # 前40%是優質區
+        
+        for i in range(n):
+            if i < top_n:
+                # 頂部區間: 95 -> 90
+                # 第0名=95, 第top_n名=90
+                if top_n > 1:
+                    score = 95.0 - (i / (top_n - 1)) * 5.0
+                else:
+                    score = 95.0
+            else:
+                # 底部區間: 85 -> 15
+                # 第top_n名=85, 第n名=15
+                remain = n - top_n
+                if remain > 1:
+                    idx = i - top_n
+                    score = 85.0 - (idx / (remain - 1)) * 70.0
+                else:
+                    score = 15.0
+            
+            results[i]['勝率'] = round(score, 1)
+            
+        return results
+
     with col_search:
-        st.markdown("### 🔥 專業合約搜尋")
-        c1, c2, c3 = st.columns(3)
+        st.markdown("#### 🔍 **微觀掃描**")
+        
+        if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
+        
+        df_work = df_latest.copy()
+        df_work['call_put'] = df_work['call_put'].str.upper().str.strip()
+        for col in ['close', 'volume', 'strike_price']:
+            df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
+
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 0.6])
         with c1:
-            dir_mode = st.selectbox("方向", ["CALL 📈", "PUT 📉"], key="pro_dir")
-            target_cp_2 = "CALL" if "CALL" in dir_mode else "PUT"
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="v183_dir")
+            op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
-            sel_con_2 = st.selectbox("合約", ["202602", "202603"], key="pro_con")  # 預設值
+            contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
+            available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
+            sel_con = st.selectbox("月份", available if available else [""], key="v183_con")
         with c3:
-            lev_2 = st.slider("參考槓桿", 2.0, 15.0, 5.0, key="pro_lev")
-
-        # ✅ 安全搜尋（防缺變數）
-        if st.button("🔥 搜尋", key="search_btn", use_container_width=True):
-            try:
-                # 模擬資料（實際用 df_latest）
-                demo_data = [
-                    {"strike_price": 18000, "close": 150, "volume": 1000, "call_put": target_cp_2},
-                    {"strike_price": 18100, "close": 120, "volume": 800, "call_put": target_cp_2},
-                    {"strike_price": 18200, "close": 90, "volume": 1200, "call_put": target_cp_2}
-                ]
-                tdf = pd.DataFrame(demo_data)
-                
-                # 模擬計算
-                S_current = getattr(st.session_state, 'S_current', 18000)
-                dl_2 = 30  # 假設
-                T_2 = dl_2 / 365
-                a_iv = 0.25
-                
-                res_2 = []
-                for _, row in tdf.iterrows():
-                    K = float(row["strike_price"])
-                    price = float(row["close"])
-                    vol = int(row["volume"])
-                    
-                    # 模擬 BS 計算
-                    d_abs = abs(0.3 + (K-S_current)/1000*0.1)  # 假 Delta
-                    cp = int(round(price, 0))
-                    l = (d_abs * S_current) / cp
-                    w = round(d_abs * 70 + 24, 1)  # 假勝率公式
-                    
-                    res_2.append({
-                        "合約": sel_con_2, "類型": target_cp_2, "履約價": int(K),
-                        "價格": cp, "槓桿": round(l, 2), "Delta": round(d_abs, 3),
-                        "勝率": w, "剩餘天": dl_2, "成交量": vol
-                    })
-                
-                res_2.sort(key=lambda x: (-x['Delta'], -x['槓桿']))
-                st.session_state.search_results = res_2
-                st.session_state.best_match = res_2[0]
-                st.success("✅ Demo搜尋完成")
-                
-            except Exception as e:
-                st.error(f"搜尋錯誤：{str(e)}")
-
-        # 顯示結果
-        if 'best_match' in st.session_state:
-            b = st.session_state.best_match
-            st.success(f"🏆 {b['履約價']} {b['類型']} | Delta **{b['Delta']}**")
-            
-            if st.button("➕ 加入投組", key="add_pf"):
-                if 'portfolio' not in st.session_state:
-                    st.session_state.portfolio = []
-                st.session_state.portfolio.append(b)
-                st.toast("✅ 已加入")
-            
-            if 'search_results' in st.session_state:
-                df_show = pd.DataFrame(st.session_state.search_results)
-                cols = ["Delta", "履約價", "價格", "勝率", "槓桿", "剩餘天"]
-                st.dataframe(df_show[cols], use_container_width=True)
-
-    # ---------------------------
-    # 右欄：投組
-    # ---------------------------
-    with col_portfolio:
-        st.markdown("### 💼 投組管理")
-        
-        if st.button("🔄 清理", key="clean_old"):
-            if 'portfolio' in st.session_state:
-                st.session_state.portfolio = []
+            target_delta = st.slider("目標 Delta", 0.1, 1.0, 0.7, 0.05, key="v183_target")
+        with c4:
+            if st.button("🧹 重置", key="v183_reset"):
+                st.session_state[KEY_RES] = []
+                st.session_state[KEY_BEST] = None
                 st.rerun()
-        
-        if 'portfolio' in st.session_state and st.session_state.portfolio:
-            pf = pd.DataFrame(st.session_state.portfolio)
-            
-            c1, c2 = st.columns(2)
-            c1.metric("總權利金", pf['價格'].sum())
-            c2.metric("平均Delta", pf['Delta'].mean())
-            
-            cols = ["Delta", "履約價", "價格", "勝率", "槓桿", "剩餘天"]
-            def color(val):
-                return 'color: green' if val > 0.2 else 'color: orange'
-            
-            styled = pf[cols].style.map(color, subset=['Delta'])
-            st.dataframe(styled, use_container_width=True)
-            
-            st.download_button("CSV", pf.to_csv().encode(), "投組.csv")
-        else:
-            st.info("👈 先搜尋加入")
 
-st.caption("🔥 Delta優先 | Demo版可直接執行")
+        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="v183_scan"):
+            st.session_state[KEY_RES] = []
+            st.session_state[KEY_BEST] = None
+            
+            if sel_con and len(str(sel_con))==6:
+                tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
+                
+                if tdf.empty: st.warning("無資料")
+                else:
+                    try:
+                        y, m = int(str(sel_con)[:4]), int(str(sel_con)[4:6])
+                        days = max((date(y,m,15)-latest_date.date()).days, 1)
+                        T = days / 365.0
+                    except: st.error("日期解析失敗"); st.stop()
+
+                    raw_results = []
+                    for _, row in tdf.iterrows():
+                        try:
+                            K = float(row["strike_price"])
+                            vol = float(row["volume"])
+                            close_p = float(row["close"])
+                            if K<=0: continue
+                            
+                            try:
+                                r, sigma = 0.02, 0.2
+                                d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
+                                
+                                if op_type=="CALL":
+                                    delta = norm.cdf(d1)
+                                    bs_p = S_current*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d1-sigma*np.sqrt(T))
+                                else:
+                                    delta = -norm.cdf(-d1)
+                                    bs_p = K*np.exp(-r*T)*norm.cdf(-(d1-sigma*np.sqrt(T)))-S_current*norm.cdf(-d1)
+                            except: 
+                                delta, bs_p = 0.5, close_p
+
+                            P = close_p if vol > 0 else bs_p
+                            if P <= 0.5: continue
+                            lev = (abs(delta)*S_current)/P
+                            
+                            if abs(delta) < 0.1: continue
+
+                            # 1. 原始分
+                            raw_score = calculate_raw_score(delta, days, vol, S_current, K, op_type)
+                            status = "🟢成交" if vol > 0 else "🔵合理"
+
+                            raw_results.append({
+                                "履約價": int(K), 
+                                "價格": P, 
+                                "狀態": status, 
+                                "槓桿": lev,
+                                "Delta": delta,
+                                "raw_score": raw_score,
+                                "Vol": int(vol),
+                                "差距": abs(abs(delta) - target_delta), 
+                                "合約": sel_con, 
+                                "類型": op_type
+                            })
+                        except: continue
+                    
+                    if raw_results:
+                        # 2. 🔥 微觀展開 (Top 40% -> 90-95%)
+                        final_results = micro_expand_scores(raw_results)
+                        
+                        # 再根據差距微調排序
+                        final_results.sort(key=lambda x: (x['差距'], -x['勝率']))
+                        
+                        st.session_state[KEY_RES] = final_results[:15]
+                        st.session_state[KEY_BEST] = final_results[0]
+                        st.success(f"掃描完成 (頂部已展開至 90-95%)")
+                    else: st.warning("無資料")
+
+        if st.session_state[KEY_RES]:
+            best = st.session_state[KEY_BEST]
+            st.markdown("---")
+            
+            cA, cB = st.columns([2, 1])
+            with cA:
+                st.markdown("#### 🏆 **最佳推薦**")
+                p_int = int(round(best['價格']))
+                st.markdown(f"""
+                `{best['履約價']} {best['類型']}` **{p_int}點**  
+                Delta `{best['Delta']:.2f}` | Vol `{best['Vol']}` | 勝率 `{best['勝率']:.1f}%`
+                """)
+            with cB:
+                st.write("")
+                if st.button("➕ 加入", key="add_pf_v183"):
+                    exists = any(p['履約價'] == best['履約價'] and 
+                                 p['合約'] == best['合約'] for p in st.session_state[KEY_PF])
+                    if not exists:
+                        st.session_state[KEY_PF].append(best)
+                        st.toast("已加入")
+                    else: st.toast("⚠️ 已存在")
+
+            with st.expander("📋 微觀清單 (95-90%)", expanded=True):
+                df_show = pd.DataFrame(st.session_state[KEY_RES]).copy()
+                
+                df_show['權利金'] = df_show['價格'].round(0).astype(int)
+                df_show['槓桿'] = df_show['槓桿'].map(lambda x: f"{x:.1f}x")
+                df_show['Delta'] = df_show['Delta'].map(lambda x: f"{x:.2f}")
+                df_show['勝率'] = df_show['勝率'].map(lambda x: f"{x:.1f}%")
+                
+                cols = ["履約價", "權利金", "Delta", "Vol", "勝率", "差距"]
+                st.dataframe(df_show[cols], use_container_width=True, hide_index=True)
+
+    with col_portfolio:
+        st.markdown("#### 💼 **投組**")
+        if st.session_state[KEY_PF]:
+            pf = pd.DataFrame(st.session_state[KEY_PF])
+            total = pf['價格'].sum() * 50
+            avg_win = pf['勝率'].mean()
+            
+            st.metric("總權利金", f"${int(total):,}")
+            st.caption(f"{len(pf)}口 | Avg Win {avg_win:.1f}%")
+            
+            pf_s = pf.copy()
+            pf_s['權利金'] = pf_s['價格'].round(0).astype(int)
+            pf_s['Delta'] = pf_s['Delta'].map(lambda x: f"{float(x):.2f}")
+            pf_s['勝率'] = pf_s['勝率'].map(lambda x: f"{float(x):.1f}%")
+            
+            st.dataframe(pf_s[["履約價", "權利金", "Delta", "勝率"]], 
+                         use_container_width=True, hide_index=True)
+            
+            c_clr, c_dl = st.columns(2)
+            with c_clr:
+                if st.button("🗑️ 清空", key="clr_pf_v183"):
+                    st.session_state[KEY_PF] = []
+                    st.rerun()
+            with c_dl:
+                st.download_button("📥 CSV", pf.to_csv(index=False).encode('utf-8'), 
+                                   "pf_v183.csv", key="dl_pf_v183")
+        else: st.info("無資料")
+
+    st.markdown("---")
+    st.caption("📊 **微觀展開**：前 40% 優質合約強制展開至 90%~95%，精細區分優劣。")
 
 
 # --------------------------
