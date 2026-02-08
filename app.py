@@ -266,11 +266,8 @@ tabs = st.tabs(tab_names)
 # Tab 0: 穩健 ETF (單導Tab2版 v5.4)
 # --------------------------
 # --------------------------
-# Tab 0: 穩健 ETF (跳轉修復版 v5.6)
+# Tab 0: 穩健 ETF (視覺究極強化版 v5.8)
 # --------------------------
-# 請將此完整代碼替換原有的 with tabs[0]: 區塊
-# 確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1
-
 with tabs[0]:
     st.markdown("## 🐢 **ETF 定投計畫**")
     st.info("💡 **新手專用**：每月自動買，10年變富翁！")
@@ -313,7 +310,7 @@ with tabs[0]:
         quotes = get_etf_quotes()
         st.dataframe(quotes, use_container_width=True, hide_index=True)
     except:
-        st.error("報價載入失敗，請稍後重試")
+        st.error("報價載入失敗")
 
     if st.button("🔄 刷新報價", key="refresh_t0"):
         st.cache_data.clear()
@@ -365,20 +362,20 @@ with tabs[0]:
         stop_val = monthly * 12 * (( (1 + r)**stop_y - 1 ) / r )
         st.error(f"資產停滯：NT$ {stop_val:,.0f}")
     with c_go:
-        st.write("") # Spacer
+        st.write("") 
         st.write("")
         gain_pct = ((final / stop_val) - 1) * 100
         st.success(f"✅ 持續定投多賺：**{gain_pct:.0f}%** ！")
 
     st.markdown("---")
 
-    # === 5. 行動導航 (JS 強制點擊版) ===
-    st.markdown("### 🚀 **立即開始**")
-    c_act, c_nav = st.columns([1.5, 1])
+    # === 5. 行動導航 (視覺究極強化版) ===
+    st.markdown("### 🚀 **下一步行動**")
+    c_act, c_nav = st.columns([1, 1.2]) # 調整比例，讓右邊寬一點
     
     with c_act:
         st.success("""
-        **🏆 4步致富法**：
+        **🏆 新手致富 4 步曲**：
         1. **每月5號** 自動扣款
         2. **漲跌都買** 累積股數
         3. **絕不看盤** 忽略波動
@@ -386,34 +383,91 @@ with tabs[0]:
         """)
         
     with c_nav:
-        st.markdown("**進階武器**")
-        st.caption("定投打基礎 → 期權放大收益")
+        # ✨ CSS 動態霓虹卡片
+        st.markdown("""
+        <style>
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0.4); }
+            70% { box-shadow: 0 0 0 15px rgba(255, 75, 75, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0); }
+        }
+        .war-room-card {
+            background: linear-gradient(135deg, #2b0f0f 0%, #1a1a1a 100%);
+            border: 2px solid #ff4b4b;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            animation: pulse 2s infinite;
+        }
+        .war-room-card::before {
+            content: "";
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,75,75,0.1) 0%, rgba(0,0,0,0) 70%);
+            transform: rotate(45deg);
+            pointer-events: none;
+        }
+        .war-title {
+            color: #ff4b4b;
+            font-size: 24px;
+            font-weight: 900;
+            margin: 0;
+            text-shadow: 0 0 10px rgba(255, 75, 75, 0.5);
+            letter-spacing: 1px;
+        }
+        .war-desc {
+            color: #ccc;
+            font-size: 14px;
+            margin-top: 10px;
+            line-height: 1.5;
+        }
+        .highlight {
+            color: #4ECDC4;
+            font-weight: bold;
+            background: rgba(78, 205, 196, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        </style>
         
-        # ⚡ JS 強制點擊按鈕 (每次都能點)
-        if st.button("⚡ **前往期權戰室** ⏭️", type="primary", use_container_width=True, key="btn_jump_tab2_final"):
+        <div class="war-room-card">
+            <div class="war-title">⚡ 進階武器：期權戰室</div>
+            <p class="war-desc">
+                定投是防守，期權是進攻<br>
+                運用 <span class="highlight">微觀勝率模型</span> 放大收益
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.write("") # 間距
+        
+        # ⚡ JS 強制跳轉按鈕
+        if st.button("🔥 進入戰場 (Tab 2) ⏭️", type="primary", use_container_width=True, key="btn_jump_tab2_ultra"):
             import streamlit.components.v1 as components
             import time
-            
-            # 使用隨機數確保 JS 每次都不一樣，避免緩存
             rnd = int(time.time())
-            
             js = f'''
             <script>
-                // 延遲 200ms 確保頁面渲染完成
                 setTimeout(function() {{
                     var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
                     if (tabs.length > 2) {{
-                        tabs[2].click(); // 點擊 Tab 2
-                        console.log("Tab 2 clicked (force {rnd})");
+                        tabs[2].click();
+                        window.scrollTo(0, 0);
+                        console.log("Tab 2 jump {rnd}");
                     }}
-                }}, 200);
+                }}, 150);
             </script>
             '''
             components.html(js, height=0)
-            st.toast("🚀 正在進入戰情室...", icon="🔥")
+            st.toast("🔥 正在載入戰情室...", icon="🚀")
 
     st.markdown("---")
-    st.caption("💪 **恭喜！您已完成定投啟蒙。**")
+    st.caption("💪 **恭喜！定投打底完成，準備進階！**")
 
 
 # --------------------------
