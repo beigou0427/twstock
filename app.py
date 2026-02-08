@@ -272,40 +272,45 @@ with col4:
 st.markdown("---")
 
 # 合規聲明
-# 合規聲明（放在 app 最上方）
+# 合規聲明（零基礎新手版，CALL獵人改半年以上）
 if not st.session_state.get('disclaimer_accepted', False):
-    st.error("🚨 **[必讀] 免責聲明**")
-    st.markdown("**本工具僅供教育研究，絕非投資建議！**")
-    st.markdown("- 所有策略需自行驗證")
-    st.markdown("- 槓桿商品可能血本無歸")
-    st.markdown("- 新手**務必**先讀「穩健ETF」章節")
+    st.error("🚨 **股票完全新手必讀！**")
+    st.markdown("""
+    **先搞懂股票基礎：**
+    - 💹 **股票** = 買公司股份，股價漲才賺錢
+    - 📈 **ETF** = 一籃子優質股票，新手首選  
+    - 💳 **定期定額** = 每月固定買，避開追高殺低
+    """)
     
     st.markdown("---")
     
-    # 超清晰使用說明
-    st.markdown("## 🎯 **5 大功能一覽**")
-    tab_functions = {
-        "Tab0": "💰 **定投計畫**：設定每月自動買ETF，追蹤報酬率",
-        "Tab1": "🧠 **智能情報**：台股熱門股 + 技術指標即時更新", 
-        "Tab2": "🔫 **CALL獵人**：篩選高勝率買權，附 Greeks 數據",
-        "Tab3": "⏳ **回測系統**：輸入策略，驗證過去10年績效",
-        "Tab4": "⚔️ **戰情室**：大盤期貨 + 熱門題材即時監控"
-    }
+    # 完整5大功能分級
+    st.markdown("## 🎯 **貝伊果屋5大功能**")
     
-    for tab, desc in tab_functions.items():
-        st.markdown(f"**{tab}** {desc}")
+    st.markdown("""
+    **🌱 新手起手（先練這3個）**
+    - **Tab0 定投計畫**：設定每月自動買ETF，複利致富
+    - **Tab1 智能情報**：看懂台股熱門 + 大盤趨勢  
+    - **Tab4 戰情室**：追蹤市場熱門題材（AI、半導體）
+    
+    **🚀 中級看多（看好中長期）**
+    - **Tab2 CALL獵人**：找**半年以上到期CALL**（低成本槓桿看多個股）[web:13][web:14]
+    
+    **🧠 高手專用（會寫策略）**
+    - **Tab3 回測系統**：驗證策略過去10年績效
+    """)
     
     st.markdown("---")
     
-    # 特效按鈕
-    if st.button("🎉 **我已了解風險，開始使用** 🎉", type="primary", use_container_width=True):
+    # 確認按鈕
+    if st.button("✅ **我懂基礎，開始使用**", type="primary", use_container_width=True):
         st.session_state.disclaimer_accepted = True
         st.balloons()
         st.rerun()
     
     st.markdown("---")
     
-    st.markdown("### 📚 **新手必備書籍**")
+    st.markdown("### 📚 **零基礎必備書籍**")
     col1, col2 = st.columns(2)
     with col1:
         st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="方案一", use_container_width=True)
