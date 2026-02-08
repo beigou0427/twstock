@@ -32,6 +32,19 @@ if "jump" in st.query_params and st.query_params["jump"] == "2":
         </script>
     """, height=0)
 
+# === 放在程式最開頭 ===
+import streamlit.components.v1 as components
+
+# 檢查 URL 是否帶有 jump=tab2 參數
+if "jump" in st.query_params and st.query_params["jump"] == "tab2":
+    # 注入自動點擊 JS
+    components.html("""
+        <script>
+            window.parent.document.querySelectorAll('button[data-baseweb="tab"]')[2].click();
+        </script>
+    """, height=0)
+    # 清除參數，避免下次刷新還在跳
+    st.query_params.clear()
 
 # =========================
 # 1. 初始化 & 設定
