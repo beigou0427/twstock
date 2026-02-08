@@ -232,17 +232,15 @@ with st.sidebar:
     st.markdown("## 🥯 **貝伊果屋**")
     st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
     
-    # 方案一圖片
+    # 方案一：圖片 + 連結
     st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="方案一", use_container_width=True)
+    st.markdown("[🛒 購買方案一](https://s.shopee.tw/5AmrxVrig8)")
     
-    # 方案二圖片
+    st.divider()  # 分隔方案
+    
+    # 方案二：圖片 + 連結
     st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="方案二", use_container_width=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("[🛒 購買方案一](https://s.shopee.tw/5AmrxVrig8)")
-    with col2:
-        st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
+    st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
     
     if st.session_state.get('is_pro', False):
         st.success("👑 Pro 會員")
