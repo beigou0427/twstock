@@ -274,37 +274,38 @@ st.markdown("---")
 # 合規聲明
 # 合規聲明（放在 app 最上方）
 if not st.session_state.get('disclaimer_accepted', False):
-    st.warning("🚨 **重要聲明**：本工具僅供教育，非投資建議。新手請先閱讀「穩健ETF」章節。")
+    st.error("🚨 **[必讀] 免責聲明**")
+    st.markdown("**本工具僅供教育研究，絕非投資建議！**")
+    st.markdown("- 所有策略需自行驗證")
+    st.markdown("- 槓桿商品可能血本無歸")
+    st.markdown("- 新手**務必**先讀「穩健ETF」章節")
     
-    # 使用說明（展開式）
-    with st.expander("📖 **使用說明**（必讀）", expanded=True):
-        st.markdown("""
-        **1. 定投計畫 (Tab0)**：設定定期定額，追蹤績效
-        **2. 智能情報 (Tab1)**：台股即時數據 + 技術指標
-        **3. CALL獵人 (Tab2)**：期權買權篩選神器
-        **4. 回測系統 (Tab3)**：策略歷史驗證
-        **5. 戰情室 (Tab4)**：即時市場監控
-        
-        **⚠️ 風險提示**：槓桿商品高風險，僅用閒錢
-        """)
-    
-    # 加大特效主按鈕
     st.markdown("---")
-    if st.button(
-        "🎉 **✅ 我了解，開始使用** 🎉", 
-        type="primary", 
-        use_container_width=True,
-        help="進入貝伊果屋五大投資工具"
-    ):
+    
+    # 超清晰使用說明
+    st.markdown("## 🎯 **5 大功能一覽**")
+    tab_functions = {
+        "Tab0": "💰 **定投計畫**：設定每月自動買ETF，追蹤報酬率",
+        "Tab1": "🧠 **智能情報**：台股熱門股 + 技術指標即時更新", 
+        "Tab2": "🔫 **CALL獵人**：篩選高勝率買權，附 Greeks 數據",
+        "Tab3": "⏳ **回測系統**：輸入策略，驗證過去10年績效",
+        "Tab4": "⚔️ **戰情室**：大盤期貨 + 熱門題材即時監控"
+    }
+    
+    for tab, desc in tab_functions.items():
+        st.markdown(f"**{tab}** {desc}")
+    
+    st.markdown("---")
+    
+    # 特效按鈕
+    if st.button("🎉 **我已了解風險，開始使用** 🎉", type="primary", use_container_width=True):
         st.session_state.disclaimer_accepted = True
         st.balloons()
-        st.success("歡迎來到貝伊果屋！")
         st.rerun()
     
     st.markdown("---")
     
-    # 推薦書籍
-    st.markdown("### 📚 推薦書籍（選購）")
+    st.markdown("### 📚 **新手必備書籍**")
     col1, col2 = st.columns(2)
     with col1:
         st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="方案一", use_container_width=True)
@@ -314,18 +315,6 @@ if not st.session_state.get('disclaimer_accepted', False):
         st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
     
     st.stop()
-
-# 原側邊欄內容
-with st.sidebar:
-    st.markdown("## 🥯 **貝伊果屋**")
-    st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
-    
-    if st.session_state.get('is_pro', False):
-        st.success("👑 Pro 會員")
-    
-    st.divider()
-    st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
-
 
 
 # 分頁導航
