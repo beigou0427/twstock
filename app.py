@@ -556,19 +556,22 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (最終完美修復版 v10.2)
+# Tab 2: 專業期權戰情室 (拉桿終極修復版 v10.3)
 # --------------------------
 with tabs[2]:
-    # 初始化
+    # 初始化 Session State (只在第一次執行)
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
     if 'pro_selected_contract' not in st.session_state: st.session_state.pro_selected_contract = ""
     if 'pro_search_results' not in st.session_state: st.session_state.pro_search_results = []
-    if 'pro_lev_multi' not in st.session_state: st.session_state.pro_lev_multi = 8.0
+    
+    # ✅ 關鍵修復：只在第一次初始化槓桿變數
+    if 'pro_lev_multi' not in st.session_state: 
+        st.session_state.pro_lev_multi = 8.0
 
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # Alpha-10 核心算法
+    # Alpha-10 核心算法 (同 v10.2)
     def calculate_alpha_10_score(delta, gamma, theta, vega, days, lev, price, vol, K, S):
         score = 0
         try:
@@ -620,7 +623,7 @@ with tabs[2]:
             
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_10_safe")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_final")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
@@ -629,14 +632,16 @@ with tabs[2]:
             if default not in available: default = available[0] if available else ""
             sel_con = st.selectbox("月份", available if available else [""],
                                  index=available.index(default) if available and default in available else 0,
-                                 key="pro_con_10_safe")
+                                 key="pro_con_final")
             st.session_state.pro_selected_contract = sel_con
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_10_safe")
-            st.session_state.pro_lev_multi = target_lev
+            # ✅ 關鍵修復：不要設定 value，直接綁定 key
+            # Streamlit 會自動從 session_state['pro_lev_multi'] 讀取值
+            st.slider("槓桿", 2.0, 20.0, key="pro_lev_multi", step=0.5)
 
-        if st.button(f"🔥 啟動 Alpha-10 運算", type="primary", use_container_width=True):
-            current_target_lev = st.session_state.pro_lev_multi
+        # 按鈕顯示目前設定值
+        current_lev = st.session_state.pro_lev_multi
+        if st.button(f"🔥 啟動 Alpha-10 (槓桿 {current_lev}x)", type="primary", use_container_width=True):
             
             if sel_con and len(str(sel_con))==6:
                 st.session_state.pro_selected_type = op_type
@@ -687,12 +692,13 @@ with tabs[2]:
                                 "履約價": int(K), "價格": P, "狀態": status, "槓桿": lev,
                                 "Delta": delta, "Theta": theta, "Gamma": gamma, "Vega": vega,
                                 "評分": alpha_score, "Vol": int(vol),
-                                "差距": abs(lev - current_target_lev),
+                                "差距": abs(lev - current_lev), # ✅ 使用 session_state 的值
                                 "合約": sel_con, "類型": op_type, "剩餘天": days
                             })
                         except: continue
                     
                     if res:
+                        # 排序：優先看評分，其次看槓桿差距
                         res.sort(key=lambda x: (-x['評分'], x['差距']))
                         st.session_state.pro_search_results = res[:15]
                         st.session_state.pro_best = res[0]
@@ -726,7 +732,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_10_safe"):
+                if st.button("➕ 加入投組", key="add_pf_final"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -736,7 +742,6 @@ with tabs[2]:
             with st.expander("📋 因子詳細數據 (Greeks)", expanded=True):
                 res_df = pd.DataFrame(st.session_state.pro_search_results)
                 
-                # ✅ 安全格式化 (使用 apply + try-except)
                 def safe_format(val, fmt):
                     try: return fmt.format(val)
                     except: return str(val)
@@ -745,7 +750,6 @@ with tabs[2]:
                 show_df['權利金'] = show_df['價格'].apply(lambda x: int(round(x)))
                 show_df['槓桿'] = show_df['槓桿'].apply(lambda x: safe_format(x, "{:.1f}x"))
                 
-                # ✅ 關鍵修復：處理評分欄位，預設為 0
                 if '評分' not in show_df.columns: show_df['評分'] = 0
                 show_df['評分'] = show_df['評分'].fillna(0).apply(lambda x: safe_format(x, "{:.0f}"))
                 
@@ -755,7 +759,6 @@ with tabs[2]:
                 if 'Theta' not in show_df.columns: show_df['Theta'] = 0
                 show_df['Theta'] = show_df['Theta'].apply(lambda x: safe_format(x, "{:.1f}"))
                 
-                # ✅ 確保狀態列存在
                 if '狀態' not in show_df.columns: show_df['狀態'] = '成交價'
 
                 def score_color(row):
@@ -792,29 +795,28 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_10_safe"): 
+                if st.button("清空", key="clr_pf_final"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_10_safe")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_final")
         else: st.info("空投組")
         
-    # 10因子說明書
     with st.expander("🧬 **Alpha-10 因子權重表**"):
         st.markdown("""
         | 維度 | 因子 | 權重 | 說明 |
         |---|---|---|---|
-        | **🛡️ 防禦** | **DTE (時間)** | 15% | 獎勵遠月合約 (>90天) |
-        | | **Theta%** | 10% | 每日時間價值流失率需 < 1% |
-        | | **Moneyness** | 10% | 扣分深度價外樂透 |
-        | **🚀 攻擊** | **Delta** | 15% | 越高分越多 (真實資產) |
-        | | **Gamma** | 10% | 獎勵加速爆發力 |
-        | | **Vega** | 5% | 獎勵波動率敏感度 |
-        | **⚖️ 效率** | **Leverage** | 15% | 甜蜜點 5x ~ 15x |
-        | | **CP值** | 10% | Delta / Theta 比率 |
-        | **🌊 流動** | **Volume** | 5% | 成交量 > 100 |
-        | | **Price** | 5% | 避免權利金 < 50 點 (滑價保護) |
+        | **🛡️ 防禦** | **DTE** | 15% | 獎勵 >90天 |
+        | | **Theta%** | 10% | < 1% 優 |
+        | | **Moneyness** | 10% | 避開深度價外 |
+        | **🚀 攻擊** | **Delta** | 15% | 越高越好 |
+        | | **Gamma** | 10% | 獎勵爆發 |
+        | | **Vega** | 5% | 獎勵波動 |
+        | **⚖️ 效率** | **Leverage** | 15% | 5x~15x |
+        | | **CP值** | 10% | Delta/Theta |
+        | **🌊 流動** | **Vol/Price** | 10% | 流動性保護 |
         """)
+
 
 # --------------------------
 # Tab 3: 歷史回測
