@@ -556,47 +556,44 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (平衡衰退終極版 v15.0)
+# Tab 2: 專業期權戰情室 (雙階段衰退 v15.1)
 # --------------------------
 with tabs[2]:
     # 初始化
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-    if 'bspop_locked_results' not in st.session_state: st.session_state.bspop_locked_results = []
-    if 'bspop_locked_best' not in st.session_state: st.session_state.bspop_locked_best = None
+    if 'dual_decay_results' not in st.session_state: st.session_state.dual_decay_results = []
+    if 'dual_decay_best' not in st.session_state: st.session_state.dual_decay_best = None
     
-    st.markdown("### ♟️ **專業期權戰情室**")
+    st.markdown("### ♟️ **雙階段衰退戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # ✅ 平衡版槓桿衰退勝率模型 (Linear + Exponential Average)
-    def calculate_balanced_decay_win_rate(delta, days, d2_prob, lev):
-        # 1. 基礎勝率 (BSPOP * 0.9 + 紅利)
+    # 🔥 雙階段衰退勝率模型 (3x微衰 + 5x暴跌)
+    def calculate_dual_stage_decay_win_rate(delta, days, d2_prob, lev):
+        # 1. 基礎勝率
         base_win = d2_prob * 100 * 0.9
         delta_bonus = abs(delta) * 10
         time_bonus = min(days / 30 * 2, 10)
         trend_bonus = 5 if delta > 0 else 0
-        
         raw_win = base_win + delta_bonus + time_bonus + trend_bonus
         
-        # 📉 2. 平衡衰退 (3x 起算)
+        # 📉 2. 雙階段衰退邏輯
         if lev <= 3:
             decay = 0
+        elif lev <= 5:
+            # 階段1: 溫和衰退 (0.8%/倍)
+            decay = (lev - 3) * 0.8
         else:
-            # A. 線性衰退 (溫和提醒)
-            linear_decay = (lev - 3) * 1.5
-            
-            # B. 指數衰退 (嚴厲警告)
-            exp_decay = ((lev - 3) ** 2) / 2.5
-            
-            # C. 取平衡 (客觀中立)
-            decay = (linear_decay + exp_decay) / 2
-            
-        final_win = raw_win - decay
+            # 階段2: 指數暴跌 (5x起平方加速)
+            base_decay = (5 - 3) * 0.8  # 5x基底=1.6%
+            extra_lev = lev - 5
+            exp_decay = base_decay + (extra_lev ** 2) * 2.5
+            decay = min(exp_decay, 95)  # 上限95%
         
-        # 保底 5%，上限 92%
+        final_win = raw_win - decay
         return min(max(final_win, 5), 92)
 
     with col_search:
-        st.markdown("#### 🔍 **策略雷達**")
+        st.markdown("#### 🔍 **雙階段掃描**")
         
         if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
         
@@ -605,23 +602,23 @@ with tabs[2]:
         for col in ['close', 'volume', 'strike_price']:
             df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
 
-        # 1. 參數區
+        # 參數區
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_bal_decay")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="dual_dir")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_bal_decay")
+            sel_con = st.selectbox("月份", available if available else [""], key="dual_con")
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_bal_decay")
+            target_lev = st.slider("目標槓桿", 2.0, 20.0, 4.0, 0.5, key="dual_lev")
 
-        # 2. 掃描按鈕
-        def on_scan_bal_decay():
-            st.session_state.bspop_locked_results = []
+        # 掃描按鈕
+        def on_scan_dual_decay():
+            st.session_state.dual_decay_results = []
             
-        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_bal_decay):
+        if st.button("🚀 雙階段掃描", type="primary", use_container_width=True, on_click=on_scan_dual_decay):
             if sel_con and len(str(sel_con))==6:
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
@@ -663,12 +660,12 @@ with tabs[2]:
                             
                             lev = (abs(delta)*S_current)/P
                             
-                            # 過濾邏輯 (保留深價內低槓桿)
+                            # 過濾 (深價內 + 合理槓桿)
                             if abs(delta) < 0.15: continue
                             if lev > 50: continue
 
-                            # ✅ 計算平衡衰退勝率
-                            win_rate = calculate_balanced_decay_win_rate(delta, days, bspop_prob, lev)
+                            # 🔥 雙階段勝率
+                            win_rate = calculate_dual_stage_decay_win_rate(delta, days, bspop_prob, lev)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
@@ -680,16 +677,15 @@ with tabs[2]:
                         except: continue
                     
                     if res:
-                        # 排序
                         res.sort(key=lambda x: (x['差距'], -x['勝率']))
-                        st.session_state.bspop_locked_results = res[:15]
-                        st.session_state.bspop_locked_best = res[0]
+                        st.session_state.dual_decay_results = res[:15]
+                        st.session_state.dual_decay_best = res[0]
                         st.success("🎯 掃描完成")
-                    else: st.warning("無結果")
+                    else: st.warning("無合適合約")
 
-        # 3. 顯示區
-        if st.session_state.bspop_locked_results:
-            best = st.session_state.bspop_locked_best
+        # 顯示區
+        if st.session_state.dual_decay_results:
+            best = st.session_state.dual_decay_best
             st.markdown("---")
             
             col1, col2 = st.columns([2, 1])
@@ -708,7 +704,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_bal_decay"):
+                if st.button("➕ 加入投組", key="add_pf_dual"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -716,7 +712,7 @@ with tabs[2]:
                     else: st.toast("⚠️ 重複")
             
             with st.expander("📋 詳細清單", expanded=True):
-                res_df = pd.DataFrame(st.session_state.bspop_locked_results)
+                res_df = pd.DataFrame(st.session_state.dual_decay_results)
                 
                 def safe_fmt(val, fmt):
                     try: return fmt.format(val)
@@ -728,7 +724,6 @@ with tabs[2]:
                 show_df['勝率'] = show_df['勝率'].apply(lambda x: safe_fmt(x, "{:.0f}%"))
                 if '狀態' not in show_df.columns: show_df['狀態'] = '成交價'
                 
-                # 乾淨顯示
                 final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "差距"]]
                 st.dataframe(final_show, use_container_width=True, hide_index=True)
 
@@ -752,12 +747,31 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_bal_decay"): 
+                if st.button("清空", key="clr_pf_dual"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_bal_decay")
+                st.download_button("📥 CSV", pf_df.to_csv(index=False).encode('utf-8'), "投組.csv", key="dl_pf_dual")
         else: st.info("空投組")
+
+    # 衰退曲線圖表 (直觀展示)
+    st.markdown("---")
+    st.markdown("#### 📊 **雙階段衰退曲線**")
+    lev_range = np.arange(2, 21, 0.5)
+    decay_values = [calculate_dual_stage_decay_win_rate(0.5, 30, 0.6, lev) for lev in lev_range]
+    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(lev_range, decay_values, 'b-', linewidth=3, label='雙階段勝率')
+    ax.axvline(x=3, color='orange', linestyle='--', alpha=0.7, label='3x 微衰開始')
+    ax.axvline(x=5, color='red', linestyle='--', linewidth=2, label='5x 暴跌開始')
+    ax.set_xlabel('槓桿倍數')
+    ax.set_ylabel('預期勝率 (%)')
+    ax.set_title('雙階段衰退：3x微衰 + 5x暴跌', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim(0, 100)
+    st.pyplot(fig)
+
 
 # --------------------------
 # Tab 3: 歷史回測
