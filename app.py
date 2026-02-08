@@ -294,7 +294,7 @@ if not st.session_state.get('disclaimer_accepted', False):
     - **Tab4 戰情室**：追蹤市場熱門題材（AI、半導體）
     
     **🚀 中級看多（看好中長期）**
-    - **Tab2 CALL獵人**：找**半年以上到期CALL**（低成本槓桿看多個股）[web:13][web:14]
+    - **Tab2 CALL獵人**：找**半年以上到期CALL**（低成本槓桿看多個股)
     
     **🧠 高手專用（會寫策略）**
     - **Tab3 回測系統**：驗證策略過去10年績效
