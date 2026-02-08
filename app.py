@@ -736,18 +736,18 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 槓桿篩選版 v18.4 (回歸槓桿操作)
+# Tab 2: 槓桿篩選版 v18.5 (回歸槓桿操作 + LEADS CALL)
 # --------------------------
 with tabs[2]:
-    KEY_RES = "results_lev_v184"
-    KEY_BEST = "best_lev_v184"
-    KEY_PF = "portfolio"
+    KEY_RES = "results_lev_v185"
+    KEY_BEST = "best_lev_v185"
+    KEY_PF = "portfolio_lev"
 
     if KEY_RES not in st.session_state: st.session_state[KEY_RES] = []
     if KEY_BEST not in st.session_state: st.session_state[KEY_BEST] = None
     if KEY_PF not in st.session_state: st.session_state[KEY_PF] = []
 
-    st.markdown("### ♟️ **專業戰情室 (槓桿篩選 + 微觀勝率)**")
+    st.markdown("### ♟️ **專業戰情室 (槓桿篩選 + 微觀勝率 + LEADS CALL)**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
 
     # 1. 原始評分 (綜合因子)
@@ -785,7 +785,7 @@ with tabs[2]:
         return results
 
     with col_search:
-        st.markdown("#### 🔍 **槓桿掃描**")
+        st.markdown("#### 🔍 **槓桿掃描 (LEADS CALL 優化)**")
         
         if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
         
@@ -796,22 +796,24 @@ with tabs[2]:
 
         c1, c2, c3, c4 = st.columns([1, 1, 1, 0.6])
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="v184_dir")
+            dir_mode = st.selectbox("方向", ["📈 CALL (LEADS)", "📉 PUT"], 0, key="v185_dir")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="v184_con")
+            # ✅ 預設遠月合約 (LEADS CALL 偏好)
+            default_idx = len(available) - 1 if available else 0
+            sel_con = st.selectbox("月份", available if available else [""], 
+                                 index=default_idx, key="v185_con")
         with c3:
-            # ✅ 改回槓桿篩選
-            target_lev = st.slider("目標槓桿", 2.0, 20.0, 5.0, 0.5, key="v184_lev")
+            target_lev = st.slider("目標槓桿", 2.0, 20.0, 5.0, 0.5, key="v185_lev")
         with c4:
-            if st.button("🧹 重置", key="v184_reset"):
+            if st.button("🧹 重置", key="v185_reset"):
                 st.session_state[KEY_RES] = []
                 st.session_state[KEY_BEST] = None
                 st.rerun()
 
-        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="v184_scan"):
+        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="v185_scan"):
             st.session_state[KEY_RES] = []
             st.session_state[KEY_BEST] = None
             
@@ -865,9 +867,10 @@ with tabs[2]:
                                 "Delta": delta,
                                 "raw_score": raw_score,
                                 "Vol": int(vol),
-                                "差距": abs(lev - target_lev), # ✅ 改為槓桿差距
+                                "差距": abs(lev - target_lev),
                                 "合約": sel_con, 
-                                "類型": op_type
+                                "類型": op_type,
+                                "天數": days  # 新增，用於排序
                             })
                         except: continue
                     
@@ -875,13 +878,13 @@ with tabs[2]:
                         # 2. 微觀展開勝率
                         final_results = micro_expand_scores(raw_results)
                         
-                        # 3. 排序：優先找槓桿最接近的，其次看勝率
-                        final_results.sort(key=lambda x: (x['差距'], -x['勝率']))
+                        # 3. 排序：優先找槓桿最接近的，其次看勝率，最後天數（遠月優先）
+                        final_results.sort(key=lambda x: (x['差距'], -x['勝率'], -x['天數']))
                         
                         st.session_state[KEY_RES] = final_results[:15]
                         st.session_state[KEY_BEST] = final_results[0]
-                        st.success(f"掃描完成")
-                    else: st.warning("無資料")
+                        st.success(f"掃描完成！最佳槓桿：{final_results[0]['槓桿']:.1f}x")
+                    else: st.warning("無符合資料")
 
         if st.session_state[KEY_RES]:
             best = st.session_state[KEY_BEST]
@@ -889,63 +892,77 @@ with tabs[2]:
             
             cA, cB = st.columns([2, 1])
             with cA:
-                st.markdown("#### 🏆 **最佳推薦**")
+                st.markdown("#### 🏆 **最佳推薦 (LEADS CALL)**")
                 p_int = int(round(best['價格']))
                 st.markdown(f"""
-                `{best['履約價']} {best['類型']}` **{p_int}點**  
-                槓桿 `{best['槓桿']:.1f}x` | 勝率 `{best['勝率']:.1f}%`
+                `{best['合約']} {best['履約價']} {best['類型']}` **{p_int}點**  
+                槓桿 `{best['槓桿']:.1f}x` | 勝率 `{best['勝率']:.1f}%` | 天數 `{best.get('天數', 0)}天`
                 """)
             with cB:
                 st.write("")
-                if st.button("➕ 加入", key="add_pf_v184"):
+                if st.button("➕ 加入", key="add_pf_v185"):
                     exists = any(p['履約價'] == best['履約價'] and 
                                  p['合約'] == best['合約'] for p in st.session_state[KEY_PF])
                     if not exists:
                         st.session_state[KEY_PF].append(best)
-                        st.toast("已加入")
+                        st.toast("✅ 已加入投組")
                     else: st.toast("⚠️ 已存在")
 
-            with st.expander("📋 搜尋結果 (依槓桿排序)", expanded=True):
+            with st.expander("📋 搜尋結果 (依槓桿→勝率→天數排序)", expanded=True):
                 df_show = pd.DataFrame(st.session_state[KEY_RES]).copy()
                 
                 df_show['權利金'] = df_show['價格'].round(0).astype(int)
                 df_show['槓桿'] = df_show['槓桿'].map(lambda x: f"{x:.1f}x")
                 df_show['Delta'] = df_show['Delta'].map(lambda x: f"{x:.2f}")
                 df_show['勝率'] = df_show['勝率'].map(lambda x: f"{x:.1f}%")
+                df_show['天數'] = df_show.get('天數', 0).astype(int)
                 
-                cols = ["履約價", "權利金", "槓桿", "勝率", "差距"]
+                cols = ["合約", "履約價", "權利金", "槓桿", "勝率", "天數", "差距"]
                 st.dataframe(df_show[cols], use_container_width=True, hide_index=True)
 
     with col_portfolio:
-        st.markdown("#### 💼 **投組**")
+        st.markdown("#### 💼 **LEADS CALL 投組**")
         if st.session_state[KEY_PF]:
             pf = pd.DataFrame(st.session_state[KEY_PF])
             total = pf['價格'].sum() * 50
             avg_win = pf['勝率'].mean()
+            avg_lev = pf['槓桿'].mean()
             
             st.metric("總權利金", f"${int(total):,}")
-            st.caption(f"{len(pf)}口 | Avg Win {avg_win:.1f}%")
+            st.caption(f"{len(pf)}口 | Avg槓桿 {avg_lev:.1f}x | Avg勝率 {avg_win:.1f}%")
             
             pf_s = pf.copy()
             pf_s['權利金'] = pf_s['價格'].round(0).astype(int)
             pf_s['Delta'] = pf_s['Delta'].map(lambda x: f"{float(x):.2f}")
             pf_s['勝率'] = pf_s['勝率'].map(lambda x: f"{float(x):.1f}%")
+            pf_s['槓桿'] = pf_s['槓桿'].map(lambda x: f"{x:.1f}x")
             
-            st.dataframe(pf_s[["履約價", "權利金", "槓桿", "勝率"]], 
+            st.dataframe(pf_s[["合約", "履約價", "權利金", "槓桿", "勝率"]], 
                          use_container_width=True, hide_index=True)
             
             c_clr, c_dl = st.columns(2)
             with c_clr:
-                if st.button("🗑️ 清空", key="clr_pf_v184"):
+                if st.button("🗑️ 清空投組", key="clr_pf_v185"):
                     st.session_state[KEY_PF] = []
                     st.rerun()
             with c_dl:
-                st.download_button("📥 CSV", pf.to_csv(index=False).encode('utf-8'), 
-                                   "pf_v184.csv", key="dl_pf_v184")
-        else: st.info("無資料")
+                st.download_button("📥 CSV匯出", pf.to_csv(index=False).encode('utf-8'), 
+                                   "leads_call_pf_v185.csv", key="dl_pf_v185")
+        else: st.info("💡 請先掃描並加入合約")
 
+    # ✅ LEADS CALL 介紹區塊
     st.markdown("---")
-    st.caption("📊 **操作邏輯**：選擇目標槓桿後，系統會優先推薦最接近該倍數的合約，並標示其微觀勝率。")
+    st.markdown("#### 📚 **LEADS / LEAPS CALL 策略簡介**")
+    st.markdown("""
+    **LEADS CALL (長期看漲選擇權)**：
+    - 到期日 > 6個月，時間衰減緩慢，適合長期看多標的（如AI、指數）
+    - **優勢**：高槓桿、低成本替代現股，時間價值損耗少
+    - **本系統優化**：預設遠月合約 + 槓桿篩選，優先推薦深度價內/價平合約
+    - **建議情境**：波段操作、避開短期震盪、建構低成本多頭部位
+    """)
+    
+    st.caption("📊 **操作邏輯**：優先槓桿最接近 → 最高微觀勝率 → 最遠天數。建議搭配遠月 LEADS CALL 降低時間風險。")
+
 
 # --------------------------
 # Tab 3: 歷史回測
