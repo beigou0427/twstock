@@ -556,21 +556,19 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (經典勝率還原版 v9.7)
+# Tab 2: 專業期權戰情室 (無背景色純淨版 v9.9)
 # --------------------------
 with tabs[2]:
     # 初始化
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-    # 鎖定結果變數 (防止參數調整時清單亂跳)
     if 'classic_locked_results' not in st.session_state: st.session_state.classic_locked_results = []
     if 'classic_locked_best' not in st.session_state: st.session_state.classic_locked_best = None
     
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # ✅ 您的原始經典勝率算法
+    # 經典勝率
     def calculate_classic_win_rate(delta, days):
-        # 公式：(|Delta| * 0.7 + 0.24) * 100
         win_raw = (abs(delta) * 0.7 + 0.24) * 100
         return min(max(win_raw, 1), 99)
 
@@ -584,30 +582,27 @@ with tabs[2]:
         for col in ['close', 'volume', 'strike_price']:
             df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
 
-        # 1. 參數區 (即時連動，不卡死)
+        # 1. 參數區
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_classic")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_clean")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
-        
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_classic")
-
+            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_clean")
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_classic")
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_clean")
 
-        # 2. 執行按鈕 (觸發計算)
-        def on_scan_classic():
-            st.session_state.classic_locked_results = [] # 清空舊結果
+        # 2. 掃描按鈕
+        def on_scan_clean():
+            st.session_state.classic_locked_results = []
             
-        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_classic):
+        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_clean):
             if sel_con and len(str(sel_con))==6:
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
-                if tdf.empty: 
-                    st.warning("無資料")
+                if tdf.empty: st.warning("無資料")
                 else:
                     try:
                         y, m = int(sel_con[:4]), int(sel_con[4:6])
@@ -630,42 +625,36 @@ with tabs[2]:
                                 if op_type=="CALL":
                                     bs_p = S_current*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d2)
                                     delta = norm.cdf(d1)
-                                    theta = (-S_current*sigma*np.exp(-d1**2/2)/(2*np.sqrt(T)) - r*K*np.exp(-r*T)*norm.cdf(d2))/365
                                 else:
                                     bs_p = K*np.exp(-r*T)*norm.cdf(-d2)-S_current*norm.cdf(-d1)
                                     delta = -norm.cdf(-d1)
-                                    theta = (-S_current*sigma*np.exp(-d1**2/2)/(2*np.sqrt(T)) + r*K*np.exp(-r*T)*norm.cdf(-d2))/365
-                            except: bs_p, delta, theta = close_p, 0.5, 0
+                            except: bs_p, delta = close_p, 0.5
 
                             P = close_p if vol > 0 else bs_p
                             if P <= 0.5: continue
                             
                             lev = (abs(delta)*S_current)/P
-                            
-                            # 寬鬆濾網 (不硬性過濾，只在排序時處理)
                             if lev < 1 or lev > 50: continue
 
-                            # ✅ 使用經典勝率
                             win_rate = calculate_classic_win_rate(delta, days)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
                                 "履約價": int(K), "價格": P, "狀態": status, "槓桿": lev,
-                                "Delta": delta, "Theta": theta, "勝率": win_rate, "Vol": int(vol),
+                                "Delta": delta, "勝率": win_rate, "Vol": int(vol),
                                 "差距": abs(lev - target_lev),
-                                "合約": sel_con, "類型": op_type, "剩餘天": days
+                                "合約": sel_con, "類型": op_type
                             })
                         except: continue
                     
                     if res:
-                        # 排序：優先看差距 (接近目標槓桿)，其次看勝率
                         res.sort(key=lambda x: (x['差距'], -x['勝率']))
                         st.session_state.classic_locked_results = res[:15]
                         st.session_state.classic_locked_best = res[0]
                         st.success("🎯 掃描完成")
                     else: st.warning("無結果")
 
-        # 3. 結果顯示 (鎖定區)
+        # 3. 顯示區
         if st.session_state.classic_locked_results:
             best = st.session_state.classic_locked_best
             st.markdown("---")
@@ -675,24 +664,18 @@ with tabs[2]:
                 st.markdown("#### 🏆 **最佳推薦**")
                 price_int = int(round(best['價格']))
                 lev_str = f"{best['槓桿']:.1f}x"
-                win_val = best.get('勝率', 0)
-                win_str = f"{win_val:.0f}%"
+                win_str = f"{best['勝率']:.0f}%"
                 status_display = best.get('狀態', '成交價')
                 
-                # 簡單評級
-                if win_val >= 60: rank = "🥇 優質"
-                else: rank = "⚠️ 投機"
-
                 st.markdown(f"""
                 `{best['履約價']} {best['類型']}`
                 **{price_int}點 {status_display}**
                 槓桿 `{lev_str}` | 勝率 `{win_str}`
-                *{rank}*
                 """)
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_classic"):
+                if st.button("➕ 加入投組", key="add_pf_clean"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -709,21 +692,13 @@ with tabs[2]:
                 show_df = res_df.copy()
                 show_df['權利金'] = show_df['價格'].apply(lambda x: int(round(x)))
                 show_df['槓桿'] = show_df['槓桿'].apply(lambda x: safe_fmt(x, "{:.1f}x"))
-                
-                if '勝率' not in show_df.columns: show_df['勝率'] = 0
-                show_df['勝率'] = show_df['勝率'].fillna(0).apply(lambda x: safe_fmt(x, "{:.0f}%"))
+                show_df['勝率'] = show_df['勝率'].apply(lambda x: safe_fmt(x, "{:.0f}%"))
                 
                 if '狀態' not in show_df.columns: show_df['狀態'] = '成交價'
-
-                def win_color(row):
-                    try:
-                        win = float(str(row['勝率']).replace('%', ''))
-                        return ['background-color: #dcedc8' if win >= 60 else ''] * len(row)
-                    except: return [''] * len(row)
                 
-                # 顯示差距欄位，方便確認排序
+                # ✅ 完全移除 style.apply，只顯示乾淨數據
                 final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "差距"]]
-                st.dataframe(final_show.style.apply(win_color, axis=1), use_container_width=True)
+                st.dataframe(final_show, use_container_width=True, hide_index=True)
 
     with col_portfolio:
         st.markdown("#### 💼 **投組**")
@@ -738,27 +713,19 @@ with tabs[2]:
             pf_show = pf_df.copy()
             pf_show['權利金'] = pf_df['價格'].round(0).astype(int)
             pf_show['槓桿'] = pf_df['槓桿'].apply(lambda x: safe_fmt(x, "{:.1f}x"))
-            
-            if '勝率' not in pf_show.columns: pf_show['勝率'] = 0
             pf_show['勝率'] = pf_show['勝率'].fillna(0).apply(lambda x: safe_fmt(x, "{:.0f}%"))
             
-            def risk_color(d):
-                return 'background-color: #ffebee' if d<=10 else ('background-color: #fff3e0' if d<=30 else '')
-            
-            cols = ["合約","履約價","權利金","狀態","槓桿","勝率","剩餘天"]
-            st.dataframe(pf_show[cols].style.map(risk_color, subset=['剩餘天']), use_container_width=True)
+            cols = ["合約","履約價","權利金","狀態","槓桿","勝率"]
+            st.dataframe(pf_show[cols], use_container_width=True, hide_index=True)
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_classic"): 
+                if st.button("清空", key="clr_pf_clean"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_classic")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_clean")
         else: st.info("空投組")
-        
-    with st.expander("📊 **勝率說明 (經典版)**"):
-        st.markdown("**公式**： `勝率 = (|Delta| × 70% + 24%)`")
 
 
 # --------------------------
