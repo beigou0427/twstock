@@ -232,12 +232,14 @@ with st.sidebar:
     st.markdown("## 🥯 **貝伊果屋**")
     st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
     
-    # 書籍購買連結（非 Pro 升級）
+    # 書籍圖片與購買連結
+    st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", use_container_width=True)
+    
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("[📚 書籍方案一](https://s.shopee.tw/5AmrxVrig8)")
+        st.markdown("[🛒 購買方案一](https://s.shopee.tw/5AmrxVrig8)")
     with col2:
-        st.markdown("[📚 書籍方案二](https://s.shopee.tw/6KypLiCjuy)")
+        st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
     
     if st.session_state.get('is_pro', False):
         st.success("👑 Pro 會員")
