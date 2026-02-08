@@ -557,7 +557,7 @@ with tabs[1]:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 
 # --------------------------
-# Tab 2: 專業期權戰情室 (寬鬆濾網版 v9.3)
+# Tab 2: 專業期權戰情室 (完美勝率還原版 v9.4)
 # --------------------------
 with tabs[2]:
     # 初始化
@@ -568,8 +568,11 @@ with tabs[2]:
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
+    # ✅ 完美勝率系統 (還原)
     def calculate_win_rate(delta, days):
-        return min(max(abs(delta) * 0.7 + 0.8 * 0.3 * 100, 1), 99)
+        # 您的原始邏輯：Delta佔70% + 基礎0.24 (0.8*0.3)
+        win_raw = (abs(delta) * 0.7 + 0.24) * 100
+        return min(max(win_raw, 1), 99)
 
     with col_search:
         st.markdown("#### 🔍 **策略雷達**")
@@ -587,7 +590,7 @@ with tabs[2]:
         
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_loose")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_win")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
@@ -596,10 +599,10 @@ with tabs[2]:
             if default not in available: default = available[0] if available else ""
             sel_con = st.selectbox("月份", available if available else [""],
                                  index=available.index(default) if available and default in available else 0,
-                                 key="pro_con_loose")
+                                 key="pro_con_win")
             st.session_state.pro_selected_contract = sel_con
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_loose")
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_win")
 
         if st.button(f"🔥 掃描{op_type}({sel_con or '-'})", type="primary", use_container_width=True):
             if sel_con and len(str(sel_con))==6 and sel_con.isdigit():
@@ -638,11 +641,9 @@ with tabs[2]:
                             if P <= 0.5: continue
                             
                             lev = (abs(delta)*S_current)/P
-                            
-                            # ✅ 寬鬆過濾：只濾掉極端值，不濾槓桿差距
-                            if lev < 1 or lev > 50: continue 
-                            # if vol < 1: continue # 甚至可以不過濾成交量，只標示合理價
+                            if lev < 1 or lev > 50: continue # 寬鬆濾網
 
+                            # ✅ 使用完美勝率公式
                             win_rate = calculate_win_rate(delta, days)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
@@ -655,11 +656,11 @@ with tabs[2]:
                         except: continue
                     
                     if res:
-                        # 排序：優先槓桿接近，其次成交量
-                        res.sort(key=lambda x: (x['差距'], -x['Vol']))
-                        st.session_state.pro_search_results = res[:15] # 顯示更多筆
+                        # 排序優化：優先顯示勝率高且槓桿適中的
+                        res.sort(key=lambda x: (x['差距'], -x['勝率']))
+                        st.session_state.pro_search_results = res[:15]
                         st.session_state.pro_best = res[0]
-                        st.success(f"🎯 找到 {len(res)} 個機會 (顯示前15筆)")
+                        st.success(f"🎯 掃描完成 (勝率已還原)")
                     else: st.warning("無結果")
 
         if st.session_state.pro_search_results:
@@ -681,14 +682,14 @@ with tabs[2]:
                 """)
                 
             with col2:
-                if st.button("➕ 加入投組", key="add_pf_loose"):
+                if st.button("➕ 加入投組", key="add_pf_win"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
                         st.toast("✅ 加入")
                     else: st.toast("⚠️ 重複")
             
-            with st.expander("📋 完整清單", expanded=True): # 預設展開
+            with st.expander("📋 完整清單", expanded=True):
                 res_df = pd.DataFrame(st.session_state.pro_search_results)
                 
                 def status_color(s):
@@ -724,13 +725,16 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_loose"): 
+                if st.button("清空", key="clr_pf_win"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_loose")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_win")
         else: st.info("空投組")
-
+    
+    # 底部說明您的勝率系統
+    with st.expander("📊 **勝率系統說明 (Win Rate)**"):
+        st.info("**公式**： `勝率 = (|Delta| × 0.7 + 0.24) × 100%`")
 
 
 # --------------------------
