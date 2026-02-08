@@ -22,6 +22,15 @@ try:
     PILLS_AVAILABLE = True
 except ImportError:
     PILLS_AVAILABLE = False
+if "jump" in st.query_params and st.query_params["jump"] == "2":
+    st.components.v1.html("""
+        <script>
+            setTimeout(function(){
+                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                if (tabs.length > 2) { tabs[2].click(); }
+            }, 500);
+        </script>
+    """, height=0)
 
 
 # =========================
