@@ -293,8 +293,8 @@ if not st.session_state.get('disclaimer_accepted', False):
     
     # 推薦書籍在按鈕下方
     st.markdown("##  🔥**強烈建議**🔥")
-    st.markdown("##  **閱讀下列書籍後!才投資!**")
-    st.markdown("##  **才開始投資!**")
+    st.markdown("##  **閱讀下列2本書後!**")
+    st.markdown("##  **才開始投資旅程!**")
 
     col1, col2 = st.columns(2)
     with col1:
