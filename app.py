@@ -263,7 +263,7 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (完整引導版 v5.3)
+# Tab 0: 穩健 ETF (單導Tab2版 v5.4)
 # --------------------------
 from FinMind.data import DataLoader
 import streamlit as st
@@ -359,7 +359,7 @@ with tabs[0]:
     
     st.markdown("---")
     
-    # === 行動計畫 + 導航 ===
+    # === 行動計畫 + 單導Tab2 ===
     st.markdown("### 🚀 **立即開始**")
     col_plan, col_next = st.columns([1.5,1])
     
@@ -373,19 +373,19 @@ with tabs[0]:
         """)
     
     with col_next:
-        st.markdown("**下一步**")
-        if st.button("📊 **管理持倉** ⏭️ Tab1", type="primary", use_container_width=True):
-            st.session_state.selected_tab_index = 1
+        st.markdown("**進階武器**")
+        if st.button("⚡ **期權戰室** ⏭️ Tab2", type="primary", use_container_width=True):
+            st.session_state.selected_tab_index = 2  # 直接Tab2
             st.rerun()
         
-        st.button("⚡ **進階期權** ⏭️ Tab2", use_container_width=True)
+        st.caption("💰 定投打基礎 → 期權放大收益")
     
     st.markdown("---")
     
     st.warning("⚠️ **溫馨提醒**：投資有風險，定投不保證獲利")
     
     st.markdown("---")
-    st.caption("💪 **恭喜完成定投啟蒙！按鈕跳轉進階功能**")
+    st.caption("💪 **恭喜！定投啟蒙完成 → 點擊進入戰室**")
 
 
 # --------------------------
