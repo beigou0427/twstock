@@ -225,7 +225,9 @@ with st.spinner("🚀 啟動財富引擎..."):
     except:
         st.error("連線逾時，請重整頁面")
         st.stop()
-
+# =========================
+# 側邊欄
+# =========================================
 with st.sidebar:
     st.markdown("## 🥯 **貝伊果屋**")
     st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
