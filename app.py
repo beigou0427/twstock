@@ -232,8 +232,8 @@ with st.sidebar:
     st.markdown("## 🥯 **貝伊果屋**")
     st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
     
-    # 書籍圖片與購買連結
-    st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", use_container_width=True)
+    # 方案一圖片
+    st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="方案一", use_container_width=True)
     
     col1, col2 = st.columns(2)
     with col1:
