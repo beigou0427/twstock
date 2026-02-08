@@ -239,7 +239,7 @@ with col2:
 with col3:
     st.metric("資料更新", latest_date.strftime("%m/%d"))
 with col4:
-    signal = "🟢 CALL時機" if S_current > ma20 > ma60 else "🟡 觀望"
+    signal = "🟢 大好局面" if S_current > ma20 > ma60 else "🟡 觀望"
     st.metric("今日建議", signal)
 st.markdown("---")
 
