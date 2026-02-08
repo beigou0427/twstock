@@ -285,7 +285,7 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (頁內跳轉完美版 v6.3)
+# Tab 0: 穩健 ETF (URL 重整跳轉版 v6.4)
 # --------------------------
 with tabs[0]:
     # === 0. 首屏核心導航 ===
@@ -318,7 +318,6 @@ with tabs[0]:
 
     col_safe, col_risk = st.columns(2)
     
-    # 左側：新手定投
     with col_safe:
         st.markdown("""
         <div class="nav-card card-safe">
@@ -328,7 +327,6 @@ with tabs[0]:
         """, unsafe_allow_html=True)
         st.info("👇 **向下瀏覽定投教學**")
 
-    # 右側：進階戰室 (頁內 JS 跳轉)
     with col_risk:
         st.markdown("""
         <div class="nav-card card-danger">
@@ -337,38 +335,14 @@ with tabs[0]:
         </div>
         """, unsafe_allow_html=True)
         
-        # 🔥 核心修復：使用 Counter 生成穩定且遞增的 Key
-        if 'jump_btn_counter' not in st.session_state:
-            st.session_state.jump_btn_counter = 0
-            
-        btn_key = f"jump_btn_{st.session_state.jump_btn_counter}"
-        
-        # 🔥 按鈕邏輯
-        if st.button("🚀 **立即進入戰場 (Tab 2)** ⏭️", type="primary", use_container_width=True, key=btn_key):
-            # 1. 更新 Counter，確保下次渲染時是新按鈕
-            st.session_state.jump_btn_counter += 1
-            
-            # 2. 注入 JS 執行點擊 (不依賴 button state，直接執行)
-            import streamlit.components.v1 as components
-            js = f'''
-            <script>
-                // 使用 parent.document 穿透 iframe
-                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                if (tabs.length > 2) {{
-                    // 先點第一個重置，再點第三個
-                    tabs[0].click();
-                    setTimeout(function() {{
-                        tabs[2].click();
-                        window.scrollTo(0, 0);
-                    }}, 100);
-                }}
-            </script>
-            '''
-            components.html(js, height=0)
-            st.toast("🔥 戰情室載入中...", icon="🚀")
-            
-            # 3. 強制 Rerun 讓 Python 端應用新 Key
-            st.rerun()
+        # 🔥 核心修改：使用 st.link_button 直接重載頁面
+        # 這是最穩定的跳轉方式，完全不依賴 Streamlit 的內部狀態
+        st.link_button(
+            "🚀 **立即進入戰場 (Tab 2)** ⏭️", 
+            url="?jump=tab2", 
+            type="primary", 
+            use_container_width=True
+        )
 
     st.markdown("---")
 
@@ -463,7 +437,6 @@ with tabs[0]:
     
     st.markdown("---")
     st.caption("💪 **恭喜！您已完成定投啟蒙。**")
-
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
