@@ -272,23 +272,10 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (URL跳轉終極穩定版 v6.2)
+# Tab 0: 穩健 ETF (頁內跳轉完美版 v6.3)
 # --------------------------
-# 請確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1
-
-# === 關鍵：請將此段代碼放在程式最上方 (tabs定義之前) ===
-# if "jump" in st.query_params and st.query_params["jump"] == "2":
-#     st.components.v1.html("""
-#         <script>
-#             setTimeout(function(){
-#                 var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-#                 if (tabs.length > 2) { tabs[2].click(); }
-#             }, 500);
-#         </script>
-#     """, height=0)
-
 with tabs[0]:
-    # === 0. 首屏核心導航 (第一眼就看到) ===
+    # === 0. 首屏核心導航 ===
     st.markdown("## 🐢 **ETF 定投計畫**")
     
     # CSS 樣式
@@ -328,7 +315,7 @@ with tabs[0]:
         """, unsafe_allow_html=True)
         st.info("👇 **向下瀏覽定投教學**")
 
-    # 右側：進階戰室 (使用 link_button 穩定跳轉)
+    # 右側：進階戰室 (頁內 JS 跳轉)
     with col_risk:
         st.markdown("""
         <div class="nav-card card-danger">
@@ -337,13 +324,38 @@ with tabs[0]:
         </div>
         """, unsafe_allow_html=True)
         
-        # 🔥 使用 link_button 觸發 URL 重整 (最穩定)
-        st.link_button(
-            "🚀 **立即進入戰場 (Tab 2)** ⏭️", 
-            url="?jump=2", 
-            type="primary", 
-            use_container_width=True
-        )
+        # 🔥 核心修復：使用 Counter 生成穩定且遞增的 Key
+        if 'jump_btn_counter' not in st.session_state:
+            st.session_state.jump_btn_counter = 0
+            
+        btn_key = f"jump_btn_{st.session_state.jump_btn_counter}"
+        
+        # 🔥 按鈕邏輯
+        if st.button("🚀 **立即進入戰場 (Tab 2)** ⏭️", type="primary", use_container_width=True, key=btn_key):
+            # 1. 更新 Counter，確保下次渲染時是新按鈕
+            st.session_state.jump_btn_counter += 1
+            
+            # 2. 注入 JS 執行點擊 (不依賴 button state，直接執行)
+            import streamlit.components.v1 as components
+            js = f'''
+            <script>
+                // 使用 parent.document 穿透 iframe
+                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                if (tabs.length > 2) {{
+                    // 先點第一個重置，再點第三個
+                    tabs[0].click();
+                    setTimeout(function() {{
+                        tabs[2].click();
+                        window.scrollTo(0, 0);
+                    }}, 100);
+                }}
+            </script>
+            '''
+            components.html(js, height=0)
+            st.toast("🔥 戰情室載入中...", icon="🚀")
+            
+            # 3. 強制 Rerun 讓 Python 端應用新 Key
+            st.rerun()
 
     st.markdown("---")
 
