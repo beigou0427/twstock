@@ -272,16 +272,26 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (強制重繪終極版 v6.1)
+# Tab 0: 穩健 ETF (URL跳轉終極穩定版 v6.2)
 # --------------------------
-# 請將此完整代碼替換原有的 with tabs[0]: 區塊
-# 確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1, time
+# 請確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1
+
+# === 關鍵：請將此段代碼放在程式最上方 (tabs定義之前) ===
+# if "jump" in st.query_params and st.query_params["jump"] == "2":
+#     st.components.v1.html("""
+#         <script>
+#             setTimeout(function(){
+#                 var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+#                 if (tabs.length > 2) { tabs[2].click(); }
+#             }, 500);
+#         </script>
+#     """, height=0)
 
 with tabs[0]:
     # === 0. 首屏核心導航 (第一眼就看到) ===
     st.markdown("## 🐢 **ETF 定投計畫**")
     
-    # CSS 樣式：定義呼吸燈與卡片
+    # CSS 樣式
     st.markdown("""
     <style>
     @keyframes pulse-red {
@@ -308,7 +318,7 @@ with tabs[0]:
 
     col_safe, col_risk = st.columns(2)
     
-    # 左側：新手定投 (當前頁面)
+    # 左側：新手定投
     with col_safe:
         st.markdown("""
         <div class="nav-card card-safe">
@@ -318,7 +328,7 @@ with tabs[0]:
         """, unsafe_allow_html=True)
         st.info("👇 **向下瀏覽定投教學**")
 
-    # 右側：進階戰室 (跳轉按鈕)
+    # 右側：進階戰室 (使用 link_button 穩定跳轉)
     with col_risk:
         st.markdown("""
         <div class="nav-card card-danger">
@@ -327,33 +337,13 @@ with tabs[0]:
         </div>
         """, unsafe_allow_html=True)
         
-        # 🔥 動態 Key 生成 (確保每次按鈕都是新的實例，解決只有第一次有效問題)
-        import time
-        btn_key = f"btn_jump_{int(time.time())}"
-        
-        # 🔥 超大按鈕
-        if st.button("🚀 **立即進入戰場 (Tab 2)** ⏭️", type="primary", use_container_width=True, key=btn_key):
-            import streamlit.components.v1 as components
-            
-            # JS 邏輯：先點 Tab 0 (重置) -> 再點 Tab 2 (觸發)
-            js = f'''
-            <script>
-                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                if (tabs.length > 2) {{
-                    // 重置狀態 hack
-                    tabs[0].click();
-                    setTimeout(function() {{
-                        tabs[2].click();
-                        window.scrollTo(0, 0);
-                        console.log("Force Jump to Tab 2");
-                    }}, 100);
-                }}
-            </script>
-            '''
-            components.html(js, height=0)
-            st.toast("🔥 戰情室載入中...", icon="🚀")
-            # 強制 rerun 更新狀態
-            st.rerun()
+        # 🔥 使用 link_button 觸發 URL 重整 (最穩定)
+        st.link_button(
+            "🚀 **立即進入戰場 (Tab 2)** ⏭️", 
+            url="?jump=2", 
+            type="primary", 
+            use_container_width=True
+        )
 
     st.markdown("---")
 
@@ -448,6 +438,7 @@ with tabs[0]:
     
     st.markdown("---")
     st.caption("💪 **恭喜！您已完成定投啟蒙。**")
+
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
