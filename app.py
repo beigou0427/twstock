@@ -556,41 +556,35 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (勝率核心版 v10.4)
+# Tab 2: 專業期權戰情室 (不卡死穩定版 v10.5)
 # --------------------------
 with tabs[2]:
     # 初始化
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
     if 'pro_selected_contract' not in st.session_state: st.session_state.pro_selected_contract = ""
     if 'pro_search_results' not in st.session_state: st.session_state.pro_search_results = []
+    
+    # 槓桿只初始化一次
     if 'pro_lev_multi' not in st.session_state: st.session_state.pro_lev_multi = 8.0
 
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # 🧬 Alpha-10 勝率算法 (Lead Call 專用)
+    # 勝率算法
     def calculate_alpha_win_rate(delta, gamma, theta, vega, days, lev, price, vol):
         score = 0
         try:
-            # 1. ⏳ 時間因子 (40%): 活得久才是贏家
             if days >= 90: score += 40
             elif days >= 60: score += 30
             elif days <= 20: score -= 20
             else: score += 10
-            
-            # 2. 🎯 機率因子 (30%): Delta
             score += abs(delta) * 30
-            
-            # 3. ⚡ 效率因子 (20%): 槓桿
             if 5 <= lev <= 12: score += 20
             elif lev < 3 or lev > 20: score += 5
             else: score += 10
-            
-            # 4. 🛡️ 防禦因子 (10%): Theta耗損
             theta_pct = abs(theta) / price if price > 0 else 1
             if theta_pct < 0.01: score += 10
             elif theta_pct > 0.03: score -= 5
-            
         except: score = 50
         return min(max(score, 1), 99)
 
@@ -606,23 +600,40 @@ with tabs[2]:
             
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_win_final")
+            # ✅ 方向選擇：使用 callback 清除合約選擇，防止卡死
+            def on_dir_change():
+                st.session_state.pro_selected_contract = "" # 重置合約
+            
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_stable", on_change=on_dir_change)
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
+            
         with c2:
+            # ✅ 合約選擇：穩定生成列表
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            default = st.session_state.pro_selected_contract
-            if default not in available: default = available[0] if available else ""
-            sel_con = st.selectbox("月份", available if available else [""],
-                                 index=available.index(default) if available and default in available else 0,
-                                 key="pro_con_win_final")
-            st.session_state.pro_selected_contract = sel_con
+            
+            # 決定預設索引
+            default_con = st.session_state.pro_selected_contract
+            if default_con in available:
+                idx = available.index(default_con)
+            else:
+                idx = 0
+            
+            # ✅ 關鍵：不使用 key，直接讀取值，避免 session state 循環鎖死
+            sel_con = st.selectbox("月份", available if available else [""], index=idx)
+            
+            # 手動更新 session state
+            if sel_con != st.session_state.pro_selected_contract:
+                st.session_state.pro_selected_contract = sel_con
+
         with c3:
+            # 槓桿拉桿：使用 key 自動同步
             st.slider("槓桿", 2.0, 20.0, key="pro_lev_multi", step=0.5)
 
         current_lev = st.session_state.pro_lev_multi
+        
+        # 搜尋按鈕
         if st.button(f"🔥 計算勝率 (槓桿 {current_lev}x)", type="primary", use_container_width=True):
-            
             if sel_con and len(str(sel_con))==6:
                 st.session_state.pro_selected_type = op_type
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
@@ -637,7 +648,6 @@ with tabs[2]:
 
                     res = []
                     for _, row in tdf.iterrows():
-                        win_rate = 0
                         try:
                             K = float(row["strike_price"])
                             vol = float(row["volume"])
@@ -665,8 +675,6 @@ with tabs[2]:
                             if P <= 0.5: continue
                             
                             lev = (abs(delta)*S_current)/P
-                            
-                            # ✅ 計算勝率 (Alpha-10 邏輯)
                             win_rate = calculate_alpha_win_rate(delta, gamma, theta, vega, days, lev, P, vol)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
@@ -680,7 +688,6 @@ with tabs[2]:
                         except: continue
                     
                     if res:
-                        # 排序：勝率優先
                         res.sort(key=lambda x: (-x['勝率'], x['差距']))
                         st.session_state.pro_search_results = res[:15]
                         st.session_state.pro_best = res[0]
@@ -700,9 +707,9 @@ with tabs[2]:
                 win_str = f"{win_val:.0f}%"
                 status_display = best.get('狀態', '成交價')
                 
-                if win_val >= 80: rank = "💎 必勝級 (High Win Rate)"
-                elif win_val >= 60: rank = "🥇 穩健級 (Balanced)"
-                else: rank = "⚠️ 風險級 (Risky)"
+                if win_val >= 80: rank = "💎 必勝級"
+                elif win_val >= 60: rank = "🥇 穩健級"
+                else: rank = "⚠️ 風險級"
 
                 st.markdown(f"""
                 `{best['履約價']} {best['類型']}`
@@ -713,7 +720,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_win_final"):
+                if st.button("➕ 加入投組", key="add_pf_stable"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -773,21 +780,21 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_win_final"): 
+                if st.button("清空", key="clr_pf_stable"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_win_final")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_stable")
         else: st.info("空投組")
         
-    with st.expander("🧬 **10因子勝率權重 (Lead Call)**"):
+    with st.expander("🧬 **10因子勝率權重**"):
         st.markdown("""
-        | 因子 | 權重 | 邏輯 |
-        |---|---|---|
-        | **DTE 時間** | 40% | 長期持有最重時間價值 |
-        | **Delta 機率** | 30% | 真實進入價內的機率 |
-        | **Leverage 效率** | 20% | 獎勵 5x-12x 甜蜜點 |
-        | **Theta 防禦** | 10% | 扣分高耗損合約 |
+        | 因子 | 權重 |
+        |---|---|
+        | **DTE 時間** | 40% |
+        | **Delta 機率** | 30% |
+        | **Leverage 效率** | 20% |
+        | **Theta 防禦** | 10% |
         """)
 
 # --------------------------
