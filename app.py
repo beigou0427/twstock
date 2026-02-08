@@ -559,7 +559,7 @@ with tabs[1]:
 
 
 # --------------------------
-# Tab 2: 期權獵人 (Call/Put 雙向 + Greeks 專業版)
+# Tab 2: 期權獵人 (Call/Put 雙向 + Greeks 安全修復版 v7.2)
 # --------------------------
 with tabs[2]:
     st.markdown("### 🎯 **期權獵人 (Options Hunter)**")
@@ -618,29 +618,35 @@ with tabs[2]:
                     close_p = float(row["close"])
                     
                     # === Greeks 計算 (Black-Scholes) ===
-                    # 簡易參數：無風險利率 r=2%, 波動率 sigma=20% (可優化為隱含波動率)
                     r = 0.02
                     sigma = 0.2
                     
-                    d1 = (np.log(S_current/K) + (r + 0.5*sigma**2)*T) / (sigma * np.sqrt(T))
-                    d2 = d1 - sigma * np.sqrt(T)
+                    # 預設值，防止計算失敗
+                    delta, gamma, theta, vega = 0.0, 0.0, 0.0, 0.0
                     
-                    if op_type == "CALL":
-                        bs_p = S_current * norm.cdf(d1) - K * np.exp(-r*T) * norm.cdf(d2)
-                        delta = norm.cdf(d1)
-                        theta = (- (S_current * sigma * np.exp(-d1**2/2)) / (2 * np.sqrt(2*np.pi*T)) - r * K * np.exp(-r*T) * norm.cdf(d2)) / 365
-                    else:
-                        bs_p = K * np.exp(-r*T) * norm.cdf(-d2) - S_current * norm.cdf(-d1)
-                        delta = -norm.cdf(-d1)
-                        theta = (- (S_current * sigma * np.exp(-d1**2/2)) / (2 * np.sqrt(2*np.pi*T)) + r * K * np.exp(-r*T) * norm.cdf(-d2)) / 365
-
-                    gamma = np.exp(-d1**2/2) / (S_current * sigma * np.sqrt(2*np.pi*T))
-                    vega = S_current * np.sqrt(T) * np.exp(-d1**2/2) / 100 # 每1%波動的變化
+                    try:
+                        d1 = (np.log(S_current/K) + (r + 0.5*sigma**2)*T) / (sigma * np.sqrt(T))
+                        d2 = d1 - sigma * np.sqrt(T)
+                        
+                        if op_type == "CALL":
+                            bs_p = S_current * norm.cdf(d1) - K * np.exp(-r*T) * norm.cdf(d2)
+                            delta = norm.cdf(d1)
+                            theta = (- (S_current * sigma * np.exp(-d1**2/2)) / (2 * np.sqrt(2*np.pi*T)) - r * K * np.exp(-r*T) * norm.cdf(d2)) / 365
+                        else:
+                            bs_p = K * np.exp(-r*T) * norm.cdf(-d2) - S_current * norm.cdf(-d1)
+                            delta = -norm.cdf(-d1)
+                            theta = (- (S_current * sigma * np.exp(-d1**2/2)) / (2 * np.sqrt(2*np.pi*T)) + r * K * np.exp(-r*T) * norm.cdf(-d2)) / 365
+    
+                        gamma = np.exp(-d1**2/2) / (S_current * sigma * np.sqrt(2*np.pi*T))
+                        vega = S_current * np.sqrt(T) * np.exp(-d1**2/2) / 100 
+                    except:
+                        bs_p = close_p # 計算失敗時用收盤價代替
                     
+                    # 決定最終價格
                     P = close_p if vol > 0 else bs_p
                     if P <= 0.5: continue
                     
-                    lev = (abs(delta) * S_current) / P
+                    lev = (abs(delta) * S_current) / P if P > 0 else 0
                     if is_safe and vol < 10: continue
 
                     res.append({
@@ -699,6 +705,7 @@ with tabs[2]:
             display_df["Theta"] = display_df["Theta"].map(lambda x: f"{x:.1f}")
             display_df["Lev"] = display_df["Lev"].map(lambda x: f"{x:.1f}x")
             st.dataframe(display_df, hide_index=True, use_container_width=True)
+
 
 # --------------------------
 # Tab 3: 歷史回測
