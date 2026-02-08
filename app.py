@@ -555,227 +555,128 @@ with tabs[1]:
             with col_news_left: st.markdown(card_html, unsafe_allow_html=True)
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
-# --------------------------
-# Tab 2: 三重防護戰情室 v18.2 (自動修復極端)
-# --------------------------
-with tabs[2]:
-    # 0. 全新 Session Key
-    KEY_RES = "results_protect_v18_2"
-    KEY_BEST = "best_protect_v18_2"
-    KEY_PF = "portfolio"
+# ==========================================
+# TAB2 專業戰情室 - 簡化版 (純原版勝率公式)
+# 只用 def calculate_win_rate(delta, days)，無多因子
+# ==========================================
 
-    if KEY_RES not in st.session_state: st.session_state[KEY_RES] = []
-    if KEY_BEST not in st.session_state: st.session_state[KEY_BEST] = None
-    if KEY_PF not in st.session_state: st.session_state[KEY_PF] = []
+def calculate_win_rate(delta, days):
+    """
+    原版勝率公式：Delta加權估計 (CALL獲利機率)
+    Delta 0.1→31%, 0.5→59%, 0.9→87% (自然階梯，無堆疊)
+    """
+    return min(max((abs(delta)*0.7 + 0.8*0.3)*100, 1), 99)
 
-    st.markdown("### ♟️ **三重防護戰情室 (自動修復極端)**")
-    col_search, col_portfolio = st.columns([1.3, 0.7])
-
-    # 🔥 1. 原始計算 (可能極端)
-    def calculate_raw_score(delta, days, volume, S, K, op_type):
-        # Delta (40%)
-        s_delta = abs(delta) * 100.0
-        
-        # Moneyness (20%)
-        if op_type == "CALL": m = (S - K) / S
-        else: m = (K - S) / S
-        s_money = max(-10, min(m * 100 * 2, 10)) + 50 # 40~60
-        
-        # Time (20%)
-        s_time = min(days / 90.0 * 100, 100)
-        
-        # Vol (20%)
-        s_vol = min(volume / 5000.0 * 100, 100)
-        
-        # 原始總分
-        raw = (s_delta * 0.4 + s_money * 0.2 + s_time * 0.2 + s_vol * 0.2)
-        return raw
-
-    # 🔥 2. 自動修復與映射 (核心)
-    def normalize_scores(results):
-        if not results: return []
-        
-        scores = [r['raw_score'] for r in results]
-        min_s, max_s = min(scores), max(scores)
-        
-        # 檢測極端：如果差異太大 (例如 5 vs 92)
-        if max_s - min_s > 50:
-            # 啟動映射：將 min~max 映射到 15~92
-            for r in results:
-                # 線性插值公式
-                normalized = 15 + (92 - 15) * (r['raw_score'] - min_s) / (max_s - min_s)
-                r['勝率'] = round(normalized, 1)
-        else:
-            # 差異不大，直接微調
-            for r in results:
-                r['勝率'] = round(max(15, min(r['raw_score'], 92)), 1)
-                
-        return results
-
+with tab2:
+    col_search, col_portfolio = st.columns([1.2, 0.8])
+    
+    # 左欄：搜尋 (純原版勝率)
     with col_search:
-        st.markdown("#### 🔍 **防護掃描**")
+        st.markdown("### 1️⃣ 合約搜尋 (原版Delta勝率)")
         
-        if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
-        
-        df_work = df_latest.copy()
-        df_work['call_put'] = df_work['call_put'].str.upper().str.strip()
-        for col in ['close', 'volume', 'strike_price']:
-            df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
-
-        # 參數區
-        c1, c2, c3, c4 = st.columns([1, 1, 1, 0.6])
+        c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="v182_dir")
-            op_type = "CALL" if "CALL" in dir_mode else "PUT"
+            dir_mode = st.selectbox("方向", ["CALL 📈", "PUT 📉"], key="pro_dir")
+            target_cp_2 = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
-            contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
-            available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="v182_con")
+            if not df_latest.empty:
+                cons = sorted(df_latest["contract_date"].astype(str).unique())
+                future_c = [c for c in cons if c.isdigit() and int(c) >= int(latest_date.strftime("%Y%m"))]
+                sel_con_2 = st.selectbox("合約", future_c, index=len(future_c)-1 if future_c else 0, key="pro_con")
+            else: sel_con_2 = ""
         with c3:
-            target_delta = st.slider("目標 Delta", 0.1, 1.0, 0.7, 0.05, key="v182_target")
-        with c4:
-            if st.button("🧹 重置", key="v182_reset"):
-                st.session_state[KEY_RES] = []
-                st.session_state[KEY_BEST] = None
-                st.rerun()
+            lev_2 = st.slider("槓桿", 2.0, 15.0, 5.0, key="pro_lev")
 
-        # 掃描邏輯
-        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="v182_scan"):
-            st.session_state[KEY_RES] = []
-            st.session_state[KEY_BEST] = None
-            
-            if sel_con and len(str(sel_con))==6:
-                tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
+        if st.button("🔥 搜尋", key="search_btn", use_container_width=True):
+            if not df_latest.empty:
+                tdf = df_latest[(df_latest["contract_date"].astype(str) == sel_con_2) & 
+                                (df_latest["call_put"].str.upper() == target_cp_2)].copy()
                 
-                if tdf.empty: st.warning("無資料")
-                else:
+                y, m = int(sel_con_2[:4]), int(sel_con_2[4:6])
+                dl_2 = max((date(y, m, 15) - latest_date.date()).days, 1)
+                T_2 = dl_2 / 365.0
+                
+                if 'implied_volatility' in tdf.columns:
+                    ivs = pd.to_numeric(tdf['implied_volatility'], errors='coerce').dropna()
+                    a_iv = ivs.median() if not ivs.empty else 0.2
+                else: a_iv = 0.2
+
+                res_2 = []
+                for _, row in tdf.iterrows():
                     try:
-                        y, m = int(str(sel_con)[:4]), int(str(sel_con)[4:6])
-                        days = max((date(y,m,15)-latest_date.date()).days, 1)
-                        T = days / 365.0
-                    except: st.error("日期解析失敗"); st.stop()
-
-                    raw_results = []
-                    for _, row in tdf.iterrows():
-                        try:
-                            K = float(row["strike_price"])
-                            vol = float(row["volume"])
-                            close_p = float(row["close"])
-                            if K<=0: continue
-                            
-                            # BS Delta
-                            try:
-                                r, sigma = 0.02, 0.2
-                                d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
-                                
-                                if op_type=="CALL":
-                                    delta = norm.cdf(d1)
-                                    bs_p = S_current*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d1-sigma*np.sqrt(T))
-                                else:
-                                    delta = -norm.cdf(-d1)
-                                    bs_p = K*np.exp(-r*T)*norm.cdf(-(d1-sigma*np.sqrt(T)))-S_current*norm.cdf(-d1)
-                            except: 
-                                delta, bs_p = 0.5, close_p
-
-                            P = close_p if vol > 0 else bs_p
-                            if P <= 0.5: continue
-                            lev = (abs(delta)*S_current)/P
-                            
-                            if abs(delta) < 0.1: continue
-
-                            # 1. 算出原始分數
-                            raw_score = calculate_raw_score(delta, days, vol, S_current, K, op_type)
-                            status = "🟢成交" if vol > 0 else "🔵合理"
-
-                            raw_results.append({
-                                "履約價": int(K), 
-                                "價格": P, 
-                                "狀態": status, 
-                                "槓桿": lev,
-                                "Delta": delta,
-                                "raw_score": raw_score, # 暫存原始分
-                                "Vol": int(vol),
-                                "差距": abs(abs(delta) - target_delta), 
-                                "合約": sel_con, 
-                                "類型": op_type
-                            })
-                        except: continue
-                    
-                    if raw_results:
-                        # 2. 🔥 執行自動修復 (Normalization)
-                        final_results = normalize_scores(raw_results)
+                        K = float(row["strike_price"])
+                        price = float(row["close"])
+                        vol = int(row["volume"])
+                        bs_p, d = bs_price_delta(S_current, K, T_2, 0.02, a_iv, target_cp_2)
+                        d_abs = abs(d)
                         
-                        # 排序
-                        final_results.sort(key=lambda x: (x['差距'], -x['勝率']))
-                        st.session_state[KEY_RES] = final_results[:15]
-                        st.session_state[KEY_BEST] = final_results[0]
-                        st.success(f"掃描完成 (已自動修復極端值)")
-                    else: st.warning("無資料")
-
-        # 顯示區
-        if st.session_state[KEY_RES]:
-            best = st.session_state[KEY_BEST]
-            st.markdown("---")
+                        if d_abs < 0.05: continue 
+                        
+                        cp = int(round(price, 0)) if vol > 0 else int(round(bs_p, 0))
+                        if cp <= 0: continue
+                        
+                        l = (d_abs * S_current) / cp
+                        # ✅ 純原版勝率公式
+                        w = calculate_win_rate(d_abs, dl_2)
+                        
+                        res_2.append({
+                            "合約": sel_con_2, "類型": target_cp_2, "履約價": int(K),
+                            "價格": cp, "槓桿": round(l, 2), "Delta": round(d_abs, 2),
+                            "勝率": round(w, 1),  # 改用float顯示
+                            "剩餘天": dl_2, "差距": abs(l - lev_2)
+                        })
+                    except: continue
+                
+                if res_2:
+                    res_2.sort(key=lambda x: x['差距'])
+                    st.session_state.search_results = res_2
+                    st.session_state.best_match = res_2[0]
+        
+        # 顯示結果
+        if 'best_match' in st.session_state and st.session_state.best_match:
+            b = st.session_state.best_match
+            st.success(f"🏆 推薦：{b['履約價']} {b['類型']} ({b['槓桿']}x | {b['勝率']:.0f}%)")
             
-            cA, cB = st.columns([2, 1])
-            with cA:
-                st.markdown("#### 🏆 **最佳推薦**")
-                p_int = int(round(best['價格']))
-                st.markdown(f"""
-                `{best['履約價']} {best['類型']}` **{p_int}點**  
-                Delta `{best['Delta']:.2f}` | Vol `{best['Vol']}` | 勝率 `{best['勝率']:.0f}%`
-                """)
-            with cB:
-                st.write("")
-                if st.button("➕ 加入", key="add_pf_v182"):
-                    exists = any(p['履約價'] == best['履約價'] and 
-                                 p['合約'] == best['合約'] for p in st.session_state[KEY_PF])
-                    if not exists:
-                        st.session_state[KEY_PF].append(best)
-                        st.toast("已加入")
-                    else: st.toast("⚠️ 已存在")
+            if st.button("➕ 加入投組", key="add_pf"):
+                exists = any(p['履約價'] == b['履約價'] and p['合約'] == b['合約'] 
+                           for p in st.session_state.portfolio)
+                if not exists: 
+                    st.session_state.portfolio.append(b)
+                    st.snow()
+                    st.toast("✅ 已加入投組")
+                else:
+                    st.toast("⚠️ 已在投組")
+            
+            # ✅ 勝率說明 (原公式特性)
+            st.info(f"📊 Delta勝率：{b['Delta']} → {b['勝率']:.0f}%")
+            
+            df_show = pd.DataFrame(st.session_state.search_results)
+            st.dataframe(df_show[["履約價","價格","槓桿","勝率","Delta","剩餘天"]],
+                        use_container_width=True)
 
-            with st.expander("📋 修復後清單 (15-92%)", expanded=True):
-                df_show = pd.DataFrame(st.session_state[KEY_RES]).copy()
-                
-                df_show['權利金'] = df_show['價格'].round(0).astype(int)
-                df_show['槓桿'] = df_show['槓桿'].map(lambda x: f"{x:.1f}x")
-                df_show['Delta'] = df_show['Delta'].map(lambda x: f"{x:.2f}")
-                df_show['勝率'] = df_show['勝率'].map(lambda x: f"{x:.0f}%")
-                
-                cols = ["履約價", "權利金", "Delta", "Vol", "勝率", "差距"]
-                st.dataframe(df_show[cols], use_container_width=True, hide_index=True)
-
+    # 右欄：投組 (原版)
     with col_portfolio:
-        st.markdown("#### 💼 **投組**")
-        if st.session_state[KEY_PF]:
-            pf = pd.DataFrame(st.session_state[KEY_PF])
-            total = pf['價格'].sum() * 50
-            avg_win = pf['勝率'].mean()
+        st.markdown("### 2️⃣ 投組管理")
+        if st.session_state.portfolio:
+            pf = pd.DataFrame(st.session_state.portfolio)
+            st.metric("總權利金", f"{pf['價格'].sum():,} 點")
             
-            st.metric("總權利金", f"${int(total):,}")
-            st.caption(f"{len(pf)}口 | Avg Win {avg_win:.0f}%")
+            def risk_color(val):
+                color = 'red' if val <= 30 else 'orange' if val <= 90 else 'green'
+                return f'color: {color}; font-weight: bold'
             
-            pf_s = pf.copy()
-            pf_s['權利金'] = pf_s['價格'].round(0).astype(int)
-            pf_s['Delta'] = pf_s['Delta'].map(lambda x: f"{float(x):.2f}")
-            pf_s['勝率'] = pf_s['勝率'].map(lambda x: f"{float(x):.0f}%")
+            # ✅ 顯示勝率欄
+            display_cols = ["合約","履約價","槓桿","勝率","剩餘天"]
+            st.dataframe(pf[display_cols].style.map(risk_color, subset=['剩餘天']), 
+                        use_container_width=True)
             
-            st.dataframe(pf_s[["履約價", "權利金", "Delta", "勝率"]], 
-                         use_container_width=True, hide_index=True)
-            
-            c_clr, c_dl = st.columns(2)
-            with c_clr:
-                if st.button("🗑️ 清空", key="clr_pf_v182"):
-                    st.session_state[KEY_PF] = []
-                    st.rerun()
-            with c_dl:
-                st.download_button("📥 CSV", pf.to_csv(index=False).encode('utf-8'), 
-                                   "pf_v182.csv", key="dl_pf_v182")
-        else: st.info("無資料")
+            if st.button("🗑️ 清空"):
+                st.session_state.portfolio = []
+                st.rerun()
+        else:
+            st.info("投組為空")
 
-    st.markdown("---")
-    st.caption("📊 **自動映射技術**：無論原始分數多極端，系統都會將其拉伸至 15%~92% 的合理區間，保證可讀性。")
+st.caption("🔰 原版Delta勝率 | Delta 0.1=31%, 0.5=59%, 0.9=87% | 自然階梯無堆疊")
 
 
 # --------------------------
