@@ -265,20 +265,22 @@ tabs = st.tabs(tab_names)
 # --------------------------
 # Tab 0: 穩健 ETF (單導Tab2版 v5.4)
 # --------------------------
-# 請確保已 import 相關套件: FinMind, pandas, plotly, numpy, datetime
-# from FinMind.data import DataLoader
+# --------------------------
+# Tab 0: 穩健 ETF (JS跳轉終極版 v5.5)
+# --------------------------
+# 請將此完整代碼替換原有的 with tabs[0]: 區塊
+# 確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1
 
 with tabs[0]:
     st.markdown("## 🐢 **ETF 定投計畫**")
-    st.info("💡 **新手專用**：每月自動買，10年變富翁")
+    st.info("💡 **新手專用**：每月自動買，10年變富翁！")
     
-    # === 1. 即時報價 (FinMind 穩定日頻) ===
+    # === 1. FinMind 即時報價 ===
     @st.cache_data(ttl=600)
-    def get_finmind_etf():
+    def get_etf_quotes():
         api = DataLoader()
         etfs = ['0050', '006208', '00662', '00757', '00646']
         data = []
-        # 設定日期範圍 (取近90天確保有資料)
         end_date = date.today().strftime('%Y-%m-%d')
         start_date = (date.today() - timedelta(days=90)).strftime('%Y-%m-%d')
         
@@ -288,11 +290,9 @@ with tabs[0]:
                 if not df.empty:
                     latest = df.iloc[-1]
                     current = latest['close']
-                    # 計算漲跌
                     prev = df.iloc[-2]['close'] if len(df) > 1 else current
                     change = current - prev
                     pct = (change / prev) * 100
-                    
                     data.append({
                         'ETF': stock_id,
                         '名稱': {'0050':'台灣50','006208':'富邦台50','00662':'富邦NASDAQ',
@@ -303,27 +303,24 @@ with tabs[0]:
                     })
                 else:
                     data.append({'ETF': stock_id, '名稱': '無資料', '最新價': '-', '漲跌': '-', '漲跌幅': '-'})
-            except Exception as e:
+            except:
                 data.append({'ETF': stock_id, '名稱': 'API錯誤', '最新價': '-', '漲跌': '-', '漲跌幅': '-'})
-        
         return pd.DataFrame(data)
-    
+
     st.markdown("### 📡 **即時報價**")
-    st.caption("👆 **第一步**：挑選您喜歡的標的")
-    
-    # 獲取並顯示報價
+    st.caption("👆 **第一步**：挑選您喜歡的標的 (資料來源: FinMind)")
     try:
-        quotes = get_finmind_etf()
+        quotes = get_etf_quotes()
         st.dataframe(quotes, use_container_width=True, hide_index=True)
-    except Exception as e:
-        st.error(f"報價載入失敗: {e}")
-    
-    if st.button("🔄 刷新報價", key="btn_refresh_tab0"):
+    except:
+        st.error("報價載入失敗，請稍後重試")
+
+    if st.button("🔄 刷新報價", key="refresh_t0"):
         st.cache_data.clear()
         st.rerun()
     
     st.markdown("---")
-    
+
     # === 2. ETF 比較 ===
     st.markdown("### 📊 **ETF 特色一覽**")
     st.caption("💡 **第二步**：了解各檔 ETF 風險與費率")
@@ -336,80 +333,79 @@ with tabs[0]:
     st.dataframe(etf_compare, use_container_width=True, hide_index=True)
     
     st.markdown("---")
-    
+
     # === 3. 定投試算 ===
     st.markdown("### 💰 **定投試算器**")
     st.caption("🧮 **第三步**：模擬您的財富自由之路")
     
     c1, c2, c3 = st.columns(3)
-    with c1: 
-        monthly = st.number_input("每月投入 (NT$)", 5000, 500000, 30000, step=1000, key="t0_monthly")
-    with c2: 
-        years = st.slider("持續年數", 5, 30, 10, key="t0_years")
-    with c3: 
-        rate = st.slider("預期年化 (%)", 5.0, 20.0, 12.0, key="t0_rate")
+    with c1: monthly = st.number_input("每月投入", 5000, 500000, 30000, step=1000, key="t0_m")
+    with c2: years = st.slider("持續年數", 5, 30, 10, key="t0_y")
+    with c3: rate = st.slider("預期年化 (%)", 5.0, 20.0, 12.0, key="t0_r")
     
-    # 複利計算
     r = rate / 100
-    final_amt = monthly * 12 * (( (1 + r)**years - 1 ) / r )
-    st.metric(f"💎 {years}年後總資產", f"NT$ {final_amt:,.0f}")
+    final = monthly * 12 * (( (1 + r)**years - 1 ) / r )
+    st.metric(f"💎 {years}年後總資產", f"NT$ {final:,.0f}")
     
-    # 成長曲線圖
     st.caption("📈 **複利魔法**：時間就是您的超能力")
     periods = np.arange(1, years+1)
     values = monthly * 12 * (( (1 + r)**periods - 1 ) / r )
-    chart_df = pd.DataFrame({'年份': periods, '資產累積': values})
-    
-    fig = px.line(chart_df, x='年份', y='資產累積', markers=True, title="資產成長模擬")
-    fig.update_layout(height=300, showlegend=False)
+    fig = px.line(pd.DataFrame({'年份':periods,'資產':values}), x='年份', y='資產', markers=True)
+    fig.update_layout(height=300, showlegend=False, margin=dict(l=20,r=20,t=20,b=20))
     st.plotly_chart(fig, use_container_width=True)
     
     st.markdown("---")
-    
-    # === 4. 持續 vs 停止 (心理建設) ===
+
+    # === 4. 心理建設 ===
     st.markdown("### 🆚 **最重要：堅持到底**")
     st.caption("⚠️ **99% 的人失敗在這裡**：中途停止定投")
-    
-    col_stop, col_cont = st.columns(2)
-    with col_stop:
-        stop_y = st.slider("❌ 假如在第幾年停止？", 1, years-1, 3, key="t0_stop_year")
+    c_stop, c_go = st.columns(2)
+    with c_stop:
+        stop_y = st.slider("❌ 假如第幾年停止？", 1, years-1, 3, key="t0_stop")
         stop_val = monthly * 12 * (( (1 + r)**stop_y - 1 ) / r )
-        st.error(f"資產停滯於：NT$ {stop_val:,.0f}")
-    
-    with col_cont:
-        st.markdown("<br>", unsafe_allow_html=True) # 排版微調
-        gain_pct = ((final_amt / stop_val) - 1) * 100
-        st.success(f"✅ 持續定投多賺：{gain_pct:.0f}% ！")
-    
+        st.error(f"資產停滯：NT$ {stop_val:,.0f}")
+    with c_go:
+        st.write("") # Spacer
+        st.write("")
+        gain_pct = ((final / stop_val) - 1) * 100
+        st.success(f"✅ 持續定投多賺：**{gain_pct:.0f}%** ！")
+
     st.markdown("---")
-    
-    # === 5. 行動導航 (單導 Tab 2) ===
+
+    # === 5. 行動導航 (JS 強制跳轉版) ===
     st.markdown("### 🚀 **立即開始**")
+    c_act, c_nav = st.columns([1.5, 1])
     
-    col_action, col_next = st.columns([1.5, 1])
-    
-    with col_action:
+    with c_act:
         st.success("""
         **🏆 4步致富法**：
-        1. **每月5號** 自動扣款定投
+        1. **每月5號** 自動扣款
         2. **漲跌都買** 累積股數
-        3. **絕不看盤** 忽略短期波動
-        4. **10年後** 享受複利成果
+        3. **絕不看盤** 忽略波動
+        4. **10年後** 享受成果
         """)
-    
-    with col_next:
+        
+    with c_nav:
         st.markdown("**進階武器**")
         st.caption("定投打基礎 → 期權放大收益")
-        # 導航按鈕：直接跳轉到 Tab 2 (假設 Tab 2 index 為 2)
-        if st.button("⚡ **前往期權戰室** ⏭️", type="primary", use_container_width=True, key="btn_goto_tab2"):
-            # 設定 session_state 以切換 Tab (請確保主程式有處理這個 state)
-            st.session_state['selected_tab_index'] = 2 
-            # 或者是您程式中控制 Tab 的變數
-            st.rerun()
-            
+        
+        # JS 強制點擊第3個 Tab (索引2)
+        if st.button("⚡ **前往期權戰室** ⏭️", type="primary", use_container_width=True, key="btn_jump_tab2"):
+            import streamlit.components.v1 as components
+            js = '''
+            <script>
+                // 尋找所有的 tab 按鈕
+                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                if (tabs.length > 2) {
+                    tabs[2].click(); // 點擊第3個按鈕 (Tab 2)
+                }
+            </script>
+            '''
+            components.html(js, height=0)
+            st.toast("🚀 正在進入戰情室...", icon="🔥")
+
     st.markdown("---")
-    st.warning("⚠️ **溫馨提醒**：投資有風險，定投績效不保證獲利，請審慎評估。")
-    st.caption("💪 **恭喜！您已完成定投啟蒙，準備好進入戰室了嗎？**")
+    st.caption("💪 **恭喜！您已完成定投啟蒙。**")
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
