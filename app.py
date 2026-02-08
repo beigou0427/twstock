@@ -1,6 +1,6 @@
 """
 🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版 v6.0)
-整合：ETF定投 + 智能情報中心 + Lead Call策略 + 戰情室(12因子/趨勢/籌碼/損益) + 真實回測
+整合：ETF定投 + 智能情報中心 + LEAP Call策略 + 戰情室(12因子/趨勢/籌碼/損益) + 真實回測
 """
 
 import streamlit as st
@@ -785,7 +785,7 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 槓桿篩選版 v18.5 (回歸槓桿操作 + LEADS CALL)
+# Tab 2: 槓桿篩選版 v18.5 (回歸槓桿操作 + LEAPS CALL)
 # --------------------------
 with tabs[2]:
     KEY_RES = "results_lev_v185"
@@ -796,7 +796,7 @@ with tabs[2]:
     if KEY_BEST not in st.session_state: st.session_state[KEY_BEST] = None
     if KEY_PF not in st.session_state: st.session_state[KEY_PF] = []
 
-    st.markdown("### ♟️ **專業戰情室 (槓桿篩選 + 微觀勝率 + LEADS CALL)**")
+    st.markdown("### ♟️ **專業戰情室 (槓桿篩選 + 微觀勝率 + LEAPS CALL)**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
 
     # 1. 原始評分 (綜合因子)
@@ -834,7 +834,7 @@ with tabs[2]:
         return results
 
     with col_search:
-        st.markdown("#### 🔍 **槓桿掃描 (LEADS CALL 優化)**")
+        st.markdown("#### 🔍 **槓桿掃描 (LEAPS CALL 優化)**")
         
         if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
         
@@ -845,12 +845,12 @@ with tabs[2]:
 
         c1, c2, c3, c4 = st.columns([1, 1, 1, 0.6])
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL (LEADS)", "📉 PUT"], 0, key="v185_dir")
+            dir_mode = st.selectbox("方向", ["📈 CALL (LEAPS)", "📉 PUT"], 0, key="v185_dir")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            # ✅ 預設遠月合約 (LEADS CALL 偏好)
+            # ✅ 預設遠月合約 (LEAPS CALL 偏好)
             default_idx = len(available) - 1 if available else 0
             sel_con = st.selectbox("月份", available if available else [""], 
                                  index=default_idx, key="v185_con")
@@ -941,7 +941,7 @@ with tabs[2]:
             
             cA, cB = st.columns([2, 1])
             with cA:
-                st.markdown("#### 🏆 **最佳推薦 (LEADS CALL)**")
+                st.markdown("#### 🏆 **最佳推薦 (LEAPS CALL)**")
                 p_int = int(round(best['價格']))
                 st.markdown(f"""
                 `{best['合約']} {best['履約價']} {best['類型']}` **{p_int}點**  
@@ -970,7 +970,7 @@ with tabs[2]:
                 st.dataframe(df_show[cols], use_container_width=True, hide_index=True)
 
     with col_portfolio:
-        st.markdown("#### 💼 **LEADS CALL 投組**")
+        st.markdown("#### 💼 **LEAPS CALL 投組**")
         if st.session_state[KEY_PF]:
             pf = pd.DataFrame(st.session_state[KEY_PF])
             total = pf['價格'].sum() * 50
@@ -996,21 +996,21 @@ with tabs[2]:
                     st.rerun()
             with c_dl:
                 st.download_button("📥 CSV匯出", pf.to_csv(index=False).encode('utf-8'), 
-                                   "leads_call_pf_v185.csv", key="dl_pf_v185")
+                                   "LEAPs_call_pf_v185.csv", key="dl_pf_v185")
         else: st.info("💡 請先掃描並加入合約")
 
-    # ✅ LEADS CALL 介紹區塊
+    # ✅ LEAPS CALL 介紹區塊
     st.markdown("---")
-    st.markdown("#### 📚 **LEADS / LEAPS CALL 策略簡介**")
+    st.markdown("#### 📚 **LEAPS / LEAPS CALL 策略簡介**")
     st.markdown("""
-    **LEADS CALL (長期看漲選擇權)**：
+    **LEAPS CALL (長期看漲選擇權)**：
     - 到期日 > 6個月，時間衰減緩慢，適合長期看多標的（如AI、指數）
     - **優勢**：高槓桿、低成本替代現股，時間價值損耗少
     - **本系統優化**：預設遠月合約 + 槓桿篩選，優先推薦深度價內/價平合約
     - **建議情境**：波段操作、避開短期震盪、建構低成本多頭部位
     """)
     
-    st.caption("📊 **操作邏輯**：優先槓桿最接近 → 最高微觀勝率 → 最遠天數。建議搭配遠月 LEADS CALL 降低時間風險。")
+    st.caption("📊 **操作邏輯**：優先槓桿最接近 → 最高微觀勝率 → 最遠天數。建議搭配遠月 LEAPS CALL 降低時間風險。")
 
 
 # --------------------------
