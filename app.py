@@ -285,10 +285,13 @@ tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
 # --------------------------
-# Tab 0: 穩健 ETF (URL 重整跳轉版 v6.4)
+# Tab 0: 穩健 ETF (純前端JS導航版 v6.5)
 # --------------------------
+# 請確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1
+# 注意：此版本無需在程式開頭加額外代碼，直接替換 tabs[0] 即可
+
 with tabs[0]:
-    # === 0. 首屏核心導航 ===
+    # === 0. 首屏核心導航 (第一眼就看到) ===
     st.markdown("## 🐢 **ETF 定投計畫**")
     
     # CSS 樣式
@@ -318,6 +321,7 @@ with tabs[0]:
 
     col_safe, col_risk = st.columns(2)
     
+    # 左側：新手定投
     with col_safe:
         st.markdown("""
         <div class="nav-card card-safe">
@@ -327,6 +331,7 @@ with tabs[0]:
         """, unsafe_allow_html=True)
         st.info("👇 **向下瀏覽定投教學**")
 
+    # 右側：進階戰室 (純 HTML/JS 按鈕 - 絕不跳分頁且每次有效)
     with col_risk:
         st.markdown("""
         <div class="nav-card card-danger">
@@ -335,14 +340,50 @@ with tabs[0]:
         </div>
         """, unsafe_allow_html=True)
         
-        # 🔥 核心修改：使用 st.link_button 直接重載頁面
-        # 這是最穩定的跳轉方式，完全不依賴 Streamlit 的內部狀態
-        st.link_button(
-            "🚀 **立即進入戰場 (Tab 2)** ⏭️", 
-            url="?jump=tab2", 
-            type="primary", 
-            use_container_width=True
-        )
+        # 🔥 純前端 JS 按鈕元件
+        import streamlit.components.v1 as components
+        btn_html = '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <style>
+            body { margin: 0; padding: 0; background: transparent; }
+            .jump-btn {
+                display: flex; align-items: center; justify-content: center;
+                width: 100%; height: 40px;
+                background-color: #ff4b4b; color: white;
+                border: 1px solid #ff4b4b; border-radius: 8px;
+                font-family: "Source Sans Pro", sans-serif; font-weight: 600; font-size: 16px;
+                cursor: pointer; transition: all 0.2s;
+                margin-top: 5px;
+            }
+            .jump-btn:hover { background-color: #ff3333; border-color: #ff3333; transform: scale(1.02); }
+            .jump-btn:active { background-color: #cc0000; transform: scale(0.98); }
+        </style>
+        </head>
+        <body>
+            <button class="jump-btn" onclick="jumpToTab2()">
+                🚀 立即進入戰場 (Tab 2) ⏭️
+            </button>
+            <script>
+                function jumpToTab2() {
+                    try {
+                        // 1. 穿透 iframe 找到父頁面 tabs
+                        var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                        if (tabs.length > 2) {
+                            tabs[2].click(); // 點擊 Tab 2
+                            window.parent.scrollTo(0, 0); // 滾動到頂部
+                        } else {
+                            console.log("Tabs not found");
+                        }
+                    } catch(e) { console.error(e); }
+                }
+            </script>
+        </body>
+        </html>
+        '''
+        # 渲染按鈕 (height=50 確保不被切掉)
+        components.html(btn_html, height=55)
 
     st.markdown("---")
 
