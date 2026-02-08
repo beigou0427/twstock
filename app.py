@@ -556,85 +556,111 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 強制槓桿戰情室 v15.7 (槓桿決定一切)
+# Tab 2: 槓桿上限強制版 v15.8
+# 規則：3x=92%，5x=60%，3~5線性下降；>5 先以60為上限再往下掉
 # --------------------------
 with tabs[2]:
-    # 初始化
-    if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-    if 'forced_results' not in st.session_state: st.session_state.forced_results = []
-    if 'forced_best' not in st.session_state: st.session_state.forced_best = None
-    
-    st.markdown("### ♟️ **強制槓桿戰情室**")
+    # ===== Session keys（統一命名，避免跟舊版撞 key）=====
+    KEY_RESULTS = "tab2_results_v158"
+    KEY_BEST    = "tab2_best_v158"
+    KEY_PORT    = "portfolio"  # 你原本投組沿用
+
+    if KEY_PORT not in st.session_state:
+        st.session_state[KEY_PORT] = []
+    if KEY_RESULTS not in st.session_state:
+        st.session_state[KEY_RESULTS] = []
+    if KEY_BEST not in st.session_state:
+        st.session_state[KEY_BEST] = None
+
+    st.markdown("### ♟️ 槓桿上限強制戰情室 (3x=92 → 5x=60)")
     col_search, col_portfolio = st.columns([1.3, 0.7])
-    
-    # 🔥 強制槓桿勝率 (3x=92% → 5x=60% 絕對權威)
-    def calculate_forced_lev_win_rate(delta, days, d2_prob, lev):
-        # 1. 槓桿基準線 (絕對權威)
-        if lev <= 3:
-            base_lev_win = 92.0
-        elif lev <= 5:
-            # 3x=92 → 5x=60 (線性)
-            base_lev_win = 92 - (lev - 3) * 16
-        else:
-            # 5x以上指數暴跌
-            base_lev_win = max(60 - (lev - 5) ** 1.8 * 8, 10)
-        
-        # 2. BSPOP微調 (僅±5%)
-        # 高勝率最多+5%，低勝率最少-5%
-        bspop_factor = 1.0 + (d2_prob - 0.5) * 0.1  
-        bspop_factor = max(0.95, min(bspop_factor, 1.05))
-        
-        # 3. 時間微調 (±3%)
-        # 時間越長越安全，最多+3%
-        time_factor = 1.0 + min(days / 90 * 0.03, 0.03)
-        time_factor = max(0.97, time_factor)
-        
-        # 4. 最終計算
-        final_win = base_lev_win * bspop_factor * time_factor
-        
-        # 強制天花板 (槓桿說了算)
-        lev_cap = 92 if lev <= 3 else (92 - (lev - 3) * 16)
-        if lev > 5: lev_cap = 60
-        
-        return round(max(min(final_win, lev_cap), 5), 1)
+
+    # ===== 1) 槓桿上限曲線（唯一真相）=====
+    def leverage_cap_winrate(lev: float) -> float:
+        lev = float(lev)
+        if lev <= 3.0:
+            return 92.0
+        if lev <= 5.0:
+            # 線性：3->92, 5->60，每 1x 扣 16%
+            return 92.0 - (lev - 3.0) * 16.0
+        # 5x 以上：先給上限 60，再加速下降（可自行調係數）
+        # 例：6x 約 52、7x 約 44、8x 約 37（不會回到92）
+        return max(60.0 - (lev - 5.0) ** 1.35 * 8.0, 10.0)
+
+    # ===== 2) 最終勝率（永遠 <= 槓桿上限）=====
+    def final_winrate(delta: float, days: int, d2_prob: float, lev: float) -> float:
+        cap = leverage_cap_winrate(lev)
+
+        # BSPOP/時間只做很小的微調（±5%內），而且最後必須 <= cap
+        # d2_prob 約 0~1
+        adj_prob = 1.0 + (float(d2_prob) - 0.5) * 0.08   # 0.46~1.04 約±4%
+        adj_prob = max(0.96, min(adj_prob, 1.04))
+
+        adj_time = 1.0 + min(max(days, 0) / 90.0 * 0.03, 0.03)  # 最多+3%
+        adj_time = max(0.97, min(adj_time, 1.03))
+
+        # 方向小加成（非常小）
+        adj_trend = 1.01 if float(delta) > 0 else 0.99
+
+        w = cap * adj_prob * adj_time * adj_trend
+
+        # ✅ 關鍵：強制上限 = cap（保證 4.0x 不可能 92）
+        w = min(w, cap)
+        return round(max(w, 5.0), 1)
 
     with col_search:
-        st.markdown("#### 🔍 **強制掃描**")
-        
-        if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
-        
-        df_work = df_latest.copy()
-        df_work['call_put'] = df_work['call_put'].astype(str).str.upper().str.strip()
-        for col in ['close', 'volume', 'strike_price']:
-            df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
+        st.markdown("#### 🔍 掃描器")
 
-        # 參數區
-        c1, c2, c3 = st.columns(3)
+        if df_latest.empty:
+            st.error("⚠️ 無資料")
+            st.stop()
+
+        df_work = df_latest.copy()
+        df_work["call_put"] = df_work["call_put"].astype(str).str.upper().str.strip()
+        for col in ["close", "volume", "strike_price"]:
+            df_work[col] = pd.to_numeric(df_work[col], errors="coerce").fillna(0)
+
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 0.7])
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="forced_dir")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="tab2_dir_v158")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
-            contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
-            available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="forced_con")
+            contracts = df_work[df_work["call_put"] == op_type]["contract_date"].dropna()
+            available = sorted(contracts[contracts.astype(str).str.len() == 6].unique())
+            sel_con = st.selectbox("月份", available if available else [""], key="tab2_con_v158")
         with c3:
-            target_lev = st.slider("目標槓桿", 2.0, 20.0, 3.5, 0.1, key="forced_lev")
+            target_lev = st.slider("目標槓桿", 2.0, 20.0, 4.0, 0.1, key="tab2_lev_v158")
+        with c4:
+            debug_mode = st.toggle("Debug", value=False, key="tab2_debug_v158")
 
-        # 掃描按鈕
-        def on_scan_forced():
-            st.session_state.forced_results = []
-            
-        if st.button("🚀 強制掃描", type="primary", use_container_width=True, on_click=on_scan_forced):
-            if sel_con and len(str(sel_con))==6:
-                tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
-                
-                if tdf.empty: st.warning("無資料")
+        # 手動清空（避免舊資料殘留）
+        if st.button("🧹 清空結果", use_container_width=True, key="tab2_clear_v158"):
+            st.session_state[KEY_RESULTS] = []
+            st.session_state[KEY_BEST] = None
+            st.rerun()
+
+        # 掃描按鈕：按下必清空再算
+        if st.button("🚀 執行掃描", type="primary", use_container_width=True, key="tab2_scan_v158"):
+            st.session_state[KEY_RESULTS] = []
+            st.session_state[KEY_BEST] = None
+
+            if sel_con and len(str(sel_con)) == 6:
+                tdf = df_work[
+                    (df_work["contract_date"].astype(str) == str(sel_con))
+                    & (df_work["call_put"] == op_type)
+                ]
+
+                if tdf.empty:
+                    st.warning("無資料")
                 else:
+                    # 天數
                     try:
-                        y, m = int(sel_con[:4]), int(sel_con[4:6])
-                        days = max((date(y,m,15)-latest_date.date()).days,1)
-                        T = days/365.0
-                    except: st.error("日期錯誤"); st.stop()
+                        y, m = int(str(sel_con)[:4]), int(str(sel_con)[4:6])
+                        days = max((date(y, m, 15) - latest_date.date()).days, 1)
+                        T = days / 365.0
+                    except:
+                        st.error("日期錯誤")
+                        st.stop()
 
                     res = []
                     for _, row in tdf.iterrows():
@@ -642,131 +668,140 @@ with tabs[2]:
                             K = float(row["strike_price"])
                             vol = float(row["volume"])
                             close_p = float(row["close"])
-                            if K<=0: continue
-                            
-                            # BS Model
+                            if K <= 0:
+                                continue
+
+                            # Black-Scholes 估計 (同你之前版本)
                             try:
                                 r, sigma = 0.02, 0.2
-                                d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
-                                d2 = d1-sigma*np.sqrt(T)
-                                
-                                if op_type=="CALL":
-                                    bs_p = S_current*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d2)
+                                d1 = (np.log(S_current / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+                                d2 = d1 - sigma * np.sqrt(T)
+
+                                if op_type == "CALL":
+                                    bs_p = S_current * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
                                     delta = norm.cdf(d1)
                                     bspop_prob = norm.cdf(d2)
                                 else:
-                                    bs_p = K*np.exp(-r*T)*norm.cdf(-d2)-S_current*norm.cdf(-d1)
+                                    bs_p = K * np.exp(-r * T) * norm.cdf(-d2) - S_current * norm.cdf(-d1)
                                     delta = -norm.cdf(-d1)
                                     bspop_prob = norm.cdf(-d2)
-                            except: 
+                            except:
                                 bs_p, delta, bspop_prob = close_p, 0.5, 0.5
 
                             P = close_p if vol > 0 else bs_p
-                            if P <= 0.5: continue
-                            
-                            lev = (abs(delta)*S_current)/P
-                            
-                            # 過濾
-                            if abs(delta) < 0.15: continue
-                            if lev > 45: continue
+                            if P <= 0.5:
+                                continue
 
-                            # 🔥 強制勝率計算
-                            win_rate = calculate_forced_lev_win_rate(delta, days, bspop_prob, lev)
+                            lev = (abs(delta) * S_current) / P
+
+                            # 基本過濾
+                            if abs(delta) < 0.15:
+                                continue
+                            if lev > 60:
+                                continue
+
+                            cap = leverage_cap_winrate(lev)
+                            win_rate = final_winrate(delta, days, bspop_prob, lev)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
-                            res.append({
-                                "履約價": int(K), "價格": P, "狀態": status, "槓桿": lev,
-                                "Delta": delta, "勝率": win_rate, "Vol": int(vol),
-                                "差距": abs(lev - target_lev),
-                                "合約": sel_con, "類型": op_type
-                            })
-                        except: continue
-                    
+                            item = {
+                                "履約價": int(K),
+                                "價格": float(P),
+                                "狀態": status,
+                                "槓桿": float(lev),
+                                "Delta": float(delta),
+                                "勝率": float(win_rate),
+                                "Vol": int(vol),
+                                "差距": float(abs(lev - target_lev)),
+                                "合約": str(sel_con),
+                                "類型": op_type,
+                            }
+                            if debug_mode:
+                                item["cap(上限)"] = float(round(cap, 1))
+                            res.append(item)
+
+                        except:
+                            continue
+
                     if res:
-                        res.sort(key=lambda x: (x['差距'], -x['勝率']))
-                        st.session_state.forced_results = res[:15]
-                        st.session_state.forced_best = res[0]
-                        st.success("🎯 強制掃描完成")
-                    else: st.warning("無合約")
+                        res.sort(key=lambda x: (x["差距"], -x["勝率"]))
+                        st.session_state[KEY_RESULTS] = res[:15]
+                        st.session_state[KEY_BEST] = res[0]
+                        st.success("🎯 掃描完成")
+                    else:
+                        st.warning("無合適合約")
 
         # 顯示區
-        if st.session_state.forced_results:
-            best = st.session_state.forced_best
+        if st.session_state[KEY_RESULTS]:
+            best = st.session_state[KEY_BEST]
             st.markdown("---")
-            
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st.markdown("#### 🏆 **最佳推薦**")
-                price_int = int(round(best['價格']))
-                lev_str = f"{best['槓桿']:.1f}x"
-                win_str = f"{best['勝率']:.0f}%"
-                status_display = best.get('狀態', '成交價')
-                
-                st.markdown(f"""
-                `{best['履約價']} {best['類型']}`
-                **{price_int}點 {status_display}**
-                槓桿 `{lev_str}` | 勝率 `{win_str}`
-                """)
-                
-            with col2:
-                if st.button("➕ 加入投組", key="add_pf_forced"):
-                    exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
+
+            colA, colB = st.columns([2, 1])
+            with colA:
+                st.markdown("#### 🏆 最佳推薦")
+                st.markdown(
+                    f"`{best['履約價']} {best['類型']}`\n\n"
+                    f"**{int(round(best['價格']))}點 {best['狀態']}**\n\n"
+                    f"槓桿 `{best['槓桿']:.1f}x` | 勝率 `{best['勝率']:.0f}%`"
+                )
+            with colB:
+                if st.button("➕ 加入投組", key="tab2_add_pf_v158", use_container_width=True):
+                    exists = any(
+                        (p.get("履約價") == best["履約價"]) and (p.get("合約") == best["合約"]) and (p.get("類型") == best["類型"])
+                        for p in st.session_state[KEY_PORT]
+                    )
                     if not exists:
-                        st.session_state.portfolio.append(best)
-                        st.toast("✅ 加入")
-                    else: st.toast("⚠️ 重複")
-            
-            with st.expander("📋 強制清單 (3x=92, 5x=60)", expanded=True):
-                res_df = pd.DataFrame(st.session_state.forced_results)
-                
-                show_df = res_df.copy()
-                show_df['權利金'] = show_df['價格'].apply(lambda x: int(round(x)))
-                show_df['槓桿'] = show_df['槓桿'].apply(lambda x: f"{x:.1f}x")
-                show_df['勝率'] = show_df['勝率'].apply(lambda x: f"{x:.0f}%")
-                show_df['狀態'] = show_df['狀態'].fillna('成交價')
-                
-                final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "差距"]]
-                st.dataframe(final_show, use_container_width=True, hide_index=True)
+                        st.session_state[KEY_PORT].append(best)
+                        st.toast("✅ 已加入")
+                    else:
+                        st.toast("⚠️ 已存在")
+
+            with st.expander("📋 詳細清單", expanded=True):
+                res_df = pd.DataFrame(st.session_state[KEY_RESULTS]).copy()
+                res_df["權利金"] = res_df["價格"].round(0).astype(int)
+                res_df["槓桿"] = res_df["槓桿"].map(lambda x: f"{x:.1f}x")
+                res_df["勝率"] = res_df["勝率"].map(lambda x: f"{x:.0f}%")
+
+                cols = ["履約價", "權利金", "狀態", "槓桿", "勝率", "差距"]
+                if debug_mode and "cap(上限)" in res_df.columns:
+                    res_df["cap(上限)"] = res_df["cap(上限)"].map(lambda x: f"{x:.1f}%")
+                    cols = ["履約價", "權利金", "狀態", "槓桿", "cap(上限)", "勝率", "差距"]
+
+                st.dataframe(res_df[cols], use_container_width=True, hide_index=True)
 
     with col_portfolio:
-        st.markdown("#### 💼 **投組**")
-        if st.session_state.portfolio:
-            pf_df = pd.DataFrame(st.session_state.portfolio)
-            total = pf_df['價格'].sum() * 50
-            avg_win = pf_df['勝率'].mean()
-            avg_lev = pf_df['槓桿'].mean()
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("總金", f"${int(total):,}")
-            col2.metric("平均勝率", f"{avg_win:.0f}%")
-            col3.metric("平均槓桿", f"{avg_lev:.1f}x")
-            
-            pf_show = pf_df.copy()
-            pf_show['權利金'] = pf_df['價格'].round(0).astype(int)
-            pf_show['槓桿'] = pf_df['槓桿'].apply(lambda x: f"{x:.1f}x")
-            pf_show['勝率'] = pf_df['勝率'].fillna(0).apply(lambda x: f"{x:.0f}%")
-            
-            cols = ["合約","履約價","權利金","狀態","槓桿","勝率"]
-            st.dataframe(pf_show[cols], use_container_width=True, hide_index=True)
-            
-            b1, b2 = st.columns(2)
-            with b1: 
-                if st.button("🗑️ 清空", key="clr_pf_forced"): 
-                    st.session_state.portfolio = []
-                    st.rerun()
-            with b2:
-                st.download_button("📥 CSV", pf_df.to_csv(index=False).encode('utf-8'), "強制投組.csv", key="dl_pf_forced")
-        else: st.info("📭 空投組")
+        st.markdown("#### 💼 投組")
+        if st.session_state[KEY_PORT]:
+            pf_df = pd.DataFrame(st.session_state[KEY_PORT]).copy()
+            total = pf_df["價格"].sum() * 50
 
-    # 📋 衰退標準表 (強制)
-    st.markdown("---")
-    st.markdown("#### 📊 **強制衰退標準 (3x=92, 5x=60)**")
-    decay_std = pd.DataFrame({
-        '槓桿': ['3.0x', '3.5x', '4.0x', '4.5x', '5.0x', '8.0x'],
-        '強制上限': ['92%', '84%', '76%', '68%', '60%', '35%'],
-        '風險等級': ['🟢安全', '🟢安全', '🟡注意', '🟡注意', '🟠警戒', '🔴高危']
-    })
-    st.table(decay_std)
+            st.metric("總金", f"${int(total):,}")
+            if "勝率" in pf_df.columns:
+                st.caption(f"{len(pf_df)}口 | 平均勝率 {pf_df['勝率'].mean():.0f}% | 平均槓桿 {pf_df['槓桿'].mean():.1f}x")
+
+            pf_show = pf_df.copy()
+            pf_show["權利金"] = pf_show["價格"].round(0).astype(int)
+            pf_show["槓桿"] = pf_show["槓桿"].map(lambda x: f"{float(x):.1f}x")
+            pf_show["勝率"] = pf_show["勝率"].map(lambda x: f"{float(x):.0f}%")
+
+            cols = ["合約", "類型", "履約價", "權利金", "狀態", "槓桿", "勝率"]
+            st.dataframe(pf_show[cols], use_container_width=True, hide_index=True)
+
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("🗑️ 清空投組", key="tab2_pf_clear_v158", use_container_width=True):
+                    st.session_state[KEY_PORT] = []
+                    st.rerun()
+            with c2:
+                st.download_button(
+                    "📥 CSV",
+                    pf_df.to_csv(index=False).encode("utf-8"),
+                    "portfolio.csv",
+                    key="tab2_pf_dl_v158",
+                    use_container_width=True,
+                )
+        else:
+            st.info("空投組")
 
 
 # --------------------------
