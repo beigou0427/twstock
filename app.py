@@ -266,7 +266,7 @@ tabs = st.tabs(tab_names)
 # Tab 0: 穩健 ETF (單導Tab2版 v5.4)
 # --------------------------
 # --------------------------
-# Tab 0: 穩健 ETF (JS跳轉終極版 v5.5)
+# Tab 0: 穩健 ETF (跳轉修復版 v5.6)
 # --------------------------
 # 請將此完整代碼替換原有的 with tabs[0]: 區塊
 # 確保已 import: FinMind, pandas, plotly, numpy, datetime, streamlit.components.v1
@@ -372,7 +372,7 @@ with tabs[0]:
 
     st.markdown("---")
 
-    # === 5. 行動導航 (JS 強制跳轉版) ===
+    # === 5. 行動導航 (JS 強制點擊版) ===
     st.markdown("### 🚀 **立即開始**")
     c_act, c_nav = st.columns([1.5, 1])
     
@@ -389,16 +389,24 @@ with tabs[0]:
         st.markdown("**進階武器**")
         st.caption("定投打基礎 → 期權放大收益")
         
-        # JS 強制點擊第3個 Tab (索引2)
-        if st.button("⚡ **前往期權戰室** ⏭️", type="primary", use_container_width=True, key="btn_jump_tab2"):
+        # ⚡ JS 強制點擊按鈕 (每次都能點)
+        if st.button("⚡ **前往期權戰室** ⏭️", type="primary", use_container_width=True, key="btn_jump_tab2_final"):
             import streamlit.components.v1 as components
-            js = '''
+            import time
+            
+            # 使用隨機數確保 JS 每次都不一樣，避免緩存
+            rnd = int(time.time())
+            
+            js = f'''
             <script>
-                // 尋找所有的 tab 按鈕
-                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                if (tabs.length > 2) {
-                    tabs[2].click(); // 點擊第3個按鈕 (Tab 2)
-                }
+                // 延遲 200ms 確保頁面渲染完成
+                setTimeout(function() {{
+                    var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                    if (tabs.length > 2) {{
+                        tabs[2].click(); // 點擊 Tab 2
+                        console.log("Tab 2 clicked (force {rnd})");
+                    }}
+                }}, 200);
             </script>
             '''
             components.html(js, height=0)
