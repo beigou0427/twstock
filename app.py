@@ -559,38 +559,66 @@ with tabs[1]:
 
 
 # --------------------------
-# Tab 2: CALL 獵人
+# Tab 2: 期權獵人 (Call/Put 雙向版)
 # --------------------------
 with tabs[2]:
-    st.markdown("### 🔰 **Lead Call 策略選號**")
+    st.markdown("### 🎯 **期權獵人 (Options Hunter)**")
+    st.caption("全自動篩選最佳槓桿合約 | 支援：Buy Call (看漲) / Buy Put (看跌)")
     
+    # 0. 資料前處理
     if not df_latest.empty:
         df_latest["call_put"] = df_latest["call_put"].astype(str).str.upper().str.strip()
     
-    available_contracts = []
-    if not df_latest.empty:
-        call_df = df_latest[df_latest["call_put"] == "CALL"]
-        available_contracts = sorted(call_df["contract_date"].unique())
+    # 1. 策略設定區
+    col_set1, col_set2, col_set3, col_set4 = st.columns([1.2, 1.5, 1.5, 1])
+    
+    with col_set1:
+        # 多空方向選擇
+        direction = st.radio(
+            "1. 預測方向", 
+            ["📈 看漲 (Call)", "📉 看跌 (Put)"], 
+            horizontal=True,
+            index=0
+        )
+        op_type = "CALL" if "看漲" in direction else "PUT"
+        # 設定主題色 (綠漲紅跌)
+        theme_color = "#28a745" if op_type == "CALL" else "#dc3545"
+        theme_icon = "🟢" if op_type == "CALL" else "🔴"
 
-    if not available_contracts:
-        st.error("⚠️ 找不到任何 CALL 合約資料")
-    else:
-        c1, c2, c3, c4 = st.columns([1, 2, 1.5, 1])
-        with c1: st.success("📈 **固定看漲**")
-        with c2: 
-            default_idx = len(available_contracts)-1
-            if 'selected_contract' in st.session_state and st.session_state['selected_contract'] in available_contracts:
-                default_idx = available_contracts.index(st.session_state['selected_contract'])
-            sel_con = st.selectbox("合約月份", available_contracts, index=default_idx)
-        with c3: target_lev = st.slider("目標槓桿", 2.0, 15.0, 5.0, 0.1)
-        with c4: is_safe = st.checkbox("穩健濾網", True)
+    with col_set2:
+        # 篩選可用合約月份
+        available_contracts = []
+        if not df_latest.empty:
+            type_df = df_latest[df_latest["call_put"] == op_type]
+            available_contracts = sorted(type_df["contract_date"].unique())
         
-        if st.button("🎯 **尋找最佳 CALL**", type="primary", use_container_width=True):
+        if not available_contracts:
+            st.error("⚠️ 無合約資料")
+            sel_con = None
+        else:
+            # 預設選最近月
+            sel_con = st.selectbox("2. 合約月份", available_contracts, index=0)
+
+    with col_set3:
+        target_lev = st.slider("3. 目標槓桿", 2.0, 20.0, 8.0, 0.5, format="%.1fx")
+        
+    with col_set4:
+        st.write("") #用來對齊
+        st.write("")
+        is_safe = st.checkbox("流動性濾網", True, help("只顯示有成交量的合約"))
+
+    # 2. 搜尋按鈕
+    if st.button(f"🔍 **搜尋最佳 {op_type} 策略**", type="primary", use_container_width=True):
+        if sel_con:
             st.session_state['selected_contract'] = sel_con
+            st.session_state['selected_type'] = op_type # 記住方向
             
-            tdf = df_latest[(df_latest["contract_date"] == sel_con) & (df_latest["call_put"] == "CALL")]
+            # 篩選資料
+            tdf = df_latest[(df_latest["contract_date"] == sel_con) & (df_latest["call_put"] == op_type)]
+            
+            # 計算剩餘天數
             y, m = int(sel_con[:4]), int(sel_con[4:6])
-            expiry_date = date(y, m, 15)
+            expiry_date = date(y, m, 15) # 簡易假設結算日
             days = (expiry_date - latest_date.date()).days
             if days <= 0: days = 1
 
@@ -599,98 +627,101 @@ with tabs[2]:
                 try:
                     K = float(row["strike_price"])
                     vol = float(row.get("volume", 0))
-                    bs_p, d = bs_price_delta(S_current, K, days/365, 0.02, 0.2, "CALL")
+                    close_p = float(row["close"])
                     
-                    if vol > 0:
-                        P = float(row["close"])
-                        price_type = "🟢 成交價"
-                    else:
-                        P = bs_p
-                        price_type = "🔵 合理價"
+                    # Black-Scholes 理論價 & Delta
+                    bs_p, delta = bs_price_delta(S_current, K, days/365, 0.02, 0.2, op_type)
                     
-                    if P <= 0.1: continue
-                    lev = (abs(d) * S_current) / P
-                    if is_safe and abs(d) < 0.1: continue
+                    # 決定使用價格 (有成交用收盤，沒成交用理論)
+                    P = close_p if vol > 0 else bs_p
+                    
+                    if P <= 0.5: continue # 過濾太便宜的深價外
+                    
+                    # 計算槓桿: (Delta * Underlying) / Option_Price
+                    lev = (abs(delta) * S_current) / P
+                    
+                    # 流動性過濾
+                    if is_safe and vol < 10: continue
+
+                    # 簡單勝率估算 (Delta 近似 ITM 機率)
+                    win_rate = int(abs(delta) * 100)
                     
                     res.append({
-                        "K": int(K), "P": int(round(P)), "Lev": lev, "Delta": abs(d), 
-                        "Win": int(calculate_win_rate(d, days)), "Diff": abs(lev - target_lev),
-                        "Type": price_type, "Vol": int(vol)
+                        "K": int(K), "P": P, "Lev": lev, "Delta": abs(delta), 
+                        "Win": win_rate, "Diff": abs(lev - target_lev),
+                        "Vol": int(vol), "Type": op_type
                     })
                 except: continue
             
             if res:
+                # 依據槓桿差距排序
                 res.sort(key=lambda x: x['Diff'])
                 st.session_state['search_results'] = res
+                st.session_state['search_timestamp'] = str(date.today())
             else:
                 st.session_state['search_results'] = None
-                st.toast("⚠️ 找不到符合條件的合約")
+                st.toast("⚠️ 找不到符合條件的合約，請調整槓桿或濾網")
 
-        if st.session_state.get('search_results'):
-            res = st.session_state['search_results']
-            best = res[0]
-            
-            st.divider()
-            st.success(f"✅ 找到 {len(res)} 檔合約，最佳推薦：")
-            
-            rc1, rc2 = st.columns([1, 1])
-            with rc1:
-                con_name = st.session_state.get('selected_contract', sel_con)
-                st.markdown(f"#### 🏆 {con_name} **{best['K']} CALL**")
-                st.metric(f"{best['Type']}", f"{best['P']} 點", f"槓桿 {best['Lev']:.1f}x")
-                
-                if best['Vol'] == 0:
-                    st.caption("⚠️ 此為理論價格 (無成交量)，請掛單等待")
-                else:
-                    st.caption(f"成交量: {best['Vol']} | 勝率: {best['Win']}%")
-                
-                if st.button("📱 分享此策略", key="share_btn"):
-                    st.balloons()
-                    st.code(f"台指{int(S_current)}，我用貝伊果屋選了 {best['K']} CALL ({best['Type']})，槓桿{best['Lev']:.1f}x！")
-
-            with rc2:
-                st.markdown("#### 🛡️ **交易計畫模擬**")
-                col_sl, col_tp = st.columns(2)
-                with col_sl: loss_pct = st.slider("停損幅度 %", 10, 50, 20, step=5)
-                with col_tp: profit_pct = st.slider("停利幅度 %", 10, 200, 50, step=10)
-                
-                cost = best['P'] * 50
-                potential_loss = int(cost * (loss_pct/100))
-                potential_profit = int(cost * (profit_pct/100))
-                rr_ratio = potential_profit / potential_loss if potential_loss > 0 else 0
-                
-                st.write(f"💰 **本金投入**: NT$ {int(cost):,}")
-                
-                if rr_ratio >= 3.0:
-                    rr_color = "#28a745"; rr_msg = "🌟 優質交易 (>3)"
-                elif rr_ratio >= 1.5:
-                    rr_color = "#ffc107"; rr_msg = "✅ 可接受 (>1.5)"
-                else:
-                    rr_color = "#dc3545"; rr_msg = "⚠️ 風險過高 (<1.5)"
-
-                st.markdown(f"""
-                <div style="background-color: #262730; padding: 10px; border-radius: 5px; border: 1px solid #444;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                        <span style="color: #ff6b6b;">🔻 停損 (-{loss_pct}%)</span>
-                        <span style="color: #ff6b6b; font-weight: bold;">- NT$ {potential_loss:,}</span>
+    # 3. 顯示結果
+    if st.session_state.get('search_results') and st.session_state.get('selected_type') == op_type:
+        res = st.session_state['search_results']
+        best = res[0]
+        
+        st.divider()
+        
+        # === 最佳推薦卡片 ===
+        st.markdown(f"#### 🏆 **最佳推薦：{sel_con} {best['K']} {op_type}**")
+        
+        c_res1, c_res2 = st.columns([1, 1.5])
+        
+        with c_res1:
+            st.markdown(f"""
+            <div style="
+                border: 2px solid {theme_color}; 
+                border-radius: 10px; 
+                padding: 15px; 
+                background-color: rgba(0,0,0,0.2);
+                text-align: center;
+            ">
+                <div style="font-size: 1.2em; color: #aaa;">建議履約價</div>
+                <div style="font-size: 2.5em; font-weight: bold; color: {theme_color};">{best['K']}</div>
+                <div style="margin-top: 10px; display: flex; justify-content: space-around;">
+                    <div>
+                        <div style="font-size: 0.8em; color: #888;">權利金</div>
+                        <div style="font-size: 1.2em; font-weight: bold;">{best['P']:.1f}</div>
                     </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="color: #4ecdc4;">💚 停利 (+{profit_pct}%)</span>
-                        <span style="color: #4ecdc4; font-weight: bold;">+ NT$ {potential_profit:,}</span>
-                    </div>
-                    <div style="border-top: 1px solid #555; padding-top: 5px; text-align: center;">
-                        <span style="color: {rr_color}; font-weight: bold; font-size: 1.1em;">風報比 1 : {rr_ratio:.1f}</span><br>
-                        <span style="font-size: 0.8em; color: #ccc;">{rr_msg}</span>
+                    <div>
+                        <div style="font-size: 0.8em; color: #888;">真實槓桿</div>
+                        <div style="font-size: 1.2em; font-weight: bold; color: #ffc107;">{best['Lev']:.1f}x</div>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
             
-            st.markdown("---")
-            st.caption("📋 其他候選合約")
-            other_df = pd.DataFrame(res[:5])
-            display_df = other_df[["K", "P", "Lev", "Type", "Win"]].copy()
-            display_df["Lev"] = display_df["Lev"].map(lambda x: f"{x:.1f}")
-            st.dataframe(display_df.rename(columns={"K":"履約價", "P":"價格", "Lev":"槓桿", "Type":"類型", "Win":"勝率"}), hide_index=True)
+            # 一鍵分享按鈕
+            share_text = f"【貝伊果訊號】台指{int(S_current)}，我看{direction[:2]}！\n目標：{sel_con} {best['K']} {op_type}\n價格：{best['P']:.1f} (槓桿{best['Lev']:.1f}x)"
+            st.code(share_text, language="text")
+
+        with c_res2:
+            # 損益模擬圖
+            st.markdown("##### 📊 **損益模擬 (Payoff)**")
+            fig_payoff = plot_payoff(best['K'], best['P'], op_type)
+            st.plotly_chart(fig_payoff, use_container_width=True)
+            
+            # 風險提示
+            loss_stop = int(best['P'] * 50 * 0.2) # 20% 停損
+            profit_take = int(best['P'] * 50 * 0.5) # 50% 停利
+            st.caption(f"🛡️ 建議停損：-{loss_stop} 元 (-20%) | 🎯 建議停利：+{profit_take} 元 (+50%)")
+
+        # === 其他候選列表 ===
+        with st.expander(f"📋 查看其他 {op_type} 候選合約"):
+            other_df = pd.DataFrame(res[:10])
+            # 格式化顯示
+            display_df = other_df[["K", "P", "Lev", "Win", "Vol"]].copy()
+            display_df.columns = ["履約價", "價格", "槓桿倍數", "勝率(%)", "成交量"]
+            display_df["價格"] = display_df["價格"].map(lambda x: f"{x:.1f}")
+            display_df["槓桿倍數"] = display_df["槓桿倍數"].map(lambda x: f"{x:.1f}x")
+            st.dataframe(display_df, hide_index=True, use_container_width=True)
 
 # --------------------------
 # Tab 3: 歷史回測
