@@ -556,35 +556,30 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (表單穩定版 v11.0)
+# Tab 2: 專業期權戰情室 (連動修復版 v11.1)
 # --------------------------
 with tabs[2]:
     # 初始化
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-    if 'pro_search_results' not in st.session_state: st.session_state.pro_search_results = []
+    # 這是「已鎖定」的結果，只在按鈕按下後更新
+    if 'pro_locked_results' not in st.session_state: st.session_state.pro_locked_results = []
+    if 'pro_locked_best' not in st.session_state: st.session_state.pro_locked_best = None
     
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # 勝率算法 (Lead Call)
+    # 勝率算法
     def calculate_alpha_win_rate(delta, days, lev, price, theta):
         score = 0
         try:
-            # 1. 時間 (40%)
             if days >= 90: score += 40
             elif days >= 60: score += 30
             elif days <= 20: score -= 20
             else: score += 10
-            
-            # 2. 機率 (30%)
             score += abs(delta) * 30
-            
-            # 3. 效率 (20%)
             if 5 <= lev <= 12: score += 20
             elif lev < 3 or lev > 20: score += 5
             else: score += 10
-            
-            # 4. 防禦 (10%)
             theta_pct = abs(theta) / price if price > 0 else 1
             if theta_pct < 0.01: score += 10
             elif theta_pct > 0.03: score -= 5
@@ -601,36 +596,36 @@ with tabs[2]:
         for col in ['close', 'volume', 'strike_price']:
             df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
 
-        # ✅ 使用 Form 包裹輸入，解決所有卡頓/重置/失效問題
-        with st.form("pro_search_form"):
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0)
-                op_type = "CALL" if "CALL" in dir_mode else "PUT"
+        # 1. 參數區 (移出 form，確保連動順暢)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            # 這裡一改，整個頁面 rerun，c2 的合約列表就會更新
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_realtime")
+            op_type = "CALL" if "CALL" in dir_mode else "PUT"
+        
+        with c2:
+            # 永遠根據最新的 op_type 生成列表
+            contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
+            available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
+            # 預設選第一個，不鎖定 index，避免越界錯誤
+            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_realtime")
+
+        with c3:
+            # 拉桿可以隨便拉，不會卡死
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_realtime")
+
+        # 2. 執行按鈕 (這是唯一的計算觸發點)
+        # 用 callback 清空舊結果，強迫使用者看新數據
+        def on_scan_click():
+            st.session_state.pro_locked_results = [] # 先清空
             
-            with c2:
-                # 動態生成合約列表
-                contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
-                available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-                sel_con = st.selectbox("月份", available if available else [""])
-
-            with c3:
-                # 這裡的 slider 只在 form 提交時傳值
-                target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5)
-
-            # 提交按鈕
-            submitted = st.form_submit_button("🔥 執行掃描", type="primary", use_container_width=True)
-
-        # 只有按下按鈕才執行
-        if submitted:
-            # ✅ 強制清空舊結果，確保看到的是新的
-            st.session_state.pro_search_results = []
-            st.session_state.pro_best = None
-            
+        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_click):
             if sel_con and len(str(sel_con))==6:
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
-                if tdf.empty: st.warning("無資料")
+                if tdf.empty: 
+                    st.warning("無資料")
+                    st.session_state.pro_locked_results = []
                 else:
                     try:
                         y, m = int(sel_con[:4]), int(sel_con[4:6])
@@ -670,21 +665,22 @@ with tabs[2]:
                             res.append({
                                 "履約價": int(K), "價格": P, "狀態": status, "槓桿": lev,
                                 "Delta": delta, "Theta": theta, "勝率": win_rate, "Vol": int(vol),
-                                "差距": abs(lev - target_lev), # 使用 form 的值
+                                "差距": abs(lev - target_lev),
                                 "合約": sel_con, "類型": op_type, "剩餘天": days
                             })
                         except: continue
                     
                     if res:
                         res.sort(key=lambda x: (-x['勝率'], x['差距']))
-                        st.session_state.pro_search_results = res[:15]
-                        st.session_state.pro_best = res[0]
-                        st.success(f"🎯 掃描完成")
+                        # 寫入鎖定結果
+                        st.session_state.pro_locked_results = res[:15]
+                        st.session_state.pro_locked_best = res[0]
+                        st.success("🎯 掃描完成")
                     else: st.warning("無結果")
 
-        # 結果顯示
-        if st.session_state.pro_search_results:
-            best = st.session_state.pro_best
+        # 3. 顯示鎖定的結果 (這樣即使上面參數一直變，這裡也不會亂跳，直到按按鈕)
+        if st.session_state.pro_locked_results:
+            best = st.session_state.pro_locked_best
             st.markdown("---")
             
             col1, col2 = st.columns([2, 1])
@@ -709,8 +705,8 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                # 加入投組按鈕 (放在 form 外面，獨立運作)
-                if st.button("➕ 加入投組", key="add_pf_form"):
+                # 投組按鈕
+                if st.button("➕ 加入投組", key="add_pf_realtime"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -718,7 +714,7 @@ with tabs[2]:
                     else: st.toast("⚠️ 重複")
             
             with st.expander("📋 詳細清單", expanded=True):
-                res_df = pd.DataFrame(st.session_state.pro_search_results)
+                res_df = pd.DataFrame(st.session_state.pro_locked_results)
                 
                 def safe_fmt(val, fmt):
                     try: return fmt.format(val)
@@ -770,11 +766,11 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_form"): 
+                if st.button("清空", key="clr_pf_realtime"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_form")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_realtime")
         else: st.info("空投組")
         
     with st.expander("🧬 **10因子勝率權重**"):
