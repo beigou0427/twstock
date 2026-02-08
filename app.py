@@ -556,22 +556,21 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 槓桿微觀展開版 v18.4 (槓桿主導 + 90-95% 展開)
+# Tab 2: 槓桿篩選版 v18.4 (回歸槓桿操作)
 # --------------------------
-with tab2:
-    st.markdown("### ♟️ **專業戰情室 (v18.4 槓桿微觀)**")
-    
-    # Session Keys
+with tabs[2]:
     KEY_RES = "results_lev_v184"
     KEY_BEST = "best_lev_v184"
-    KEY_PF = "portfolio" # 共用投組
+    KEY_PF = "portfolio"
 
     if KEY_RES not in st.session_state: st.session_state[KEY_RES] = []
     if KEY_BEST not in st.session_state: st.session_state[KEY_BEST] = None
+    if KEY_PF not in st.session_state: st.session_state[KEY_PF] = []
 
+    st.markdown("### ♟️ **專業戰情室 (槓桿篩選 + 微觀勝率)**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
 
-    # 1. 原始評分 (6因子)
+    # 1. 原始評分 (綜合因子)
     def calculate_raw_score(delta, days, volume, S, K, op_type):
         s_delta = abs(delta) * 100.0
         
@@ -585,41 +584,46 @@ with tab2:
         raw = (s_delta * 0.4 + s_money * 0.2 + s_time * 0.2 + s_vol * 0.2)
         return raw
 
-    # 🔥 2. 微觀展開 (Top 40% -> 90-95%)
+    # 2. 微觀展開 (Top 40% -> 90-95%)
     def micro_expand_scores(results):
         if not results: return []
-        # 依原始分數高低排序
         results.sort(key=lambda x: x['raw_score'], reverse=True)
         n = len(results)
-        top_n = max(1, int(n * 0.4))
+        top_n = max(1, int(n * 0.4)) 
         
         for i in range(n):
             if i < top_n:
-                # 頂部: 95 -> 90
-                score = 95.0 - (i / max(1, top_n - 1)) * 5.0
+                if top_n > 1: score = 95.0 - (i / (top_n - 1)) * 5.0
+                else: score = 95.0
             else:
-                # 底部: 85 -> 15
                 remain = n - top_n
-                idx = i - top_n
-                score = 85.0 - (idx / max(1, remain - 1)) * 70.0
+                if remain > 1:
+                    idx = i - top_n
+                    score = 85.0 - (idx / (remain - 1)) * 70.0
+                else: score = 15.0
             results[i]['勝率'] = round(score, 1)
         return results
 
     with col_search:
         st.markdown("#### 🔍 **槓桿掃描**")
         
+        if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
+        
+        df_work = df_latest.copy()
+        df_work['call_put'] = df_work['call_put'].str.upper().str.strip()
+        for col in ['close', 'volume', 'strike_price']:
+            df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
+
         c1, c2, c3, c4 = st.columns([1, 1, 1, 0.6])
         with c1:
             dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="v184_dir")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
-            if not df_latest.empty:
-                cons = sorted(df_latest["contract_date"].astype(str).unique())
-                future_c = [c for c in cons if c.isdigit() and int(c) >= int(latest_date.strftime("%Y%m"))]
-                sel_con = st.selectbox("合約", future_c, index=len(future_c)-1 if future_c else 0, key="v184_con")
-            else: sel_con = ""
+            contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
+            available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
+            sel_con = st.selectbox("月份", available if available else [""], key="v184_con")
         with c3:
-            # ✅ 改回槓桿滑桿
+            # ✅ 改回槓桿篩選
             target_lev = st.slider("目標槓桿", 2.0, 20.0, 5.0, 0.5, key="v184_lev")
         with c4:
             if st.button("🧹 重置", key="v184_reset"):
@@ -631,52 +635,73 @@ with tab2:
             st.session_state[KEY_RES] = []
             st.session_state[KEY_BEST] = None
             
-            if not df_latest.empty:
-                tdf = df_latest[(df_latest["contract_date"].astype(str) == sel_con) & 
-                                (df_latest["call_put"].str.upper() == op_type)].copy()
+            if sel_con and len(str(sel_con))==6:
+                tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
-                y, m = int(sel_con[:4]), int(sel_con[4:6])
-                days = max((date(y, m, 15) - latest_date.date()).days, 1)
-                T = days / 365.0
-                
-                raw_res = []
-                for _, row in tdf.iterrows():
+                if tdf.empty: st.warning("無資料")
+                else:
                     try:
-                        K = float(row["strike_price"])
-                        price = float(row["close"])
-                        vol = int(row["volume"])
-                        bs_p, d = bs_price_delta(S_current, K, T, 0.02, 0.2, op_type)
-                        d_abs = abs(d)
-                        if d_abs < 0.05: continue
-                        
-                        cp = int(round(price if vol>0 else bs_p, 0))
-                        if cp <= 0: continue
-                        
-                        lev = (d_abs * S_current) / cp
-                        
-                        # 1. 算出原始分
-                        raw_score = calculate_raw_score(d_abs, days, vol, S_current, K, op_type)
-                        
-                        raw_res.append({
-                            "履約價": int(K), "價格": cp, "狀態": "🟢成交" if vol>0 else "🔵合理",
-                            "槓桿": round(lev, 2), "Delta": round(d_abs, 2),
-                            "raw_score": raw_score, "Vol": int(vol),
-                            "差距": abs(lev - target_lev), # ✅ 差距依據槓桿
-                            "合約": sel_con, "類型": op_type
-                        })
-                    except: continue
-                
-                if raw_res:
-                    # 2. 微觀展開 (先把勝率算好)
-                    final_res = micro_expand_scores(raw_res)
+                        y, m = int(str(sel_con)[:4]), int(str(sel_con)[4:6])
+                        days = max((date(y,m,15)-latest_date.date()).days, 1)
+                        T = days / 365.0
+                    except: st.error("日期解析失敗"); st.stop()
+
+                    raw_results = []
+                    for _, row in tdf.iterrows():
+                        try:
+                            K = float(row["strike_price"])
+                            vol = float(row["volume"])
+                            close_p = float(row["close"])
+                            if K<=0: continue
+                            
+                            try:
+                                r, sigma = 0.02, 0.2
+                                d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
+                                
+                                if op_type=="CALL":
+                                    delta = norm.cdf(d1)
+                                    bs_p = S_current*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d1-sigma*np.sqrt(T))
+                                else:
+                                    delta = -norm.cdf(-d1)
+                                    bs_p = K*np.exp(-r*T)*norm.cdf(-(d1-sigma*np.sqrt(T)))-S_current*norm.cdf(-d1)
+                            except: 
+                                delta, bs_p = 0.5, close_p
+
+                            P = close_p if vol > 0 else bs_p
+                            if P <= 0.5: continue
+                            lev = (abs(delta)*S_current)/P
+                            
+                            if abs(delta) < 0.1: continue
+
+                            # 1. 原始分
+                            raw_score = calculate_raw_score(delta, days, vol, S_current, K, op_type)
+                            status = "🟢成交" if vol > 0 else "🔵合理"
+
+                            raw_results.append({
+                                "履約價": int(K), 
+                                "價格": P, 
+                                "狀態": status, 
+                                "槓桿": lev,
+                                "Delta": delta,
+                                "raw_score": raw_score,
+                                "Vol": int(vol),
+                                "差距": abs(lev - target_lev), # ✅ 改為槓桿差距
+                                "合約": sel_con, 
+                                "類型": op_type
+                            })
+                        except: continue
                     
-                    # 3. 🔥 最後排序：以「槓桿差距」為第一優先，勝率為輔
-                    final_res.sort(key=lambda x: (x['差距'], -x['勝率']))
-                    
-                    st.session_state[KEY_RES] = final_res[:15]
-                    st.session_state[KEY_BEST] = final_res[0]
-                    st.success(f"掃描完成 (依據 {target_lev}x 槓桿排序)")
-                else: st.warning("無資料")
+                    if raw_results:
+                        # 2. 微觀展開勝率
+                        final_results = micro_expand_scores(raw_results)
+                        
+                        # 3. 排序：優先找槓桿最接近的，其次看勝率
+                        final_results.sort(key=lambda x: (x['差距'], -x['勝率']))
+                        
+                        st.session_state[KEY_RES] = final_results[:15]
+                        st.session_state[KEY_BEST] = final_results[0]
+                        st.success(f"掃描完成")
+                    else: st.warning("無資料")
 
         if st.session_state[KEY_RES]:
             best = st.session_state[KEY_BEST]
@@ -688,7 +713,7 @@ with tab2:
                 p_int = int(round(best['價格']))
                 st.markdown(f"""
                 `{best['履約價']} {best['類型']}` **{p_int}點**  
-                槓桿 `{best['槓桿']}x` | Delta `{best['Delta']}` | 勝率 `{best['勝率']}%`
+                槓桿 `{best['槓桿']:.1f}x` | 勝率 `{best['勝率']:.1f}%`
                 """)
             with cB:
                 st.write("")
@@ -700,9 +725,15 @@ with tab2:
                         st.toast("已加入")
                     else: st.toast("⚠️ 已存在")
 
-            with st.expander("📋 槓桿微觀清單", expanded=True):
+            with st.expander("📋 搜尋結果 (依槓桿排序)", expanded=True):
                 df_show = pd.DataFrame(st.session_state[KEY_RES]).copy()
-                cols = ["履約價", "價格", "槓桿", "Delta", "勝率", "差距"]
+                
+                df_show['權利金'] = df_show['價格'].round(0).astype(int)
+                df_show['槓桿'] = df_show['槓桿'].map(lambda x: f"{x:.1f}x")
+                df_show['Delta'] = df_show['Delta'].map(lambda x: f"{x:.2f}")
+                df_show['勝率'] = df_show['勝率'].map(lambda x: f"{x:.1f}%")
+                
+                cols = ["履約價", "權利金", "槓桿", "勝率", "差距"]
                 st.dataframe(df_show[cols], use_container_width=True, hide_index=True)
 
     with col_portfolio:
@@ -710,17 +741,31 @@ with tab2:
         if st.session_state[KEY_PF]:
             pf = pd.DataFrame(st.session_state[KEY_PF])
             total = pf['價格'].sum() * 50
-            avg_win = pf['勝率'].astype(float).mean()
+            avg_win = pf['勝率'].mean()
             
             st.metric("總權利金", f"${int(total):,}")
             st.caption(f"{len(pf)}口 | Avg Win {avg_win:.1f}%")
             
-            st.dataframe(pf[["履約價", "價格", "槓桿", "勝率"]], use_container_width=True, hide_index=True)
+            pf_s = pf.copy()
+            pf_s['權利金'] = pf_s['價格'].round(0).astype(int)
+            pf_s['Delta'] = pf_s['Delta'].map(lambda x: f"{float(x):.2f}")
+            pf_s['勝率'] = pf_s['勝率'].map(lambda x: f"{float(x):.1f}%")
             
-            if st.button("🗑️ 清空", key="clr_pf_v184"):
-                st.session_state[KEY_PF] = []
-                st.rerun()
+            st.dataframe(pf_s[["履約價", "權利金", "槓桿", "勝率"]], 
+                         use_container_width=True, hide_index=True)
+            
+            c_clr, c_dl = st.columns(2)
+            with c_clr:
+                if st.button("🗑️ 清空", key="clr_pf_v184"):
+                    st.session_state[KEY_PF] = []
+                    st.rerun()
+            with c_dl:
+                st.download_button("📥 CSV", pf.to_csv(index=False).encode('utf-8'), 
+                                   "pf_v184.csv", key="dl_pf_v184")
         else: st.info("無資料")
+
+    st.markdown("---")
+    st.caption("📊 **操作邏輯**：選擇目標槓桿後，系統會優先推薦最接近該倍數的合約，並標示其微觀勝率。")
 
 # --------------------------
 # Tab 3: 歷史回測
