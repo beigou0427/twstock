@@ -276,10 +276,20 @@ st.markdown("---")
 if not st.session_state.get('disclaimer_accepted', False):
     st.warning("🚨 **重要聲明**：本工具僅供教育，非投資建議。新手請先閱讀「穩健ETF」章節。")
     
-    # 主按鈕優先顯示
-    if st.button("✅ 我了解，開始使用", type="primary", use_container_width=True):
+    # 加大 + 特效的主按鈕
+    st.markdown("---")
+    if st.button(
+        "🎉 **✅ 我了解，開始使用** 🎉", 
+        type="primary", 
+        use_container_width=True,
+        help="點擊進入貝伊果屋投資工具"
+    ):
         st.session_state.disclaimer_accepted = True
+        st.balloons()  # 慶祝特效
+        st.success("歡迎來到貝伊果屋！")
         st.rerun()
+    
+    st.markdown("---")
     
     # 推薦書籍在按鈕下方
     st.markdown("### 📚 推薦書籍（選購）")
@@ -304,28 +314,6 @@ with st.sidebar:
     st.divider()
     st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
 
-
-# 原側邊欄內容
-with st.sidebar:
-    st.markdown("## 🥯 **貝伊果屋**")
-    st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
-    
-    if st.session_state.get('is_pro', False):
-        st.success("👑 Pro 會員")
-    
-    st.divider()
-    st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
-
-# 原側邊欄內容（移到 disclaimer 通過後）
-with st.sidebar:
-    st.markdown("## 🥯 **貝伊果屋**")
-    st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
-    
-    if st.session_state.get('is_pro', False):
-        st.success("👑 Pro 會員")
-    
-    st.divider()
-    st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
 
 
 # 分頁導航
