@@ -556,7 +556,7 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (Alpha-10 量化旗艦版 v10.0)
+# Tab 2: 專業期權戰情室 (KeyError 修復版 v10.1)
 # --------------------------
 with tabs[2]:
     # 初始化
@@ -568,60 +568,45 @@ with tabs[2]:
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # ==========================================
-    # 🧬 Alpha-10 量化評分核心 (核心算法)
-    # ==========================================
+    # Alpha-10 核心算法
     def calculate_alpha_10_score(delta, gamma, theta, vega, days, lev, price, vol, K, S):
         score = 0
+        try:
+            # 防禦 (35%)
+            if days >= 90: score += 15
+            elif days >= 60: score += 10
+            elif days <= 30: score -= 10
+            else: score += 5
+            
+            theta_pct = abs(theta) / price if price > 0 else 1
+            if theta_pct < 0.01: score += 10
+            elif theta_pct > 0.03: score -= 5
+            else: score += 5
+            
+            if abs(delta) > 0.3: score += 10
+            elif abs(delta) < 0.1: score -= 5
+            
+            # 攻擊 (30%)
+            score += abs(delta) * 15
+            if gamma > 0.0001: score += 10
+            else: score += 5
+            if vega > 10: score += 5
+            
+            # 效率 (25%)
+            if 5 <= lev <= 15: score += 15
+            elif 3 <= lev < 5: score += 10
+            else: score += 5
+            
+            dt_ratio = abs(delta) / abs(theta) if theta != 0 else 0
+            if dt_ratio > 10: score += 10
+            else: score += 5
+            
+            # 流動 (10%)
+            if vol > 100: score += 5
+            elif vol < 10: score -= 5
+            if price > 50: score += 5
+        except: score = 50 # 計算失敗給中間分
         
-        # --- 🛡️ 防禦因子 (35%) ---
-        # F1. DTE (時間): >90天滿分, <30天扣分
-        if days >= 90: score += 15
-        elif days >= 60: score += 10
-        elif days <= 30: score -= 10
-        else: score += 5
-        
-        # F2. Theta% (損耗): 每日流失 <1% 本金為優
-        theta_pct = abs(theta) / price if price > 0 else 1
-        if theta_pct < 0.01: score += 10
-        elif theta_pct > 0.03: score -= 5
-        else: score += 5
-        
-        # F3. Moneyness (價性): 拒絕深度價外 (<0.2 Delta)
-        if abs(delta) > 0.3: score += 10
-        elif abs(delta) < 0.1: score -= 5 # 樂透籤
-        
-        # --- 🚀 攻擊因子 (30%) ---
-        # F4. Delta (連動): 越高越好
-        score += abs(delta) * 15  # Max 15
-        
-        # F5. Gamma (爆發): 獎勵潛力
-        if gamma > 0.0001: score += 10
-        else: score += 5
-        
-        # F6. Vega (波動作多): 
-        if vega > 10: score += 5
-        
-        # --- ⚖️ 效率因子 (25%) ---
-        # F7. Leverage (槓桿): 甜蜜點 5-15x
-        if 5 <= lev <= 15: score += 15
-        elif 3 <= lev < 5: score += 10
-        else: score += 5
-        
-        # F8. CP值 (Delta/Theta): 每單位時間換多少攻擊力
-        dt_ratio = abs(delta) / abs(theta) if theta != 0 else 0
-        if dt_ratio > 10: score += 10 # 高效
-        else: score += 5
-        
-        # --- 🌊 流動因子 (10%) ---
-        # F9. Volume
-        if vol > 100: score += 5
-        elif vol < 10: score -= 5
-        
-        # F10. Price Safety (太便宜容易被吃豆腐)
-        if price > 50: score += 5
-        
-        # 歸一化到 1-99
         return min(max(score, 1), 99)
 
     with col_search:
@@ -637,7 +622,7 @@ with tabs[2]:
             
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_10")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_10_fix")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
@@ -646,11 +631,11 @@ with tabs[2]:
             if default not in available: default = available[0] if available else ""
             sel_con = st.selectbox("月份", available if available else [""],
                                  index=available.index(default) if available and default in available else 0,
-                                 key="pro_con_10")
+                                 key="pro_con_10_fix")
             st.session_state.pro_selected_contract = sel_con
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_10")
-            st.session_state.pro_lev_multi = target_lev # 同步
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_10_fix")
+            st.session_state.pro_lev_multi = target_lev
 
         if st.button(f"🔥 啟動 Alpha-10 運算", type="primary", use_container_width=True):
             current_target_lev = st.session_state.pro_lev_multi
@@ -669,6 +654,7 @@ with tabs[2]:
 
                     res = []
                     for _, row in tdf.iterrows():
+                        alpha_score = 0 # 預設值
                         try:
                             K = float(row["strike_price"])
                             vol = float(row["volume"])
@@ -698,21 +684,21 @@ with tabs[2]:
                             
                             lev = (abs(delta)*S_current)/P
                             
-                            # ✅ Alpha-10 評分
+                            # ✅ 確保算出分數
                             alpha_score = calculate_alpha_10_score(delta, gamma, theta, vega, days, lev, P, vol, K, S_current)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
                                 "履約價": int(K), "價格": P, "狀態": status, "槓桿": lev,
                                 "Delta": delta, "Theta": theta, "Gamma": gamma, "Vega": vega,
-                                "評分": alpha_score, "Vol": int(vol),
+                                "評分": alpha_score, "Vol": int(vol), # ✅ 確保 key 存在
                                 "差距": abs(lev - current_target_lev),
                                 "合約": sel_con, "類型": op_type, "剩餘天": days
                             })
                         except: continue
                     
                     if res:
-                        # 排序：優先看評分，其次看槓桿差距
+                        # 排序
                         res.sort(key=lambda x: (-x['評分'], x['差距']))
                         st.session_state.pro_search_results = res[:15]
                         st.session_state.pro_best = res[0]
@@ -728,12 +714,15 @@ with tabs[2]:
                 st.markdown("#### 🏆 **Alpha-10 精選合約**")
                 price_int = int(round(best['價格']))
                 lev_str = f"{best['槓桿']:.1f}x"
-                score_str = f"{best['評分']:.0f}"
+                
+                # ✅ 安全讀取評分 (修復點)
+                score_val = best.get('評分', 0)
+                score_str = f"{score_val:.0f}"
                 status_display = best.get('狀態', '成交價')
                 
-                if best['評分'] >= 85: rank = "👑 傳奇 (Legendary)"
-                elif best['評分'] >= 75: rank = "💎 史詩 (Epic)"
-                elif best['評分'] >= 60: rank = "🥇 稀有 (Rare)"
+                if score_val >= 85: rank = "👑 傳奇 (Legendary)"
+                elif score_val >= 75: rank = "💎 史詩 (Epic)"
+                elif score_val >= 60: rank = "🥇 稀有 (Rare)"
                 else: rank = "⚪ 普通 (Common)"
 
                 st.markdown(f"""
@@ -745,7 +734,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_10"):
+                if st.button("➕ 加入投組", key="add_pf_10_fix"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -773,7 +762,9 @@ with tabs[2]:
         if st.session_state.portfolio:
             pf_df = pd.DataFrame(st.session_state.portfolio)
             total = pf_df['價格'].sum() * 50
-            avg_score = pf_df['評分'].mean()
+            # ✅ 安全讀取評分
+            avg_score = pf_df['評分'].mean() if '評分' in pf_df else 0
+            
             st.metric("總金", f"${int(total):,}")
             st.caption(f"{len(pf_df)}口 | 平均Alpha {avg_score:.0f}")
             
@@ -790,11 +781,11 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_10"): 
+                if st.button("清空", key="clr_pf_10_fix"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_10")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_10_fix")
         else: st.info("空投組")
 
     # 10因子說明書
