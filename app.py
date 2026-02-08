@@ -234,7 +234,7 @@ with st.sidebar:
     
     # 方案一：圖片 + 連結
     st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="持續買進: 資料科學家的投資終極解答, 存錢及致富的實證方法", use_container_width=True)
-    st.markdown("[🛒 持續買進: 資料科學家的投資終極解答, 存錢及致富的實證方法](https://s.shopee.tw/5AmrxVrig8)")
+    st.markdown("[購買🛒 持續買進](https://s.shopee.tw/5AmrxVrig8)")
     
     st.divider()  # 分隔方案
     
