@@ -335,8 +335,8 @@ with tabs[0]:
     with col_risk:
         st.markdown("""
         <div class="nav-card card-danger">
-            <div class="nav-title" style="color: #ff4b4b;">⚡大盤槓桿對照期權轉化器</div>
-            <div class="nav-desc"> 最簡單賺到第一桶金的科學<br>適合追求高報酬者</div>
+            <div class="nav-title" style="color: #ff4b4b;">⚡最簡單賺到第一桶金的科學</div>
+            <div class="nav-desc"> 當長期持續買進 + 槓桿<br>適合追求高報酬者</div>
         </div>
         """, unsafe_allow_html=True)
         
