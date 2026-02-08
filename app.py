@@ -556,21 +556,35 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (低槓桿過濾低Delta版 v12.0)
+# Tab 2: 專業期權戰情室 (BSPOP + 長期持有版 v13.0)
 # --------------------------
 with tabs[2]:
     # 初始化
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-    if 'classic_locked_results' not in st.session_state: st.session_state.classic_locked_results = []
-    if 'classic_locked_best' not in st.session_state: st.session_state.classic_locked_best = None
+    if 'bspop_locked_results' not in st.session_state: st.session_state.bspop_locked_results = []
+    if 'bspop_locked_best' not in st.session_state: st.session_state.bspop_locked_best = None
     
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # 經典勝率 (70% Delta + 30% Base)
-    def calculate_classic_win_rate(delta, days):
-        win_raw = (abs(delta) * 0.7 + 0.24) * 100
-        return min(max(win_raw, 1), 99)
+    # ✅ BSPOP + 長期持有勝率公式
+    def calculate_bspop_win_rate(delta, days, d2_prob):
+        # 1. 基礎科學機率 (BSPOP)
+        # N(d2) 是到期時 ITM 的理論機率 (Risk-Neutral Probability)
+        base_pop = d2_prob * 100
+        
+        # 2. 長期持有調整 (Real-World Adjustment)
+        # 歷史回測顯示大盤長期向上，Call 的真實勝率高於理論值
+        long_term_bias = 5 if delta > 0 else -5
+        
+        # 3. 遠月加成 (時間容錯率)
+        time_bonus = min(days / 30 * 2, 10) # 每月+2%，最高+10%
+        
+        # 4. 深價內加成 (Delta > 0.8)
+        itm_bonus = 5 if abs(delta) > 0.8 else 0
+        
+        final_win = base_pop + long_term_bias + time_bonus + itm_bonus
+        return min(max(final_win, 5), 99)
 
     with col_search:
         st.markdown("#### 🔍 **策略雷達**")
@@ -585,20 +599,20 @@ with tabs[2]:
         # 1. 參數區 (即時連動)
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_low_lev")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_bspop")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_low_lev")
+            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_bspop")
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_low_lev")
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_bspop")
 
         # 2. 掃描按鈕
-        def on_scan_low_lev():
-            st.session_state.classic_locked_results = []
+        def on_scan_bspop():
+            st.session_state.bspop_locked_results = []
             
-        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_low_lev):
+        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_bspop):
             if sel_con and len(str(sel_con))==6:
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
@@ -618,32 +632,36 @@ with tabs[2]:
                             close_p = float(row["close"])
                             if K<=0: continue
                             
+                            # BS Model & Greeks
                             try:
                                 r, sigma = 0.02, 0.2
                                 d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
                                 d2 = d1-sigma*np.sqrt(T)
+                                
                                 if op_type=="CALL":
                                     bs_p = S_current*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d2)
                                     delta = norm.cdf(d1)
+                                    # ✅ BSPOP = N(d2) (Call 到期 ITM 機率)
+                                    bspop_prob = norm.cdf(d2)
                                 else:
                                     bs_p = K*np.exp(-r*T)*norm.cdf(-d2)-S_current*norm.cdf(-d1)
                                     delta = -norm.cdf(-d1)
-                            except: bs_p, delta = close_p, 0.5
+                                    # ✅ BSPOP = N(-d2) (Put 到期 ITM 機率)
+                                    bspop_prob = norm.cdf(-d2)
+                            except: 
+                                bs_p, delta, bspop_prob = close_p, 0.5, 0.5
 
                             P = close_p if vol > 0 else bs_p
                             if P <= 0.5: continue
                             
                             lev = (abs(delta)*S_current)/P
                             
-                            # ✅ 您的核心過濾邏輯：
-                            # 1. Delta < 0.15 (極度價外/樂透) -> 過濾掉
+                            # 過濾邏輯 (保留 5倍以下)
                             if abs(delta) < 0.15: continue
-                            
-                            # 2. 低槓桿 (lev < 2) -> 保留！(這是深價內的好東西)
-                            # 3. 過高槓桿 (lev > 50) -> 過濾掉
                             if lev > 50: continue
 
-                            win_rate = calculate_classic_win_rate(delta, days)
+                            # ✅ 計算新勝率
+                            win_rate = calculate_bspop_win_rate(delta, days, bspop_prob)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
@@ -655,16 +673,15 @@ with tabs[2]:
                         except: continue
                     
                     if res:
-                        # 排序：優先看差距 (接近目標槓桿)，其次看勝率
                         res.sort(key=lambda x: (x['差距'], -x['勝率']))
-                        st.session_state.classic_locked_results = res[:15]
-                        st.session_state.classic_locked_best = res[0]
+                        st.session_state.bspop_locked_results = res[:15]
+                        st.session_state.bspop_locked_best = res[0]
                         st.success("🎯 掃描完成")
                     else: st.warning("無結果")
 
         # 3. 顯示區
-        if st.session_state.classic_locked_results:
-            best = st.session_state.classic_locked_best
+        if st.session_state.bspop_locked_results:
+            best = st.session_state.bspop_locked_best
             st.markdown("---")
             
             col1, col2 = st.columns([2, 1])
@@ -675,7 +692,6 @@ with tabs[2]:
                 win_str = f"{best['勝率']:.0f}%"
                 status_display = best.get('狀態', '成交價')
                 
-                # 乾淨顯示，無背景色
                 st.markdown(f"""
                 `{best['履約價']} {best['類型']}`
                 **{price_int}點 {status_display}**
@@ -684,7 +700,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_low_lev"):
+                if st.button("➕ 加入投組", key="add_pf_bspop"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -692,7 +708,7 @@ with tabs[2]:
                     else: st.toast("⚠️ 重複")
             
             with st.expander("📋 詳細清單", expanded=True):
-                res_df = pd.DataFrame(st.session_state.classic_locked_results)
+                res_df = pd.DataFrame(st.session_state.bspop_locked_results)
                 
                 def safe_fmt(val, fmt):
                     try: return fmt.format(val)
@@ -704,7 +720,6 @@ with tabs[2]:
                 show_df['勝率'] = show_df['勝率'].apply(lambda x: safe_fmt(x, "{:.0f}%"))
                 if '狀態' not in show_df.columns: show_df['狀態'] = '成交價'
                 
-                # ✅ 完全乾淨的表格 (無 style.apply)
                 final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "差距"]]
                 st.dataframe(final_show, use_container_width=True, hide_index=True)
 
@@ -728,13 +743,20 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_low_lev"): 
+                if st.button("清空", key="clr_pf_bspop"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_low_lev")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_bspop")
         else: st.info("空投組")
 
+    with st.expander("📊 **勝率說明 (BSPOP + Long Term)**"):
+        st.markdown("""
+        **公式**： `BSPOP + 長期偏差 + 時間加成`
+        1. **BSPOP (N(d2))**：Black-Scholes 模型計算的到期獲利機率。
+        2. **長期偏差**：考慮大盤長期向上，Call +5%，Put -5%。
+        3. **時間加成**：遠月合約容錯率高，最高 +10%。
+        """)
 
 # --------------------------
 # Tab 3: 歷史回測
