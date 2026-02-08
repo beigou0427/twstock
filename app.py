@@ -235,6 +235,9 @@ with st.sidebar:
     # 方案一圖片
     st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="方案一", use_container_width=True)
     
+    # 方案二圖片
+    st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="方案二", use_container_width=True)
+    
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("[🛒 購買方案一](https://s.shopee.tw/5AmrxVrig8)")
@@ -246,6 +249,7 @@ with st.sidebar:
     
     st.divider()
     st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
+
 
 
 # =========================
