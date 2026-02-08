@@ -556,44 +556,44 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 雙階段重罰版 v15.3 (3.1x-5x 重罰1.5%/0.1x)
+# Tab 2: 嚴格低槓桿戰情室 v15.4
 # --------------------------
 with tabs[2]:
     # 初始化
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
-    if 'heavy_decay_results' not in st.session_state: st.session_state.heavy_decay_results = []
-    if 'heavy_decay_best' not in st.session_state: st.session_state.heavy_decay_best = None
+    if 'strict_results' not in st.session_state: st.session_state.strict_results = []
+    if 'strict_best' not in st.session_state: st.session_state.strict_best = None
     
-    st.markdown("### ♟️ **低槓桿戰情室**")
+    st.markdown("### ♟️ **嚴格低槓桿篩選**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # 🔥 重罰版雙階段衰退 (1.5%/0.1x)
-    def calculate_heavy_decay_win_rate(delta, days, d2_prob, lev):
-        # 1. 基礎勝率
-        base_win = d2_prob * 100 * 0.9
-        delta_bonus = abs(delta) * 10
-        time_bonus = min(days / 30 * 2, 10)
-        trend_bonus = 5 if delta > 0 else 0
-        raw_win = base_win + delta_bonus + time_bonus + trend_bonus
+    # 🔥 嚴格版雙階段 (基礎75% + 強制扣分)
+    def calculate_strict_decay_win_rate(delta, days, d2_prob, lev):
+        # 1. 基礎勝率 (上限75%)
+        base_win = min(d2_prob * 100 * 0.9, 75)
+        delta_bonus = abs(delta) * 8      # 降低加成
+        time_bonus = min(days / 30 * 1.5, 7)  # 降低加成
+        trend_bonus = 3 if delta > 0 else 0   # 降低加成
+        raw_win = min(base_win + delta_bonus + time_bonus + trend_bonus, 75)
         
-        # 📉 2. 重罰衰退
+        # 📉 2. 強制衰退 (3x以上必扣)
         if lev <= 3:
             decay = 0
         elif lev <= 5:
-            # 🔥 階段1: 重罰 1.5%/0.1x (3.1x=-1.5%, 5x=-30%)
+            # 🔥 階段1: 嚴格1.5%/0.1x
             decay = (lev - 3) * 1.5
         else:
             # 階段2: 指數暴跌
-            base_decay = (5 - 3) * 1.5  # 5x基底=3.0%
+            base_decay = (5 - 3) * 1.5
             extra_lev = lev - 5
             exp_decay = base_decay + (extra_lev ** 2) * 2.5
             decay = min(exp_decay, 95)
         
         final_win = raw_win - decay
-        return min(max(final_win, 5), 92)
+        return min(max(final_win, 5), 75)  # 上限75%
 
     with col_search:
-        st.markdown("#### 🔍 **精細掃描**")
+        st.markdown("#### 🔍 **嚴格掃描**")
         
         if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
         
@@ -602,23 +602,23 @@ with tabs[2]:
         for col in ['close', 'volume', 'strike_price']:
             df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
 
-        # 參數區 (0.1步進)
+        # 參數區
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="heavy_dir")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="strict_dir")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="heavy_con")
+            sel_con = st.selectbox("月份", available if available else [""], key="strict_con")
         with c3:
-            target_lev = st.slider("目標槓桿", 2.0, 20.0, 3.2, 0.1, key="heavy_lev")
+            target_lev = st.slider("目標槓桿", 2.0, 20.0, 3.0, 0.1, key="strict_lev")
 
         # 掃描按鈕
-        def on_scan_heavy():
-            st.session_state.heavy_decay_results = []
+        def on_scan_strict():
+            st.session_state.strict_results = []
             
-        if st.button("🚀 執行掃描", type="primary", use_container_width=True, on_click=on_scan_heavy):
+        if st.button("🚀 嚴格篩選", type="primary", use_container_width=True, on_click=on_scan_strict):
             if sel_con and len(str(sel_con))==6:
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
@@ -660,12 +660,12 @@ with tabs[2]:
                             
                             lev = (abs(delta)*S_current)/P
                             
-                            # 過濾
-                            if abs(delta) < 0.15: continue
-                            if lev > 50: continue
+                            # 嚴格過濾
+                            if abs(delta) < 0.2: continue  # 提高Delta門檻
+                            if lev > 40: continue
 
-                            # 🔥 重罰計算
-                            win_rate = calculate_heavy_decay_win_rate(delta, days, bspop_prob, lev)
+                            # 🔥 嚴格勝率
+                            win_rate = calculate_strict_decay_win_rate(delta, days, bspop_prob, lev)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
@@ -677,21 +677,20 @@ with tabs[2]:
                         except: continue
                     
                     if res:
-                        # 排序：差距優先，勝率次之
                         res.sort(key=lambda x: (x['差距'], -x['勝率']))
-                        st.session_state.heavy_decay_results = res[:15]
-                        st.session_state.heavy_decay_best = res[0]
-                        st.success("🎯 掃描完成")
-                    else: st.warning("無合適合約")
+                        st.session_state.strict_results = res[:12]  # 更嚴格，只顯示12個
+                        st.session_state.strict_best = res[0]
+                        st.success("🎯 嚴格篩選完成")
+                    else: st.warning("無優質合約")
 
         # 顯示區
-        if st.session_state.heavy_decay_results:
-            best = st.session_state.heavy_decay_best
+        if st.session_state.strict_results:
+            best = st.session_state.strict_best
             st.markdown("---")
             
             col1, col2 = st.columns([2, 1])
             with col1:
-                st.markdown("#### 🏆 **最佳推薦**")
+                st.markdown("#### 🏆 **最佳低槓桿**")
                 price_int = int(round(best['價格']))
                 lev_str = f"{best['槓桿']:.1f}x"
                 win_str = f"{best['勝率']:.0f}%"
@@ -705,15 +704,15 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_heavy"):
+                if st.button("➕ 加入投組", key="add_pf_strict"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
                         st.toast("✅ 加入")
                     else: st.toast("⚠️ 重複")
             
-            with st.expander("📋 詳細清單 (3.1x-5x重罰)", expanded=True):
-                res_df = pd.DataFrame(st.session_state.heavy_decay_results)
+            with st.expander("📋 嚴格清單 (3x以下優先)", expanded=True):
+                res_df = pd.DataFrame(st.session_state.strict_results)
                 
                 def safe_fmt(val, fmt):
                     try: return fmt.format(val)
@@ -725,37 +724,55 @@ with tabs[2]:
                 show_df['勝率'] = show_df['勝率'].apply(lambda x: f"{x:.0f}%")
                 if '狀態' not in show_df.columns: show_df['狀態'] = '成交價'
                 
-                final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "差距"]]
-                st.dataframe(final_show, use_container_width=True, hide_index=True)
+                # 添加槓桿顏色標記
+                def lev_color(lev):
+                    if lev <= 3: return "🟢"
+                    elif lev <= 5: return "🟡"
+                    else: return "🔴"
+                
+                show_df['槓桿標記'] = show_df['槓桿'].apply(lambda x: lev_color(float(x.replace('x',''))))
+                final_show = show_df[["履約價", "權利金", "狀態", "槓桿標記", "槓桿", "勝率"]]
+                st.dataframe(final_show.rename(columns={'槓桿標記':'標記'}), use_container_width=True, hide_index=True)
 
     with col_portfolio:
-        st.markdown("#### 💼 **投組**")
+        st.markdown("#### 💼 **低槓桿投組**")
         if st.session_state.portfolio:
             pf_df = pd.DataFrame(st.session_state.portfolio)
             total = pf_df['價格'].sum() * 50
-            avg_win = pf_df['勝率'].mean() if '勝率' in pf_df.columns else 0
+            avg_win = pf_df['勝率'].mean()
             avg_lev = pf_df['槓桿'].mean()
             
-            st.metric("總金", f"${int(total):,}")
-            st.caption(f"{len(pf_df)}口 | 平均勝率 {avg_win:.0f}% | 平均槓桿 {avg_lev:.1f}x")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("總金", f"${int(total):,}")
+            col2.metric("平均勝率", f"{avg_win:.0f}%")
+            col3.metric("平均槓桿", f"{avg_lev:.1f}x")
             
             pf_show = pf_df.copy()
             pf_show['權利金'] = pf_df['價格'].round(0).astype(int)
             pf_show['槓桿'] = pf_df['槓桿'].apply(lambda x: f"{x:.1f}x")
-            pf_show['勝率'] = pf_show['勝率'].fillna(0).apply(lambda x: f"{x:.0f}%")
+            pf_show['勝率'] = pf_df['勝率'].fillna(0).apply(lambda x: f"{x:.0f}%")
             
             cols = ["合約","履約價","權利金","狀態","槓桿","勝率"]
             st.dataframe(pf_show[cols], use_container_width=True, hide_index=True)
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("🗑️ 清空", key="clr_pf_heavy"): 
+                if st.button("🗑️ 清空", key="clr_pf_strict"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("📥 投組CSV", pf_df.to_csv(index=False).encode('utf-8'), "投組.csv", key="dl_pf_heavy")
-        else: st.info("📭 空投組")
+                st.download_button("📥 CSV", pf_df.to_csv(index=False).encode('utf-8'), "低槓桿投組.csv", key="dl_pf_strict")
+        else: st.info("📭 等待優質合約")
 
+    # ✅ 衰退說明表 (取代圖表)
+    st.markdown("---")
+    st.markdown("#### 📋 **勝率衰退表**")
+    decay_table = pd.DataFrame({
+        '槓桿': ['≤3.0x', '3.1x', '3.5x', '4.0x', '5.0x', '8.0x', '12x+'],
+        '衰退': ['0%', '-1.5%', '-7.5%', '-15%', '-30%', '-45%+', '-70%+'],
+        '狀態': ['🟢安全區', '🟡輕罰', '🟡中罰', '🟠重罰', '🔴危險', '💀高危', '☠️必死']
+    })
+    st.table(decay_table)
 
 # --------------------------
 # Tab 3: 歷史回測
