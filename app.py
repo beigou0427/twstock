@@ -556,20 +556,17 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (穩定還原版 v10.6)
+# Tab 2: 專業期權戰情室 (表單穩定版 v11.0)
 # --------------------------
 with tabs[2]:
     # 初始化
     if 'portfolio' not in st.session_state: st.session_state.portfolio = []
+    if 'pro_search_results' not in st.session_state: st.session_state.pro_search_results = []
     
-    # 確保槓桿變數存在，只初始化一次
-    if 'pro_lev_multi' not in st.session_state: 
-        st.session_state.pro_lev_multi = 8.0
-
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # Alpha-10 勝率算法 (Lead Call)
+    # 勝率算法 (Lead Call)
     def calculate_alpha_win_rate(delta, days, lev, price, theta):
         score = 0
         try:
@@ -591,7 +588,6 @@ with tabs[2]:
             theta_pct = abs(theta) / price if price > 0 else 1
             if theta_pct < 0.01: score += 10
             elif theta_pct > 0.03: score -= 5
-            
         except: score = 50
         return min(max(score, 1), 99)
 
@@ -601,34 +597,37 @@ with tabs[2]:
         if df_latest.empty: st.error("⚠️ 無資料"); st.stop()
         
         df_work = df_latest.copy()
-        # 強制轉型，避免格式錯誤卡死
         df_work['call_put'] = df_work['call_put'].astype(str).str.upper().str.strip()
         for col in ['close', 'volume', 'strike_price']:
             df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
-            
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0)
-            op_type = "CALL" if "CALL" in dir_mode else "PUT"
-            
-        with c2:
-            # 簡單直接的合約列表
-            contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
-            available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            
-            # 不用 session state 控制 index，避免鎖死，直接選第一個
-            sel_con = st.selectbox("月份", available if available else [""])
 
-        with c3:
-            # 直接綁定 key，不設 value
-            st.slider("槓桿", 2.0, 20.0, key="pro_lev_multi", step=0.5)
+        # ✅ 使用 Form 包裹輸入，解決所有卡頓/重置/失效問題
+        with st.form("pro_search_form"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0)
+                op_type = "CALL" if "CALL" in dir_mode else "PUT"
+            
+            with c2:
+                # 動態生成合約列表
+                contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
+                available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
+                sel_con = st.selectbox("月份", available if available else [""])
 
-        # 讀取當前槓桿
-        current_lev = st.session_state.pro_lev_multi
-        
-        if st.button(f"🔥 執行掃描 ({sel_con})", type="primary", use_container_width=True):
+            with c3:
+                # 這裡的 slider 只在 form 提交時傳值
+                target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5)
+
+            # 提交按鈕
+            submitted = st.form_submit_button("🔥 執行掃描", type="primary", use_container_width=True)
+
+        # 只有按下按鈕才執行
+        if submitted:
+            # ✅ 強制清空舊結果，確保看到的是新的
+            st.session_state.pro_search_results = []
+            st.session_state.pro_best = None
+            
             if sel_con and len(str(sel_con))==6:
-                # 篩選資料
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
                 if tdf.empty: st.warning("無資料")
@@ -647,7 +646,6 @@ with tabs[2]:
                             close_p = float(row["close"])
                             if K<=0: continue
                             
-                            # BS 計算
                             try:
                                 r, sigma = 0.02, 0.2
                                 d1 = (np.log(S_current/K)+(r+0.5*sigma**2)*T)/(sigma*np.sqrt(T))
@@ -660,35 +658,31 @@ with tabs[2]:
                                     bs_p = K*np.exp(-r*T)*norm.cdf(-d2)-S_current*norm.cdf(-d1)
                                     delta = -norm.cdf(-d1)
                                     theta = (-S_current*sigma*np.exp(-d1**2/2)/(2*np.sqrt(T)) + r*K*np.exp(-r*T)*norm.cdf(-d2))/365
-                            except: 
-                                bs_p, delta, theta = close_p, 0.5, 0 # 給預設值避免卡死
+                            except: bs_p, delta, theta = close_p, 0.5, 0
 
                             P = close_p if vol > 0 else bs_p
                             if P <= 0.5: continue
                             
                             lev = (abs(delta)*S_current)/P
-                            
-                            # 勝率計算
                             win_rate = calculate_alpha_win_rate(delta, days, lev, P, theta)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
 
                             res.append({
                                 "履約價": int(K), "價格": P, "狀態": status, "槓桿": lev,
                                 "Delta": delta, "Theta": theta, "勝率": win_rate, "Vol": int(vol),
-                                "差距": abs(lev - current_lev),
+                                "差距": abs(lev - target_lev), # 使用 form 的值
                                 "合約": sel_con, "類型": op_type, "剩餘天": days
                             })
                         except: continue
                     
                     if res:
-                        # 排序
                         res.sort(key=lambda x: (-x['勝率'], x['差距']))
                         st.session_state.pro_search_results = res[:15]
                         st.session_state.pro_best = res[0]
                         st.success(f"🎯 掃描完成")
                     else: st.warning("無結果")
 
-        # 結果顯示區
+        # 結果顯示
         if st.session_state.pro_search_results:
             best = st.session_state.pro_best
             st.markdown("---")
@@ -715,7 +709,8 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_restore"):
+                # 加入投組按鈕 (放在 form 外面，獨立運作)
+                if st.button("➕ 加入投組", key="add_pf_form"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -725,7 +720,6 @@ with tabs[2]:
             with st.expander("📋 詳細清單", expanded=True):
                 res_df = pd.DataFrame(st.session_state.pro_search_results)
                 
-                # 安全格式化
                 def safe_fmt(val, fmt):
                     try: return fmt.format(val)
                     except: return str(val)
@@ -776,12 +770,22 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_restore"): 
+                if st.button("清空", key="clr_pf_form"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_restore")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_form")
         else: st.info("空投組")
+        
+    with st.expander("🧬 **10因子勝率權重**"):
+        st.markdown("""
+        | 因子 | 權重 |
+        |---|---|
+        | **DTE 時間** | 40% |
+        | **Delta 機率** | 30% |
+        | **Leverage 效率** | 20% |
+        | **Theta 防禦** | 10% |
+        """)
 
 
 # --------------------------
