@@ -232,21 +232,19 @@ with st.sidebar:
     st.markdown("## 🥯 **貝伊果屋**")
     st.image("https://via.placeholder.com/300x100?text=BeiGuoWu", use_container_width=True)
     
-    # 原 Pro 升級按鈕改為 Shopee 購買連結
+    # 書籍購買連結（非 Pro 升級）
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("[🛒 方案一](https://s.shopee.tw/5AmrxVrig8)")
+        st.markdown("[📚 書籍方案一](https://s.shopee.tw/5AmrxVrig8)")
     with col2:
-        st.markdown("[🛒 方案二](https://s.shopee.tw/6KypLiCjuy)")
+        st.markdown("[📚 書籍方案二](https://s.shopee.tw/6KypLiCjuy)")
     
-    # 檢查是否已購買 Pro（可根據實際邏輯調整，例如透過 session_state 或後端驗證）
     if st.session_state.get('is_pro', False):
         st.success("👑 Pro 會員")
-    else:
-        st.info("💡 請透過 Shopee 購買升級 Pro (NT$299)")
     
     st.divider()
     st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
+
 
 # =========================
 # 5. 主介面 & 市場快報
