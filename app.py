@@ -556,10 +556,8 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 
-
-
 # --------------------------
-# Tab 2: 期權獵人 (Call/Put 雙向 + Greeks 安全修復版 v7.2)
+# Tab 2: 期權獵人 (Call/Put 雙向 + Greeks 安全穩定版 v7.3)
 # --------------------------
 with tabs[2]:
     st.markdown("### 🎯 **期權獵人 (Options Hunter)**")
@@ -621,7 +619,7 @@ with tabs[2]:
                     r = 0.02
                     sigma = 0.2
                     
-                    # 預設值，防止計算失敗
+                    # 預設值 (防止計算失敗)
                     delta, gamma, theta, vega = 0.0, 0.0, 0.0, 0.0
                     
                     try:
@@ -642,7 +640,7 @@ with tabs[2]:
                     except:
                         bs_p = close_p # 計算失敗時用收盤價代替
                     
-                    # 決定最終價格
+                    # 決定最終價格 (有量用市價，無量用BS價)
                     P = close_p if vol > 0 else bs_p
                     if P <= 0.5: continue
                     
@@ -671,24 +669,24 @@ with tabs[2]:
         st.divider()
         st.markdown(f"#### 🏆 **最佳推薦：{sel_con} {best['K']} {op_type}**")
         
-        # === A. 核心數據區 ===
+        # === A. 核心數據區 (修復 KeyError) ===
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("💰 權利金 (Price)", f"{best['P']:.1f}", f"約 {int(best['P']*50):,} 元")
-        c2.metric("⚡ 真實槓桿 (Lev)", f"{best['Lev']:.1f}x", delta_color="off")
-        c3.metric("📊 Delta (連動)", f"{best['Delta']:.2f}", help="指數漲 1 點，合約漲跌多少點")
-        c4.metric("📉 Theta (時間)", f"{best['Theta']:.1f}", help="每天時間價值流失多少點", delta_color="inverse")
+        c1.metric("💰 權利金 (Price)", f"{best.get('P', 0):.1f}", f"約 {int(best.get('P', 0)*50):,} 元")
+        c2.metric("⚡ 真實槓桿 (Lev)", f"{best.get('Lev', 0):.1f}x", delta_color="off")
+        c3.metric("📊 Delta (連動)", f"{best.get('Delta', 0):.2f}", help="指數漲 1 點，合約漲跌多少點")
+        c4.metric("📉 Theta (時間)", f"{best.get('Theta', 0):.1f}", help="每天時間價值流失多少點", delta_color="inverse")
         
-        # === B. 進階 Greeks 儀表板 ===
+        # === B. 進階 Greeks 儀表板 (修復 KeyError) ===
         with st.expander("🔍 **Greeks 深度數據 (Gamma, Vega...)**", expanded=True):
             g1, g2, g3 = st.columns(3)
             with g1:
-                st.markdown(f"**Gamma (加速器)**: `{best['Gamma']:.4f}`")
+                st.markdown(f"**Gamma (加速器)**: `{best.get('Gamma', 0):.4f}`")
                 st.caption("指數大漲時，Delta 增加的速度。Gamma 越高，爆發力越強。")
             with g2:
-                st.markdown(f"**Vega (波動率)**: `{best['Vega']:.2f}`")
+                st.markdown(f"**Vega (波動率)**: `{best.get('Vega', 0):.2f}`")
                 st.caption("波動率升 1%，價格漲多少。Buy 方喜歡高 Vega 環境。")
             with g3:
-                st.markdown(f"**Theta (每日租金)**: `{best['Theta']:.2f}`")
+                st.markdown(f"**Theta (每日租金)**: `{best.get('Theta', 0):.2f}`")
                 st.caption("注意：這是你每天必須付出的「時間成本」。")
 
         # === C. 損益圖與列表 ===
@@ -705,6 +703,7 @@ with tabs[2]:
             display_df["Theta"] = display_df["Theta"].map(lambda x: f"{x:.1f}")
             display_df["Lev"] = display_df["Lev"].map(lambda x: f"{x:.1f}x")
             st.dataframe(display_df, hide_index=True, use_container_width=True)
+
 
 
 # --------------------------
