@@ -276,33 +276,42 @@ st.markdown("---")
 if not st.session_state.get('disclaimer_accepted', False):
     st.warning("🚨 **重要聲明**：本工具僅供教育，非投資建議。新手請先閱讀「穩健ETF」章節。")
     
-    # 加大 + 特效的主按鈕
+    # 使用說明（展開式）
+    with st.expander("📖 **使用說明**（必讀）", expanded=True):
+        st.markdown("""
+        **1. 定投計畫 (Tab0)**：設定定期定額，追蹤績效
+        **2. 智能情報 (Tab1)**：台股即時數據 + 技術指標
+        **3. CALL獵人 (Tab2)**：期權買權篩選神器
+        **4. 回測系統 (Tab3)**：策略歷史驗證
+        **5. 戰情室 (Tab4)**：即時市場監控
+        
+        **⚠️ 風險提示**：槓桿商品高風險，僅用閒錢
+        """)
+    
+    # 加大特效主按鈕
     st.markdown("---")
     if st.button(
         "🎉 **✅ 我了解，開始使用** 🎉", 
         type="primary", 
         use_container_width=True,
-        help="點擊進入貝伊果屋投資工具"
+        help="進入貝伊果屋五大投資工具"
     ):
         st.session_state.disclaimer_accepted = True
-        st.balloons()  # 慶祝特效
+        st.balloons()
         st.success("歡迎來到貝伊果屋！")
         st.rerun()
     
     st.markdown("---")
     
-    # 推薦書籍在按鈕下方
-    st.markdown("##  🔥**強烈建議**🔥")
-    st.markdown("##  **閱讀下列2本書後!**")
-    st.markdown("##  **才開始投資旅程!**")
-
+    # 推薦書籍
+    st.markdown("### 📚 推薦書籍（選購）")
     col1, col2 = st.columns(2)
     with col1:
-        st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="持續買進: 資料科學家的投資終極解答, 存錢及致富的實證方法", use_container_width=True)
-        st.markdown("[🛒 購買『 持續買進 』](https://s.shopee.tw/5AmrxVrig8)")
+        st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="方案一", use_container_width=True)
+        st.markdown("[🛒 購買方案一](https://s.shopee.tw/5AmrxVrig8)")
     with col2:
-        st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="長期買進：財金教授周冠男的42堂自制力投資課二", use_container_width=True)
-        st.markdown("[🛒 購買『 長期買進 』](https://s.shopee.tw/6KypLiCjuy)")
+        st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="方案二", use_container_width=True)
+        st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
     
     st.stop()
 
