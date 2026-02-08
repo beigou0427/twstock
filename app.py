@@ -556,7 +556,7 @@ with tabs[1]:
         else:
             with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
 # --------------------------
-# Tab 2: 專業期權戰情室 (無背景色純淨版 v9.9)
+# Tab 2: 專業期權戰情室 (低槓桿過濾低Delta版 v12.0)
 # --------------------------
 with tabs[2]:
     # 初始化
@@ -567,7 +567,7 @@ with tabs[2]:
     st.markdown("### ♟️ **專業期權戰情室**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
     
-    # 經典勝率
+    # 經典勝率 (70% Delta + 30% Base)
     def calculate_classic_win_rate(delta, days):
         win_raw = (abs(delta) * 0.7 + 0.24) * 100
         return min(max(win_raw, 1), 99)
@@ -582,23 +582,23 @@ with tabs[2]:
         for col in ['close', 'volume', 'strike_price']:
             df_work[col] = pd.to_numeric(df_work[col], errors='coerce').fillna(0)
 
-        # 1. 參數區
+        # 1. 參數區 (即時連動)
         c1, c2, c3 = st.columns(3)
         with c1:
-            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_clean")
+            dir_mode = st.selectbox("方向", ["📈 CALL", "📉 PUT"], 0, key="pro_dir_low_lev")
             op_type = "CALL" if "CALL" in dir_mode else "PUT"
         with c2:
             contracts = df_work[df_work['call_put']==op_type]['contract_date'].dropna()
             available = sorted(contracts[contracts.astype(str).str.len()==6].unique())
-            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_clean")
+            sel_con = st.selectbox("月份", available if available else [""], key="pro_con_low_lev")
         with c3:
-            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_clean")
+            target_lev = st.slider("槓桿", 2.0, 20.0, 8.0, 0.5, key="pro_lev_low_lev")
 
         # 2. 掃描按鈕
-        def on_scan_clean():
+        def on_scan_low_lev():
             st.session_state.classic_locked_results = []
             
-        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_clean):
+        if st.button("🔥 執行掃描", type="primary", use_container_width=True, on_click=on_scan_low_lev):
             if sel_con and len(str(sel_con))==6:
                 tdf = df_work[(df_work["contract_date"].astype(str)==sel_con) & (df_work["call_put"]==op_type)]
                 
@@ -634,7 +634,14 @@ with tabs[2]:
                             if P <= 0.5: continue
                             
                             lev = (abs(delta)*S_current)/P
-                            if lev < 1 or lev > 50: continue
+                            
+                            # ✅ 您的核心過濾邏輯：
+                            # 1. Delta < 0.15 (極度價外/樂透) -> 過濾掉
+                            if abs(delta) < 0.15: continue
+                            
+                            # 2. 低槓桿 (lev < 2) -> 保留！(這是深價內的好東西)
+                            # 3. 過高槓桿 (lev > 50) -> 過濾掉
+                            if lev > 50: continue
 
                             win_rate = calculate_classic_win_rate(delta, days)
                             status = "🟢成交價" if vol > 0 else "🔵合理價"
@@ -648,6 +655,7 @@ with tabs[2]:
                         except: continue
                     
                     if res:
+                        # 排序：優先看差距 (接近目標槓桿)，其次看勝率
                         res.sort(key=lambda x: (x['差距'], -x['勝率']))
                         st.session_state.classic_locked_results = res[:15]
                         st.session_state.classic_locked_best = res[0]
@@ -667,6 +675,7 @@ with tabs[2]:
                 win_str = f"{best['勝率']:.0f}%"
                 status_display = best.get('狀態', '成交價')
                 
+                # 乾淨顯示，無背景色
                 st.markdown(f"""
                 `{best['履約價']} {best['類型']}`
                 **{price_int}點 {status_display}**
@@ -675,7 +684,7 @@ with tabs[2]:
                 
             with col2:
                 st.write("")
-                if st.button("➕ 加入投組", key="add_pf_clean"):
+                if st.button("➕ 加入投組", key="add_pf_low_lev"):
                     exists = any(p['履約價'] == best['履約價'] and p['合約'] == best['合約'] for p in st.session_state.portfolio)
                     if not exists:
                         st.session_state.portfolio.append(best)
@@ -693,10 +702,9 @@ with tabs[2]:
                 show_df['權利金'] = show_df['價格'].apply(lambda x: int(round(x)))
                 show_df['槓桿'] = show_df['槓桿'].apply(lambda x: safe_fmt(x, "{:.1f}x"))
                 show_df['勝率'] = show_df['勝率'].apply(lambda x: safe_fmt(x, "{:.0f}%"))
-                
                 if '狀態' not in show_df.columns: show_df['狀態'] = '成交價'
                 
-                # ✅ 完全移除 style.apply，只顯示乾淨數據
+                # ✅ 完全乾淨的表格 (無 style.apply)
                 final_show = show_df[["履約價", "權利金", "狀態", "槓桿", "勝率", "差距"]]
                 st.dataframe(final_show, use_container_width=True, hide_index=True)
 
@@ -720,11 +728,11 @@ with tabs[2]:
             
             b1, b2 = st.columns(2)
             with b1: 
-                if st.button("清空", key="clr_pf_clean"): 
+                if st.button("清空", key="clr_pf_low_lev"): 
                     st.session_state.portfolio = []
                     st.rerun()
             with b2:
-                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_clean")
+                st.download_button("CSV", pf_df.to_csv(index=False).encode('utf-8'), "pf.csv", key="dl_pf_low_lev")
         else: st.info("空投組")
 
 
