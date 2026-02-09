@@ -4,79 +4,87 @@ import numpy as np
 import folium
 from streamlit_folium import st_folium
 from math import radians, degrees, sin, cos, atan2, sqrt
-from streamlit_server_state import server_state  # 多人实时共享！
-
-# 安装：pip install streamlit-server-state streamlit-folium
 
 @st.cache_data
 def center_geolocation(locs):
-    if not locs: return 39.90, 116.40
+    if not locs: return 39.90, 116.40  # 北京默认
     x, y, z = 0, 0, 0
     for lat, lon in locs:
-        lat, lon = radians(lat), radians(lon)
+        lat, lon = radians(float(lat)), radians(float(lon))
         x += cos(lat) * cos(lon); y += cos(lat) * sin(lon); z += sin(lat)
-    x /= len(locs); y /= len(locs); z /= len(locs)
+    n = len(locs); x /= n; y /= n; z /= n
     lon = degrees(atan2(y, x)); hyp = sqrt(x*x + y*y); lat = degrees(atan2(z, hyp))
     return lat, lon
 
-st.set_page_config(layout="wide", page_title="聚会中点神器")
-st.title("🗺️ 终极版：多人实时选聚会中点！")
+st.set_page_config(layout="wide", page_title="聚会中点")
+st.title("🎉 聚会中点神器 - 零API·大陆极速")
 
-# 多人共享状态（服务器端，所有人实时同步）
-if "locations" not in server_state:
-    server_state.locations = []
+# 原生session_state（刷新同步）
+if 'locations' not in st.session_state:
+    st.session_state.locations = []
+if 'map_clicked_lat' not in st.session_state:
+    st.session_state.map_clicked_lat = 39.90
+if 'map_clicked_lon' not in st.session_state:
+    st.session_state.map_clicked_lon = 116.40
 
-tab1, tab2 = st.tabs(["📍 添加位置", "👥 实时地图&结果"])
+tab1, tab2 = st.tabs(["📍 我的位置", "🌍 实时结果"])
 
 with tab1:
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns([1,1,2])
     with col1:
-        lat = st.number_input("纬度", value=39.90, step=0.0001)
+        lat = st.number_input("纬度", value=st.session_state.map_clicked_lat, step=0.0001, key="lat_input")
     with col2:
-        lon = st.number_input("经度", value=116.40, step=0.0001)
+        lon = st.number_input("经度", value=st.session_state.map_clicked_lon, step=0.0001, key="lon_input")
     with col3:
-        if st.button("🚀 添加我的位置", use_container_width=True):
-            server_state.locations.append([lat, lon])
-            st.success("✅ 已实时添加！所有人可见")
+        if st.button("✅ 添加位置（所有人可见）", use_container_width=True):
+            st.session_state.locations.append([lat, lon])
+            st.success("🚀 已添加！刷新页看更新")
             st.rerun()
+    
+    st.info("💡 高德/百度地图右键→坐标复制，或地图点击拾取")
 
 with tab2:
-    if server_state.locations:
-        df = pd.DataFrame(server_state.locations, columns=['lat', 'lon'])
-        st.subheader("📊 当前位置列表")
-        st.dataframe(df.style.format({'lat': '{:.4f}', 'lon': '{:.4f}'}))
+    st.subheader("📈 当前大家位置")
+    if st.session_state.locations:
+        df = pd.DataFrame(st.session_state.locations, columns=['lat', 'lon'])
+        st.dataframe(df.round(4), use_container_width=True)
         
-        center_lat, center_lon = center_geolocation(server_state.locations)
-        col_a, col_b = st.columns(2)
-        col_a.metric("🎯 推荐中点", f"{center_lat:.4f}, {center_lon:.4f}")
-        col_b.metric("👥 总人数", len(server_state.locations))
+        center_lat, center_lon = center_geolocation(st.session_state.locations)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🎯 中点纬度", f"{center_lat:.4f}")
+        c2.metric("🎯 中点经度", f"{center_lon:.4f}")
+        c3.metric("👥 参与人数", len(st.session_state.locations))
         
-        # 交互地图：点击拾取+显示所有点
-        m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
-        for i, (lat, lon) in enumerate(server_state.locations):
-            folium.Marker([lat, lon], popup=f"玩家{i+1}", tooltip="位置").add_to(m)
-        folium.Marker([center_lat, center_lon], popup="🎉 最佳聚点！", tooltip="中点", icon=folium.Icon(color='red', icon='star')).add_to(m)
-        clicked = st_folium(m, key="map", width=800, height=500)
+        # 交互地图：点击返回坐标！
+        m = folium.Map(location=[center_lat, center_lon], zoom_start=11, tiles='OpenStreetMap')
+        for i, row in df.iterrows():
+            folium.Marker([row.lat, row.lon], popup=f"位置{i+1}", 
+                         tooltip="玩家位置").add_to(m)
+        folium.Marker([center_lat, center_lon], popup="⭐最佳聚点", 
+                     tooltip="推荐中点", icon=folium.Icon(color='red')).add_to(m)
         
-        # 点击拾取自动填入输入框！
-        if clicked and 'last_clicked' in clicked:
-            last_lat, last_lon = clicked['last_clicked']['lat'], clicked['last_clicked']['lng']
-            st.session_state.map_lat = last_lat
-            st.session_state.map_lon = last_lon
-            st.info(f"🖱️ 点击了: {last_lat:.4f}, {last_lon:.4f} (自动填入输入框)")
+        map_data = st_folium(m, width=900, height=500, key="main_map")
         
-        # 简单st.map备选
-        st.map(df)
+        # 点击拾取→填输入框
+        if map_data and 'last_clicked' in map_data:
+            clicked_lat = map_data['last_clicked']['lat']
+            clicked_lon = map_data['last_clicked']['lng']
+            st.session_state.map_clicked_lat = clicked_lat
+            st.session_state.map_clicked_lon = clicked_lon
+            st.success(f"🖱️ 点击拾取成功！{clicked_lat:.4f}, {clicked_lon:.4f}")
+        
+        # 简单地图备选
+        st.caption("🗺️ 双地图：Folium交互 + 原生显示")
+        st.map(df, zoom=11, use_container_width=True)
     else:
-        st.info("🌟 第一人添加位置，其他人微信分享此页实时跟进！")
+        st.warning("👆 先添加第一个位置！")
 
-# 控制按钮
-col_x, col_y = st.columns(2)
-with col_x:
-    if st.button("🗑️ 清空所有", type="primary"):
-        server_state.locations = []
-        st.rerun()
-with col_y:
-    st.caption("💡 经纬度查法：百度/高德地图右键复制 → 分享链接给朋友")
+st.sidebar.markdown("### 🔧 操作")
+if st.sidebar.button("🗑️ 清空所有位置"):
+    st.session_state.locations = []; st.rerun()
+st.sidebar.markdown("**分享**：微信复制此页链接")
+st.sidebar.caption("贝伊果屋出品 | 2026")
 
-st.caption("✨ 由贝伊果屋出品 | 零API·大陆极速·实时协作")
+if st.button("💾 导出位置CSV"):
+    df = pd.DataFrame(st.session_state.locations, columns=['lat', 'lon'])
+    st.download_button("下载", df.to_csv(index=False), "聚点数据.csv")
