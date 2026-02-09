@@ -1,4 +1,5 @@
 import json
+import time
 from math import radians, degrees, sin, cos, atan2, sqrt
 
 import streamlit as st
@@ -6,34 +7,28 @@ import streamlit.components.v1 as components
 import pandas as pd
 import requests
 
-# ====== Key ======
+# ====== Key (請填入你的) ======
 AMAP_JS_KEY = "0cd3a5f0715be098c172e5359b94e99d"
 AMAP_SECURITY_JS_CODE = "89b4b0c537e7e364af191c498542e593"
 AMAP_REST_KEY = "a9075050dd895616798e9d039d89bdde"
 
-# ---------- Query params ----------
+# ---------- Utils ----------
 def qp_get(key: str, default=None):
     try:
         qp = st.query_params
-        if key not in qp:
-            return default
+        if key not in qp: return default
         v = qp[key]
-        if isinstance(v, list):
-            return v[0] if v else default
-        return v
-    except:
-        return default
+        return v[0] if isinstance(v, list) else v
+    except: return default
 
 def qp_del(*keys):
     try:
         for k in keys:
-            if k in st.query_params:
-                del st.query_params[k]
+            if k in st.query_params: del st.query_params[k]
     except: pass
 
-# ---------- 中點計算 ----------
 @st.cache_data
-def calc_center_spherical(locs):
+def calc_center(locs):
     if not locs: return 39.90, 116.40
     x=y=z=0.0; cnt=0
     for lat,lon in locs:
@@ -46,79 +41,89 @@ def calc_center_spherical(locs):
     lon = degrees(atan2(y, x)); hyp = sqrt(x*x+y*y); lat = degrees(atan2(z, hyp))
     return round(float(lat),6), round(float(lon),6)
 
-# ---------- 餐廳推薦 ----------
 @st.cache_data(ttl=120)
-def amap_nearby_restaurants(lat, lon, radius_m=3000, keywords="餐厅", offset=20):
+def get_restaurants(lat, lon, kw="餐厅"):
     url = "https://restapi.amap.com/v3/place/around"
-    params = {
-        "key": AMAP_REST_KEY, "location": f"{lon},{lat}",
-        "keywords": keywords, "types": "050000",
-        "radius": int(radius_m), "page": 1, "offset": int(offset), "extensions": "all"
-    }
-    r = requests.get(url, params=params, timeout=12)
-    data = r.json()
-    if data.get("status")!="1": return pd.DataFrame()
-    rows=[]
-    for p in (data.get("pois") or []):
-        try: d = f"{float(p.get('distance','0'))/1000.0:.2f} km"
-        except: d=""
-        rows.append({
-            "餐厅":p.get("name",""), "距离":d, "评分":p.get("biz_ext",{}).get("rating",""),
-            "均价":p.get("biz_ext",{}).get("cost",""), "地址":p.get("address",""), "电话":p.get("tel","")
-        })
-    df = pd.DataFrame(rows)
-    if not df.empty:
-        for c in df.columns: df[c] = df[c].astype(str).replace("nan","")
-    return df
-
-# ---------- 免費 IP 定位（替代 GPS） ----------
-def get_ip_location():
+    params = {"key":AMAP_REST_KEY, "location":f"{lon},{lat}", "keywords":kw, "radius":3000, "offset":20, "types":"050000"}
     try:
-        # 使用 ip-api.com (免費，不需 Key)
-        r = requests.get("http://ip-api.com/json/?fields=status,message,country,regionName,city,lat,lon", timeout=5)
-        data = r.json()
-        if data["status"] == "success":
-            return float(data["lat"]), float(data["lon"]), f"{data['city']}, {data['regionName']}"
-        return None
-    except:
-        return None
+        r = requests.get(url, params=params, timeout=10).json()
+        if r.get("status")!="1": return pd.DataFrame()
+        return pd.DataFrame([{
+            "餐厅":p.get("name"), "距离":f"{float(p.get('distance',0))/1000:.2f}km",
+            "评分":p.get("biz_ext",{}).get("rating"), "地址":p.get("address")
+        } for p in r.get("pois",[])])
+    except: return pd.DataFrame()
 
-# ---------- 高德地圖 ----------
-def render_amap(spots, center, height=500):
+# ---------- IP 定位 ----------
+def get_ip_loc():
+    try:
+        r = requests.get("http://ip-api.com/json/?fields=status,lat,lon,city", timeout=3).json()
+        if r["status"]=="success": return float(r["lat"]), float(r["lon"]), r["city"]
+    except: pass
+    return None
+
+# ---------- 高德地圖 (完善點擊版) ----------
+def render_map(spots, center, height=500):
     markers = []
     for s in spots:
         try: markers.append({"name":str(s.get("name","")), "lat":float(s["lat"]), "lon":float(s["lon"])})
         except: pass
-    c_lat, c_lon = float(center[0]), float(center[1])
     
     html = f"""
     <div id="amap" style="width:100%;height:{height}px;"></div>
+    <div id="msg" style="font-size:12px;color:#666;margin-top:5px;"></div>
     <script>window._AMapSecurityConfig={{securityJsCode:"{AMAP_SECURITY_JS_CODE}"}};</script>
     <script src="https://webapi.amap.com/loader.js"></script>
     <script>
+      function updateURL(lat, lon) {{
+        // 使用 URLSearchParams 更新參數，保留其他參數（除了 pick_lat/lon）
+        try {{
+            const url = new URL(window.top.location.href);
+            url.searchParams.set("pick_lat", lat);
+            url.searchParams.set("pick_lon", lon);
+            window.top.location.href = url.toString(); 
+        }} catch(e) {{
+            document.getElementById("msg").innerText = "回填失敗(跨域限制)，請手動複製";
+        }}
+      }}
+
       AMapLoader.load({{key:"{AMAP_JS_KEY}", version:"2.0"}}).then((AMap)=>{{
-        const map = new AMap.Map("amap", {{ zoom:12, center:[{c_lon},{c_lat}] }});
-        map.add(new AMap.Marker({{ position:[{c_lon},{c_lat}], title:"中點", icon:"https://webapi.amap.com/theme/v1.3/markers/n/mark_r.png" }}));
+        const map = new AMap.Map("amap", {{ zoom:12, center:[{center[1]}, {center[0]}] }});
+        
+        // 中點
+        map.add(new AMap.Marker({{
+            position:[{center[1]}, {center[0]}],
+            title:"中點",
+            icon: new AMap.Icon({{size:new AMap.Size(25,34), image:"https://webapi.amap.com/theme/v1.3/markers/n/mark_r.png"}})
+        }}));
+
+        // 既有點
         const ms = {json.dumps(markers, ensure_ascii=False)};
         ms.forEach(m => {{
             const mk = new AMap.Marker({{ position:[m.lon, m.lat], title:m.name }});
-            mk.on("click", ()=>{{
-                const u = new URL(window.top.location.href);
-                u.searchParams.set("pick_lat", m.lat); u.searchParams.set("pick_lon", m.lon);
-                window.top.location.href = u.toString();
-            }});
+            mk.on("click", () => updateURL(m.lat, m.lon)); // 點 marker 也回填
             map.add(mk);
         }});
-        map.on("click", (e)=>{{
-            const u = new URL(window.top.location.href);
-            u.searchParams.set("pick_lat", e.lnglat.getLat()); u.searchParams.set("pick_lon", e.lnglat.getLng());
-            window.top.location.href = u.toString();
+
+        // 點擊地圖空白處 -> 回填座標
+        map.on("click", (e) => {{
+            const lat = e.lnglat.getLat();
+            const lon = e.lnglat.getLng();
+            document.getElementById("msg").innerText = `選中: ${{lat.toFixed(5)}}, ${{lon.toFixed(5)}} (跳轉中...)`;
+            
+            // 添加臨時 marker 讓用戶知道點了哪
+            new AMap.Marker({{ position:[lon, lat], icon:"https://webapi.amap.com/theme/v1.3/markers/n/mark_b.png" }}).setMap(map);
+            
+            setTimeout(() => updateURL(lat, lon), 200); // 稍微延遲讓用戶看到 marker
         }});
-        map.setFitView();
+
+        if(ms.length > 0) map.setFitView();
+        
       }}).catch(e=>console.error(e));
     </script>
     """
-    components.html(html, height=height+20)
+    components.html(html, height=height+30)
+
 
 # =================== App ===================
 st.set_page_config(page_title="聚会神器", layout="wide")
@@ -126,113 +131,102 @@ st.title("🍽️ 聚会中点 + 餐厅推荐")
 
 if "spots" not in st.session_state: st.session_state.spots = []
 
-# 地圖點選回填
-pk_lat = qp_get("pick_lat"); pk_lon = qp_get("pick_lon")
-if pk_lat and pk_lon: st.toast(f"📍 地圖選點: {pk_lat}, {pk_lon}")
+# 1. 處理地圖點擊 (優先)
+pk_lat = qp_get("pick_lat")
+pk_lon = qp_get("pick_lon")
+if pk_lat and pk_lon:
+    st.toast(f"📍 已選地圖點: {pk_lat}, {pk_lon}")
 
 left, right = st.columns([1, 2], gap="medium")
 
 with left:
-    st.subheader("📍 定位 (IP 免費 API)")
-    if st.button("🌍 取得我的大概位置", type="primary", use_container_width=True):
-        loc = get_ip_location()
+    st.subheader("📍 定位 / 加入")
+    
+    # IP 定位按鈕
+    if st.button("🌍 IP 粗定位 (免GPS)", use_container_width=True):
+        loc = get_ip_loc()
         if loc:
-            lat, lon, city = loc
-            st.session_state["ip_loc"] = (lat, lon, city)
-            st.toast(f"✅ 定位成功: {city}", icon="🌍")
+            st.session_state["ip_res"] = loc
+            st.toast(f"IP定位: {loc[2]}", icon="✅")
             st.rerun()
-        else:
-            st.error("定位失敗，請手動輸入")
+        else: st.error("IP定位失敗")
 
-    # 顯示 IP 定位結果
-    ip_loc = st.session_state.get("ip_loc")
+    ip_res = st.session_state.get("ip_res")
     
-    st.divider()
-    st.subheader("➕ 加入位置")
-    name = st.text_input("名字", placeholder="例如: 小明")
-    
-    # 自動切換模式
+    # 判斷預設模式
     idx = 2
-    if ip_loc: idx=0
+    if ip_res: idx=0
     elif pk_lat: idx=1
     
-    mode = st.radio("來源", ["使用 IP 定位", "使用地圖點選", "手動/批量"], index=idx)
+    name = st.text_input("名字", "朋友"+str(len(st.session_state.spots)+1))
+    mode = st.radio("來源", ["IP定位結果", "地圖點選", "手動輸入"], index=idx)
 
-    if mode == "使用 IP 定位":
-        if ip_loc:
-            st.info(f"📍 {ip_loc[2]} ({ip_loc[0]}, {ip_loc[1]})")
-            if st.button("✅ 加入此位置", type="primary", use_container_width=True):
-                st.session_state.spots.append({
-                    "name": name.strip() or f"人{len(st.session_state.spots)+1}",
-                    "lat": ip_loc[0], "lon": ip_loc[1], "source": "ip"
-                })
-                st.toast("✅ 已加入！", icon="🎉")
+    if mode == "IP定位結果":
+        if ip_res:
+            st.info(f"📍 {ip_res[2]}")
+            if st.button("✅ 加入 IP 點", type="primary", use_container_width=True):
+                st.session_state.spots.append({"name":name, "lat":ip_res[0], "lon":ip_res[1], "src":"ip"})
+                st.toast("已加入", icon="🎉")
+                del st.session_state["ip_res"]
                 st.rerun()
-        else:
-            st.caption("請先點上方按鈕取得位置")
+        else: st.caption("請先點上方 IP 定位")
 
-    elif mode == "使用地圖點選":
+    elif mode == "地圖點選":
         if pk_lat:
-            if st.button("✅ 加入此點", type="primary", use_container_width=True):
-                st.session_state.spots.append({
-                    "name": name.strip() or f"人{len(st.session_state.spots)+1}",
-                    "lat": float(pk_lat), "lon": float(pk_lon), "source": "map"
-                })
-                st.toast("✅ 已加入！", icon="🎉")
+            st.info(f"📍 {pk_lat}, {pk_lon}")
+            if st.button("✅ 加入地圖點", type="primary", use_container_width=True):
+                st.session_state.spots.append({"name":name, "lat":float(pk_lat), "lon":float(pk_lon), "src":"map"})
+                st.toast("已加入", icon="🎉")
                 qp_del("pick_lat", "pick_lon")
+                time.sleep(0.5)
                 st.rerun()
-        else:
-            st.caption("請在右側地圖點選")
+        else: st.caption("請在右側地圖點選位置")
 
     else:
-        txt = st.text_area("批量 (名字,緯度,經度)", height=100)
-        if st.button("批量加入", use_container_width=True):
-            cnt=0
-            for l in txt.splitlines():
-                p=l.replace("，",",").split(",")
-                try:
-                    if len(p)==2: lat,lon=p[0],p[1]; nm=f"人{len(st.session_state.spots)+1}"
-                    else: nm,lat,lon=p[0],p[1],p[2]
-                    st.session_state.spots.append({"name":nm,"lat":float(lat),"lon":float(lon),"source":"bulk"})
-                    cnt+=1
-                except: pass
-            if cnt: 
-                st.toast(f"✅ 加入 {cnt} 筆", icon="🎉")
+        l_in = st.text_input("緯度,經度 (或批量)", placeholder="39.90,116.40")
+        if st.button("✅ 加入", type="primary", use_container_width=True):
+            try:
+                # 簡單批量支援
+                for line in l_in.split("\n"):
+                    parts = line.replace("，",",").split(",")
+                    if len(parts)>=2:
+                        st.session_state.spots.append({"name":name, "lat":float(parts[0]), "lon":float(parts[1]), "src":"manual"})
+                st.toast("已加入", icon="🎉")
                 st.rerun()
+            except: st.error("格式錯誤")
 
     st.divider()
     if st.button("🗑️ 清空", use_container_width=True):
         st.session_state.spots=[]
-        if "ip_loc" in st.session_state: del st.session_state["ip_loc"]
-        qp_del("pick_lat","pick_lon")
+        qp_del("pick_lat", "pick_lon")
+        if "ip_res" in st.session_state: del st.session_state["ip_res"]
         st.rerun()
 
 with right:
     if not st.session_state.spots:
         st.info("👈 請添加位置")
-        render_amap([], (39.90, 116.40), height=400)
+        render_map([], (39.90, 116.40), height=450)
     else:
+        # 列表
         df = pd.DataFrame(st.session_state.spots)
-        st.dataframe(df[["name","lat","lon","source"]].astype(str), use_container_width=True, hide_index=True)
+        st.dataframe(df[["name","lat","lon"]].astype(str), use_container_width=True, hide_index=True)
         
-        locs = [(r["lat"], r["lon"]) for _,r in df.iterrows()]
-        c_lat, c_lon = calc_center_spherical(locs)
+        # 中點
+        locs = [(r["lat"],r["lon"]) for _,r in df.iterrows()]
+        c_lat, c_lon = calc_center(locs)
         
-        c1,c2,c3 = st.columns(3)
-        c1.metric("人數", len(locs))
-        c2.metric("中點緯度", f"{c_lat:.4f}")
-        c3.metric("中點經度", f"{c_lon:.4f}")
+        c1,c2 = st.columns(2)
+        c1.metric("中點緯度", f"{c_lat:.4f}")
+        c2.metric("中點經度", f"{c_lon:.4f}")
         
-        st.write("🗺️ **高德地圖**")
-        render_amap(st.session_state.spots, (c_lat, c_lon), height=500)
+        # 地圖
+        st.write("🗺️ **高德地圖** (點擊任意處可選點)")
+        render_map(st.session_state.spots, (c_lat, c_lon), height=500)
         
+        # 餐廳
         st.divider()
-        kw = st.text_input("餐廳關鍵字", "餐厅")
-        if st.button("🔍 搜尋附近"):
-            rest = amap_nearby_restaurants(c_lat, c_lon, keywords=kw)
+        kw = st.text_input("🔍 找餐廳", "餐厅")
+        if st.button("搜尋附近"):
+            rest = get_restaurants(c_lat, c_lon, kw)
             if not rest.empty: st.dataframe(rest, use_container_width=True, hide_index=True)
             else: st.warning("無結果")
-        
-        st.divider()
-        csv = df.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("下載 CSV", csv, "spots.csv", "text/csv")
