@@ -120,18 +120,17 @@ st.set_page_config(page_title="聚会神器", layout="wide")
 st.title("🍽️ 聚会中点 + 餐厅推荐")
 
 if "spots" not in st.session_state: st.session_state.spots = []
-if "add_mode" not in st.session_state: st.session_state.add_mode = "手動/批量"
+if "mode_idx" not in st.session_state: st.session_state.mode_idx = 2 # 預設索引 2 (手動/批量)
 
 # 1. 偵測 URL 參數並同步到 session_state
 pk_lat = qp_get("pick_lat")
 pk_lon = qp_get("pick_lon")
 
 if pk_lat and pk_lon:
-    # 存入 session_state 以便 UI 穩定讀取
     st.session_state["picked_coords"] = (float(pk_lat), float(pk_lon))
-    # 強制切換模式
-    if st.session_state.add_mode != "地圖點選":
-        st.session_state.add_mode = "地圖點選"
+    # 強制切換到索引 1 (地圖點選)
+    if st.session_state.mode_idx != 1:
+        st.session_state.mode_idx = 1
         st.rerun()
 
 left, right = st.columns([1, 2], gap="medium")
@@ -143,18 +142,20 @@ with left:
         loc = get_ip_loc()
         if loc:
             st.session_state["ip_res"] = loc
-            st.session_state.add_mode = "IP定位結果"
+            st.session_state.mode_idx = 0 # 切換到索引 0
             st.toast(f"IP: {loc[2]}", icon="✅")
             st.rerun()
         else: st.error("定位失敗")
 
     ip_res = st.session_state.get("ip_res")
-    picked = st.session_state.get("picked_coords") # 從 session 讀取點選結果
+    picked = st.session_state.get("picked_coords")
 
+    # 使用 index 參數控制選中項，不再綁定 key 到 session_state
+    OPTIONS = ["IP定位結果", "地圖點選", "手動/批量"]
     mode = st.radio(
         "來源", 
-        ["IP定位結果", "地圖點選", "手動/批量"], 
-        key="add_mode"
+        OPTIONS,
+        index=st.session_state.mode_idx
     )
 
     name = st.text_input("名字", "朋友"+str(len(st.session_state.spots)+1))
@@ -165,13 +166,12 @@ with left:
             if st.button("✅ 加入 IP 點", type="primary", use_container_width=True):
                 st.session_state.spots.append({"name":name, "lat":ip_res[0], "lon":ip_res[1], "src":"ip"})
                 st.toast("已加入", icon="🎉")
-                if "ip_res" in st.session_state: del st.session_state["ip_res"]
-                st.session_state.add_mode = "手動/批量"
+                del st.session_state["ip_res"]
+                st.session_state.mode_idx = 2 # 加完切回手動
                 st.rerun()
         else: st.caption("請先點上方 IP 定位")
 
     elif mode == "地圖點選":
-        # 這裡優先讀取 session 裡的 picked_coords
         if picked:
             lat, lon = picked
             st.info(f"📍 {lat:.5f}, {lon:.5f}")
@@ -180,18 +180,17 @@ with left:
                 st.session_state.spots.append({"name":name, "lat":lat, "lon":lon, "src":"map"})
                 st.toast("已加入", icon="🎉")
                 
-                # 清理狀態
                 qp_del("pick_lat", "pick_lon")
                 if "picked_coords" in st.session_state: del st.session_state["picked_coords"]
                 
-                st.session_state.add_mode = "手動/批量"
+                st.session_state.mode_idx = 2 # 加完切回手動
                 time.sleep(0.5)
                 st.rerun()
                 
             if st.button("❌ 取消選取", use_container_width=True):
                 qp_del("pick_lat", "pick_lon")
                 if "picked_coords" in st.session_state: del st.session_state["picked_coords"]
-                st.session_state.add_mode = "手動/批量"
+                st.session_state.mode_idx = 2 # 切回手動
                 st.rerun()
         else:
             st.warning("👈 請在右側地圖上點一下，會自動跳轉回來")
