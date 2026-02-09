@@ -1,22 +1,13 @@
-import time
-import random
-import string
-import threading
-from math import radians, degrees, sin, cos, atan2, sqrt
-
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import requests
+from math import radians, degrees, sin, cos, atan2, sqrt
 
-
-# ========= 你的高德Key（你要寫死就放這） =========
 AMAP_KEY = "a9075050dd895616798e9d039d89bdde"
 
-
-# ========= Query params（兼容新舊Streamlit） =========
+# ---------- Query params（用于接收HTML5定位结果） ----------
 def qp_get(key: str, default=None):
-    # 新版：st.query_params
     try:
         qp = st.query_params
         if key in qp:
@@ -26,39 +17,22 @@ def qp_get(key: str, default=None):
             return v
         return default
     except Exception:
-        # 舊版：experimental
         qp = st.experimental_get_query_params()
         if key in qp and qp[key]:
             return qp[key][0]
         return default
 
-
-def qp_set(**kwargs):
+def qp_clear(keys):
     try:
-        # 新版：dict-like assign
-        for k, v in kwargs.items():
-            st.query_params[k] = str(v)
+        for k in keys:
+            if k in st.query_params:
+                del st.query_params[k]
     except Exception:
-        st.experimental_set_query_params(**{k: str(v) for k, v in kwargs.items()})
+        # 老版只能整包重设，保留其它参数的需求这里不做
+        pass
 
-
-# ========= 全站共享房間資料（同一台server所有使用者共享） =========
-@st.cache_resource
-def get_store():
-    # st.cache_resource 回傳的物件可在多 session 共享，且你對它的 mutation 會直接改到快取裡 [web:137][web:136]
-    return {"lock": threading.Lock(), "rooms": {}}
-
-
-def rand_room(n=6):
-    alphabet = string.ascii_uppercase + string.digits
-    return "".join(random.choice(alphabet) for _ in range(n))
-
-
-def now_ts():
-    return int(time.time())
-
-
-# ========= 地理中點（球面平均） =========
+# ---------- 地理中点（球面平均） ----------
+@st.cache_data
 def calc_center_spherical(locs):
     if not locs:
         return 39.90, 116.40
@@ -81,34 +55,18 @@ def calc_center_spherical(locs):
     lat = degrees(atan2(z, hyp))
     return round(float(lat), 6), round(float(lon), 6)
 
-
-def calc_center_median(locs):
-    if not locs:
-        return 39.90, 116.40
-    lats, lons = [], []
-    for lat, lon in locs:
-        try:
-            lats.append(float(lat))
-            lons.append(float(lon))
-        except Exception:
-            pass
-    if not lats:
-        return 39.90, 116.40
-    return round(float(pd.Series(lats).median()), 6), round(float(pd.Series(lons).median()), 6)
-
-
-# ========= 高德餐廳（周邊POI） =========
+# ---------- 高德周边餐厅 ----------
 @st.cache_data(ttl=120)
-def amap_around_poi(lat, lon, radius_m=3000, keywords="餐厅", types="050000", page=1, offset=20):
-    # 高德周邊搜尋常用參數：location/key/keywords/types/radius/offset/page [web:145]
+def amap_nearby_restaurants(lat, lon, radius_m=3000, keywords="餐厅|火锅|烧烤|咖啡", offset=20):
+    # 参数：location/key/keywords/types/radius/offset/page/extensions [web:145][web:156]
     url = "https://restapi.amap.com/v3/place/around"
     params = {
         "key": AMAP_KEY,
         "location": f"{lon},{lat}",
         "keywords": keywords,
-        "types": types,
+        "types": "050000",          # 餐饮
         "radius": int(radius_m),
-        "page": int(page),
+        "page": 1,
         "offset": int(offset),
         "extensions": "all",
     }
@@ -116,44 +74,39 @@ def amap_around_poi(lat, lon, radius_m=3000, keywords="餐厅", types="050000", 
     data = r.json()
     if data.get("status") != "1":
         return pd.DataFrame()
-    pois = data.get("pois") or []
+
     rows = []
-    for p in pois:
+    for p in (data.get("pois") or []):
         biz = p.get("biz_ext") or {}
-        loc = (p.get("location") or "").split(",")
-        plon = loc[0] if len(loc) == 2 else ""
-        plat = loc[1] if len(loc) == 2 else ""
-        # distance 可能是字串
         try:
             dist_km = float(p.get("distance", "0")) / 1000.0
-            dist_str = f"{dist_km:.2f} km"
+            dist = f"{dist_km:.2f} km"
         except Exception:
-            dist_str = ""
+            dist = ""
         rows.append(
             {
-                "name": str(p.get("name", "")),
-                "address": str(p.get("address", "")),
-                "distance": dist_str,
-                "rating": str(biz.get("rating", "")),
-                "cost": str(biz.get("cost", "")),
-                "tel": str(p.get("tel", "")),
-                "poi_lat": str(plat),
-                "poi_lon": str(plon),
+                "餐厅": str(p.get("name", "")),
+                "距离": dist,
+                "评分": str(biz.get("rating", "")),
+                "均价": str(biz.get("cost", "")),
+                "地址": str(p.get("address", "")),
+                "电话": str(p.get("tel", "")),
             }
         )
+
     df = pd.DataFrame(rows)
     if not df.empty:
         for c in df.columns:
             df[c] = df[c].astype(str).replace("nan", "")
     return df
 
-
-# ========= HTML5 定位（方案A） =========
+# ---------- HTML5 手机定位（方案A） ----------
 def geolocate_block():
-    st.subheader("📍 手機一鍵定位")
+    st.subheader("📍 手机一键定位（浏览器原生）")
     lat = qp_get("lat")
     lon = qp_get("lon")
     acc = qp_get("acc")
+
     if lat and lon:
         try:
             return float(lat), float(lon), (float(acc) if acc else None)
@@ -163,12 +116,12 @@ def geolocate_block():
     html = """
     <div style="padding:12px;border:2px dashed #999;border-radius:10px;">
       <button onclick="getLocation()"
-        style="padding:12px 18px;font-size:16px;border:none;border-radius:8px;background:#111;color:#fff;cursor:pointer;">
+        style="padding:12px 18px;font-size:16px;border:none;border-radius:10px;background:#111;color:#fff;cursor:pointer;">
         Get my GPS location
       </button>
       <div id="status" style="margin-top:10px;font-family:sans-serif;font-size:14px;color:#333;"></div>
       <div style="margin-top:6px;font-family:sans-serif;font-size:12px;color:#666;">
-        iPhone請用Safari/Chrome；若被拒絕，請到瀏覽器網站設定允許定位後再按一次。
+        若失敗：請在瀏覽器網站設定允許定位後再按一次；必須是HTTPS頁面。
       </div>
     </div>
     <script>
@@ -193,208 +146,124 @@ def geolocate_block():
       }
     </script>
     """
-    components.html(html, height=180)
+    components.html(html, height=170)
     return None
 
+# ---------- App ----------
+st.set_page_config(page_title="聚会中点 + 餐厅推荐", layout="wide")
+st.title("聚会中点 + 餐厅推荐（无房间版）")
 
-# ========= App UI =========
-st.set_page_config(page_title="聚會中點 + 餐廳推薦", layout="wide")
-st.title("聚會中點 + 餐廳推薦（手機一鍵定位版）")
+if "spots" not in st.session_state:
+    # spots: list of dict {name, lat, lon, source}
+    st.session_state.spots = []
 
-# Session身分（用來更新/刪除自己）
-if "user_id" not in st.session_state:
-    st.session_state.user_id = "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(10))
-if "nickname" not in st.session_state:
-    st.session_state.nickname = f"user_{st.session_state.user_id[-4:]}"
-
-
-# 房間：用URL ?room=XXXXXX
-room = (qp_get("room") or "").strip().upper()
-if not room:
-    room = rand_room()
-    qp_set(room=room)
-
-store = get_store()
-with store["lock"]:
-    store["rooms"].setdefault(room, {"spots": []})
-
-room_url_hint = f"?room={room}"
-
-st.sidebar.header("房間")
-st.sidebar.code(room, language="text")
-st.sidebar.caption("把房間碼/連結分享給朋友一起加位置。")
-
-new_room = st.sidebar.text_input("加入/切換房間（輸入房間碼）", value=room, max_chars=12)
-if new_room and new_room.strip().upper() != room:
-    qp_set(room=new_room.strip().upper())
-    st.rerun()
-
-# 個人設定
-st.sidebar.header("我")
-st.session_state.nickname = st.sidebar.text_input("暱稱", value=st.session_state.nickname, max_chars=20)
-
-# 讀房間spots
-with store["lock"]:
-    spots = list(store["rooms"][room]["spots"])
-
-# 將 spots 轉 DataFrame
-def spots_df(spots_list):
-    df = pd.DataFrame(spots_list)
-    if df.empty:
-        return df
-    # 避免 pyarrow 型別混雜
-    for c in df.columns:
-        df[c] = df[c].astype(str).replace("nan", "")
-    return df
-
-# 主區：定位/新增
-left, right = st.columns([1.1, 1.9], gap="large")
+left, right = st.columns([1.15, 1.85], gap="large")
 
 with left:
     loc = geolocate_block()
     st.divider()
 
-    st.subheader("新增位置")
-    add_mode = st.radio("方式", ["用GPS(剛剛獲取)", "手動輸入"], horizontal=True)
+    st.subheader("➕ 添加位置")
+    name = st.text_input("名字（可选）", value="", placeholder="例如：阿明 / 小美")
 
-    if add_mode == "用GPS(剛剛獲取)":
+    mode = st.radio("添加方式", ["用GPS(刚获取)", "手动输入", "批量粘贴"], horizontal=True)
+
+    if mode == "用GPS(刚获取)":
         if loc:
             glat, glon, gacc = loc
-            st.write(f"GPS: {glat:.6f}, {glon:.6f}" + (f"（±{int(gacc)}m）" if gacc else ""))
-            if st.button("加入我的位置", type="primary", use_container_width=True):
-                with store["lock"]:
-                    store["rooms"][room]["spots"].append(
-                        {
-                            "user_id": st.session_state.user_id,
-                            "name": st.session_state.nickname,
-                            "lat": glat,
-                            "lon": glon,
-                            "source": "gps",
-                            "ts": now_ts(),
-                        }
-                    )
+            st.success(f"定位：{glat:.6f}, {glon:.6f}" + (f"（±{int(gacc)}m）" if gacc else ""))
+            if st.button("加入这笔", type="primary", use_container_width=True):
+                st.session_state.spots.append(
+                    {"name": name.strip() or f"人{len(st.session_state.spots)+1}", "lat": glat, "lon": glon, "source": "gps"}
+                )
+                # 加完可清理query params，避免下次误用
+                qp_clear(["lat", "lon", "acc"])
                 st.rerun()
         else:
             st.info("先按上面的 Get my GPS location。")
-    else:
-        lat_in = st.number_input("緯度 lat", value=39.90, format="%.6f")
-        lon_in = st.number_input("經度 lon", value=116.40, format="%.6f")
-        if st.button("加入手動位置", type="primary", use_container_width=True):
-            with store["lock"]:
-                store["rooms"][room]["spots"].append(
-                    {
-                        "user_id": st.session_state.user_id,
-                        "name": st.session_state.nickname,
-                        "lat": float(lat_in),
-                        "lon": float(lon_in),
-                        "source": "manual",
-                        "ts": now_ts(),
-                    }
-                )
+
+    elif mode == "手动输入":
+        lat_in = st.number_input("纬度 lat", value=39.90, format="%.6f")
+        lon_in = st.number_input("经度 lon", value=116.40, format="%.6f")
+        if st.button("加入这笔", type="primary", use_container_width=True):
+            st.session_state.spots.append(
+                {"name": name.strip() or f"人{len(st.session_state.spots)+1}", "lat": float(lat_in), "lon": float(lon_in), "source": "manual"}
+            )
+            st.rerun()
+
+    else:  # 批量粘贴
+        st.caption("每行一人：`名字,纬度,经度` 或 `纬度,经度`；逗号或空格都行。")
+        bulk = st.text_area("批量输入", height=140, placeholder="阿明,39.9042,116.4074\n31.2304,121.4737")
+        if st.button("批量导入", type="primary", use_container_width=True):
+            added = 0
+            for line in bulk.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                parts = [p for p in line.replace("，", ",").replace(" ", ",").split(",") if p != ""]
+                try:
+                    if len(parts) == 2:
+                        nm = f"人{len(st.session_state.spots)+1}"
+                        latv, lonv = float(parts[0]), float(parts[1])
+                    else:
+                        nm = parts[0].strip() or f"人{len(st.session_state.spots)+1}"
+                        latv, lonv = float(parts[1]), float(parts[2])
+                    st.session_state.spots.append({"name": nm, "lat": latv, "lon": lonv, "source": "bulk"})
+                    added += 1
+                except Exception:
+                    pass
+            st.success(f"已导入 {added} 笔")
             st.rerun()
 
     st.divider()
-    st.subheader("我的位置管理")
-
-    if st.button("更新我最後一筆為目前GPS", use_container_width=True):
-        if not loc:
-            st.warning("你尚未獲取GPS。")
-        else:
-            glat, glon, _ = loc
-            with store["lock"]:
-                room_spots = store["rooms"][room]["spots"]
-                # 找到我最後一筆
-                idx = None
-                for i in range(len(room_spots) - 1, -1, -1):
-                    if room_spots[i].get("user_id") == st.session_state.user_id:
-                        idx = i
-                        break
-                if idx is None:
-                    room_spots.append(
-                        {"user_id": st.session_state.user_id, "name": st.session_state.nickname, "lat": glat, "lon": glon, "source": "gps", "ts": now_ts()}
-                    )
-                else:
-                    room_spots[idx]["name"] = st.session_state.nickname
-                    room_spots[idx]["lat"] = glat
-                    room_spots[idx]["lon"] = glon
-                    room_spots[idx]["source"] = "gps"
-                    room_spots[idx]["ts"] = now_ts()
-            st.rerun()
-
-    if st.button("刪除我在這房間的所有位置", use_container_width=True):
-        with store["lock"]:
-            room_spots = store["rooms"][room]["spots"]
-            store["rooms"][room]["spots"] = [s for s in room_spots if s.get("user_id") != st.session_state.user_id]
-        st.rerun()
-
-    if st.sidebar.button("清空整個房間（慎用）"):
-        with store["lock"]:
-            store["rooms"][room]["spots"] = []
+    st.subheader("🧹 管理")
+    if st.button("清空全部", type="primary", use_container_width=True):
+        st.session_state.spots = []
         st.rerun()
 
 with right:
-    st.subheader(f"房間 {room} 的所有人位置")
-    df = spots_df(spots)
-
-    if df.empty:
-        st.info(f"把這個房間碼分享給朋友：{room}（或在網址後加 {room_url_hint}）")
+    st.subheader("📌 当前位置清单")
+    if not st.session_state.spots:
+        st.info("先添加至少 1 个位置。多人聚会时，最简单做法是：你开这个网页，朋友把坐标发你，你用「批量粘贴」导入。")
     else:
-        # 轉成數值 list 用於計算
-        locs = []
-        for _, r in df.iterrows():
-            try:
-                locs.append((float(r["lat"]), float(r["lon"])))
-            except Exception:
-                pass
+        df = pd.DataFrame(st.session_state.spots)
+        # 防 pyarrow 类型问题：全部转字符串显示
+        show_df = df.copy()
+        for c in show_df.columns:
+            show_df[c] = show_df[c].astype(str).replace("nan", "")
+        st.dataframe(show_df[["name", "lat", "lon", "source"]], use_container_width=True, hide_index=True)
 
-        c_lat_s, c_lon_s = calc_center_spherical(locs)
-        c_lat_m, c_lon_m = calc_center_median(locs)
+        # 计算中点
+        locs = [(r["lat"], r["lon"]) for _, r in df.iterrows()]
+        c_lat, c_lon = calc_center_spherical(locs)
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("人數", len(locs))
-        m2.metric("球面中點lat", f"{c_lat_s}")
-        m3.metric("球面中點lon", f"{c_lon_s}")
-        m4.metric("Median中點", f"{c_lat_m}, {c_lon_m}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("人数", len(locs))
+        c2.metric("推荐纬度", f"{c_lat}")
+        c3.metric("推荐经度", f"{c_lon}")
 
-        # 表格
-        show_cols = [c for c in ["name", "lat", "lon", "source", "ts"] if c in df.columns]
-        st.dataframe(df[show_cols], use_container_width=True)
-
-        # 地圖（原生 st.map）
-        map_points = pd.DataFrame([{"lat": float(a), "lon": float(b)} for (a, b) in locs] + [{"lat": c_lat_s, "lon": c_lon_s}])
-        st.map(map_points.rename(columns={"lon": "lon", "lat": "lat"}), zoom=11, use_container_width=True)
+        # 地图：所有点 + 中点
+        map_df = pd.DataFrame([{"lat": float(a), "lon": float(b)} for (a, b) in locs] + [{"lat": c_lat, "lon": c_lon}])
+        st.subheader("🗺️ 地图")
+        st.map(map_df.rename(columns={"lat": "lat", "lon": "lon"}), zoom=11, use_container_width=True)
 
         st.divider()
-        st.subheader("餐廳推薦（以球面中點為中心）")
+        st.subheader("🍜 附近餐厅推荐（以中点为中心）")
+        keywords = st.text_input("关键字", value="餐厅|火锅|烧烤|咖啡")
+        radius = st.slider("半径（米）", 500, 5000, 3000, 100)
+        topn = st.slider("显示数量", 5, 20, 10, 1)
 
-        kw = st.text_input("關鍵字", value="餐厅|火锅|烧烤|咖啡", help="用 | 分隔會更好找")
-        radius = st.slider("搜尋半徑（公尺）", 500, 5000, 3000, 100)
-        topn = st.slider("顯示筆數", 5, 20, 10, 1)
-
-        if st.button("搜尋附近餐廳", type="primary"):
-            with st.spinner("查詢中…"):
-                rest = amap_around_poi(c_lat_s, c_lon_s, radius_m=radius, keywords=kw, types="050000", page=1, offset=20)
+        if st.button("查询餐厅", type="primary"):
+            with st.spinner("查询中…"):
+                rest = amap_nearby_restaurants(c_lat, c_lon, radius_m=radius, keywords=keywords, offset=20)
 
             if rest.empty:
-                st.warning("查不到結果：可能是Key/額度/地點太偏，或關鍵字太窄。")
+                st.warning("查不到结果：可能是Key/额度/地点较偏或关键字太窄。")
             else:
                 rest = rest.head(topn).copy()
-                # 給一個「在高德打開」的搜尋連結（用中心點 + 關鍵字）
-                amap_search_url = (
-                    "https://uri.amap.com/search?"
-                    + f"keyword={requests.utils.quote(kw)}"
-                    + f"&center={c_lon_s},{c_lat_s}"
-                    + f"&radius={int(radius)}"
-                )
-                st.write("在高德打開（搜尋）:", amap_search_url)
-
-                # 顯示表格
-                rest_show = rest[["name", "distance", "rating", "cost", "address", "tel"]].copy()
-                for c in rest_show.columns:
-                    rest_show[c] = rest_show[c].astype(str).replace("nan", "")
-                st.dataframe(rest_show, use_container_width=True)
+                st.dataframe(rest, use_container_width=True, hide_index=True)
 
         st.divider()
-        st.subheader("匯出")
-        csv = df[show_cols].to_csv(index=False, encoding="utf-8-sig")
-        st.download_button("下載位置CSV", data=csv, file_name=f"meeting_{room}.csv", mime="text/csv", use_container_width=True)
+        st.subheader("💾 导出")
+        csv = show_df[["name", "lat", "lon", "source"]].to_csv(index=False, encoding="utf-8-sig")
+        st.download_button("下载CSV", csv, file_name="meeting_spots.csv", mime="text/csv", use_container_width=True)
