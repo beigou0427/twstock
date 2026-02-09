@@ -9,17 +9,17 @@ requests>=2.31.0
 tqdm>=4.66.0
 loguru>=0.7.0
 python-dateutil
-pytz
-wordcloud
-yfinance>=0.2.40
-# === 新增的新聞解析與文本處理套件 ===
-feedparser>=6.0.10      # 解析 RSS/Atom 新聞源
-beautifulsoup4>=4.12.0  # 清理 HTML 標籤
-lxml>=5.0.0             # 加速 HTML 解析
-textblob>=0.17.1        # (可選) 簡單的情緒分析工具
-#na
-streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
-folium>=0.14.0
-streamlit-folium>=0.15.0
+pytz>=2024.1  # 確認時區支援
+wordcloud>=1.9.3
+feedparser>=6.0.10
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+textblob>=0.17.1
+
+# === 新增：開盤實時更新 ===
+streamlit-autorefresh>=0.1.0  # 自動 rerun [web:28]
+holidays>=0.53  # 台灣假日檢查 [web:23]
+
+# === 可選：地圖功能 ===
+# folium>=0.14.0
+# streamlit-folium>=0.15.0
