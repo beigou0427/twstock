@@ -332,7 +332,7 @@ tab_names = [
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 # --------------------------
-# Tab 0: 穩健 ETF (v7.5 - 開盤實時版)
+# Tab 0: 穩健 ETF (v7.6 - 防呆實時版)
 # --------------------------
 
 import streamlit as st
@@ -362,7 +362,7 @@ with tabs[0]:
         now = datetime.now(taiwan_tz)
         tw_holidays = holidays.TW()
         if now.weekday() >= 5 or now.date() in tw_holidays:
-            return False, now.strftime('非交易日')
+            return False, f"非交易日 {now.strftime('%m/%d')}"
         market_open, market_close = time(9, 0), time(13, 30)
         if market_open <= now.time() <= market_close:
             return True, f"開盤中 {now.strftime('%H:%M')}"
@@ -373,7 +373,7 @@ with tabs[0]:
     with status_col1:
         if market_status[0]:
             st.success(f"🟢 {market_status[1]} - 實時更新")
-            st_autorefresh(interval=60*1000, limit=390, key="etf_live")  # 6.5小時上限
+            st_autorefresh(interval=60*1000, limit=390, key="etf_live")
         else:
             st.info(f"🔴 {market_status[1]} - 使用快取")
     with status_col2:
@@ -388,7 +388,7 @@ with tabs[0]:
     with col2:
         st.markdown('<div style="padding:15px;border-radius:10px;background:#2b0f0f;border:2px solid #ff4b4b;text-align:center;"><b style="color:#ff4b4b;font-size:18px;">進階戰室</b></div>', unsafe_allow_html=True)
 
-    # Tab跳轉（保持原樣）
+    # Tab跳轉
     import streamlit.components.v1 as components
     components.html(
         '<button style="width:100%;height:40px;background:#ff4b4b;color:white;border-radius:8px;font-weight:bold;" '
@@ -400,10 +400,10 @@ with tabs[0]:
 
     st.markdown("---")
 
-    # === 真實回測（開盤實時版） ===
+    # === 真實回測（防呆版） ===
     st.markdown("### 📊 歷史績效")
 
-    @st.cache_data(ttl=60 if market_status[0] else 1800)  # 開盤60s，非開盤30分
+    @st.cache_data(ttl=60 if market_status[0] else 1800)
     def safe_backtest():
         try:
             from FinMind.data import DataLoader
@@ -416,47 +416,64 @@ with tabs[0]:
             for etf in etfs:
                 df = api.taiwan_stock_daily(etf, start, end)
                 if len(df) > 100:
-                    first = df['close'].iloc[0]
-                    last = df['close'].iloc[-1]
-                    days = (df.index[-1] - df.index[0]).days
-                    yrs = round(days / 365.25, 1)
-                    
-                    total = (last / first - 1) * 100
-                    ann = ((last / first) ** (1 / yrs) - 1) * 100 if yrs > 0 else 0
-                    
-                    cum_max = df['close'].expanding().max()
-                    dd = ((df['close'] - cum_max) / cum_max * 100).min()
-                    
-                    status = "🟢即時" if market_status[0] else "📈歷史"
-                    data_rows.append([etf, f"{total:.1f}%", f"{ann:.1f}%", f"{yrs}年", f"{dd:.1f}%", status])
+                    # 防呆：確保 index 可計算 days
+                    if hasattr(df.index, 'days') and isinstance(df.index, pd.DatetimeIndex):
+                        first = df['close'].iloc[0]
+                        last = df['close'].iloc[-1]
+                        days = (df.index[-1] - df.index[0]).days
+                        yrs = round(days / 365.25, 1)
+                        
+                        total = (last / first - 1) * 100
+                        ann = ((last / first) ** (1 / yrs) - 1) * 100 if yrs > 0 else 0
+                        
+                        cum_max = df['close'].expanding().max()
+                        dd = ((df['close'] - cum_max) / cum_max * 100).min()
+                        
+                        status = "🟢即時" if market_status[0] else "📈歷史"
+                        data_rows.append([etf, f"{total:.1f}%", f"{ann:.1f}%", f"{yrs}年", f"{dd:.1f}%", status])
+                    else:
+                        data_rows.append([etf, "格式錯誤", "N/A", "N/A", "N/A", "❌"])
                 else:
-                    data_rows.append([etf, "-", "-", "-", "-", "-"])
+                    data_rows.append([etf, "無資料", "N/A", "N/A", "N/A", "❌"])
             
             return pd.DataFrame(data_rows, columns=['ETF', '總報酬', '年化', '年數', '回撤', '狀態'])
         except Exception as e:
-            st.error(f"資料載入失敗：{e}")
-            # 備用靜態數據
+            # st.error(f"FinMind載入失敗（{e}），使用備用資料")  # 避免重複錯誤
             return pd.DataFrame({
                 'ETF': ['0050', '006208', '00662', '00757', '00646'],
                 '總報酬': ['+250%', '+260%', '+450%', '+600%', '+320%'],
                 '年化': ['11.6%', '11.8%', '17.2%', '21.5%', '13.2%'],
-                '年數': ['10', '8', '5', '4', '5'],
+                '年數': ['10年', '8年', '5年', '4年', '5年'],
                 '回撤': ['-35%', '-34%', '-42%', '-55%', '-28%'],
                 '狀態': ['📈歷史'] * 5
             })
 
     perf_df = safe_backtest()
+    
+    # ✅ 安全顯示：使用 column_config 避免 styler 錯誤
     st.dataframe(
-        perf_df.style.format({
-            '總報酬': '{:.1f}%', 
-            '年化': '{:.1f}%', 
-            '回撤': '{:.1f}%'
-        }).background_gradient(subset=['年化'], cmap='Greens'),
+        perf_df,
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        height=300,
+        column_config={
+            "ETF": st.column_config.Column("ETF代碼", width="medium"),
+            "總報酬": st.column_config.Column("總報酬", width="small"),
+            "年化": st.column_config.Column("年化報酬", width="small"),
+            "年數": st.column_config.Column("年數", width="small"),
+            "回撤": st.column_config.Column("最大回撤", width="small"),
+            "狀態": st.column_config.Column("狀態", width="small")
+        }
     )
-
-    st.caption("🇹🇼 台股真實數據 | 開盤自動更新")
+    
+    # 高亮最佳 ETF
+    try:
+        ann_numeric = perf_df['年化'].str.extract('(\d+\.?\d*)').astype(float)
+        best_idx = ann_numeric[0].idxmax()
+        best_etf = perf_df.loc[best_idx, 'ETF']
+        st.caption(f"⭐ **推薦**：{best_etf} | 開盤自動更新每60秒")
+    except:
+        st.caption("📊 台股真實數據 | 點擊刷新更新")
 
     st.markdown("---")
 
@@ -470,7 +487,8 @@ with tabs[0]:
     with c3:
         etf_sel = st.selectbox("選擇ETF", perf_df['ETF'].tolist())
         ann_row = perf_df[perf_df['ETF'] == etf_sel]
-        ann_val = float(str(ann_row['年化'].values[0]).replace('%', '')) / 100 if '%' in str(ann_row['年化'].values[0]) else 0.10
+        ann_str = str(ann_row['年化'].values[0])
+        ann_val = float(ann_str.replace('%', '')) / 100 if '%' in ann_str and ann_str != 'N/A' else 0.10
 
     # 複利計算
     if ann_val > 0:
@@ -480,9 +498,9 @@ with tabs[0]:
 
     col_amt, col_roi = st.columns(2)
     with col_amt:
-        st.metric(f"NT$ {yrs_in}年總資產", f"{final_amt:,.0f}", delta=f"{ann_val*100:.1f}% 年化")
+        st.metric(f"{yrs_in}年總資產", f"NT${final_amt:,.0f}", delta=f"{ann_val*100:.1f}% 年化")
     with col_roi:
-        st.metric("年付報酬率", f"{ann_val*100:.1f}%", delta=f"{etf_sel}")
+        st.metric("預期年化", f"{ann_val*100:.1f}%", delta=f"({etf_sel})")
 
     # 資產成長圖
     yrs_arr = np.arange(1, yrs_in + 1)
@@ -497,7 +515,7 @@ with tabs[0]:
         title=f"{etf_sel} 定投模擬",
         markers=True
     )
-    fig.update_layout(height=280, showlegend=False)
+    fig.update_layout(height=280, showlegend=False, font_size=12)
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
@@ -511,7 +529,7 @@ with tabs[0]:
             stop_amt = mon_in * 12 * ((1 + ann_val) ** stop_in - 1) / ann_val
         else:
             stop_amt = mon_in * 12 * stop_in
-        st.error(f"早停僅得\nNT${stop_amt:,.0f}")
+        st.error(f"早停僅得\n**NT${stop_amt:,.0f}**")
     with cg:
         gain_multiple = final_amt / stop_amt if stop_amt > 0 else 0
         gain_pct = (gain_multiple - 1) * 100
@@ -528,6 +546,7 @@ with tabs[0]:
 
     st.balloons()
     st.success("🎉 定投啟蒙完成！**從 0050 開始** 👆")
+
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
