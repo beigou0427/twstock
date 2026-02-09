@@ -1,12 +1,10 @@
 import json
-import time
 from math import radians, degrees, sin, cos, atan2, sqrt
 
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import requests
-import geocoder  # 新增 IP 定位庫
 
 # ====== Key ======
 AMAP_JS_KEY = "0cd3a5f0715be098c172e5359b94e99d"
@@ -73,80 +71,17 @@ def amap_nearby_restaurants(lat, lon, radius_m=3000, keywords="餐厅", offset=2
         for c in df.columns: df[c] = df[c].astype(str).replace("nan","")
     return df
 
-# ---------- 定位區塊（GPS + IP 雙軌） ----------
-def location_block():
-    st.subheader("📍 定位功能")
-    
-    # 讀取 URL 回填的參數
-    lat = qp_get("lat")
-    lon = qp_get("lon")
-    acc = qp_get("acc")
-    src = qp_get("src")
-    err = qp_get("geo_err")
-
-    if err:
-        st.error(f"GPS 失敗: {err}")
-
-    # 如果有座標，顯示出來
-    if lat and lon:
-        try:
-            glat, glon = float(lat), float(lon)
-            label = "GPS (高精度)" if src == "gps" else "IP (粗略)"
-            st.info(f"✅ 已取得 {label}：{glat:.5f}, {glon:.5f}")
-            return glat, glon, src
-        except: pass
-
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # 選項A: HTML5 GPS
-        html = """
-        <div style="text-align:center;">
-          <button onclick="getGPS()" style="width:100%;padding:10px;background:#000;color:#fff;border:none;border-radius:8px;cursor:pointer;">
-            📡 精準 GPS
-          </button>
-          <div id="status" style="font-size:12px;color:#555;margin-top:5px;"></div>
-        </div>
-        <script>
-          function go(lat, lon, acc, src) {
-            const u = new URL(window.top.location.href);
-            u.searchParams.set("lat", lat); u.searchParams.set("lon", lon);
-            u.searchParams.set("acc", acc); u.searchParams.set("src", src);
-            u.searchParams.delete("geo_err");
-            window.top.location.href = u.toString();
-          }
-          function getGPS() {
-            const s = document.getElementById("status");
-            if (!navigator.geolocation) { s.innerText="不支援"; return; }
-            s.innerText="定位中...";
-            navigator.geolocation.getCurrentPosition(
-              (p) => go(p.coords.latitude, p.coords.longitude, p.coords.accuracy, "gps"),
-              (e) => { s.innerText="失敗:"+e.message; },
-              {enableHighAccuracy:true, timeout:10000}
-            );
-          }
-        </script>
-        """
-        components.html(html, height=80)
-
-    with col2:
-        # 選項B: IP 定位（Python 端處理）
-        if st.button("🌐 IP 粗定位 (備用)", use_container_width=True):
-            try:
-                g = geocoder.ip("me")
-                if g.ok:
-                    qp_del("geo_err") # 清除舊錯誤
-                    # 寫入 URL 讓邏輯統一
-                    st.query_params["lat"] = str(g.latlng[0])
-                    st.query_params["lon"] = str(g.latlng[1])
-                    st.query_params["src"] = "ip"
-                    st.rerun()
-                else:
-                    st.error("IP 定位失敗")
-            except Exception as e:
-                st.error(f"IP 定位錯誤: {e}")
-
-    return None
+# ---------- 免費 IP 定位（替代 GPS） ----------
+def get_ip_location():
+    try:
+        # 使用 ip-api.com (免費，不需 Key)
+        r = requests.get("http://ip-api.com/json/?fields=status,message,country,regionName,city,lat,lon", timeout=5)
+        data = r.json()
+        if data["status"] == "success":
+            return float(data["lat"]), float(data["lon"]), f"{data['city']}, {data['regionName']}"
+        return None
+    except:
+        return None
 
 # ---------- 高德地圖 ----------
 def render_amap(spots, center, height=500):
@@ -198,34 +133,43 @@ if pk_lat and pk_lon: st.toast(f"📍 地圖選點: {pk_lat}, {pk_lon}")
 left, right = st.columns([1, 2], gap="medium")
 
 with left:
-    # 1. 定位區塊（GPS/IP）
-    loc_res = location_block()
+    st.subheader("📍 定位 (IP 免費 API)")
+    if st.button("🌍 取得我的大概位置", type="primary", use_container_width=True):
+        loc = get_ip_location()
+        if loc:
+            lat, lon, city = loc
+            st.session_state["ip_loc"] = (lat, lon, city)
+            st.toast(f"✅ 定位成功: {city}", icon="🌍")
+            st.rerun()
+        else:
+            st.error("定位失敗，請手動輸入")
+
+    # 顯示 IP 定位結果
+    ip_loc = st.session_state.get("ip_loc")
     
     st.divider()
     st.subheader("➕ 加入位置")
     name = st.text_input("名字", placeholder="例如: 小明")
     
     # 自動切換模式
-    idx = 0
-    if loc_res: idx=0
+    idx = 2
+    if ip_loc: idx=0
     elif pk_lat: idx=1
-    else: idx=2
     
-    mode = st.radio("來源", ["使用定位結果", "使用地圖點選", "手動/批量"], index=idx)
+    mode = st.radio("來源", ["使用 IP 定位", "使用地圖點選", "手動/批量"], index=idx)
 
-    if mode == "使用定位結果":
-        if loc_res:
-            if st.button(f"✅ 加入 ({loc_res[2].upper()})", type="primary", use_container_width=True):
+    if mode == "使用 IP 定位":
+        if ip_loc:
+            st.info(f"📍 {ip_loc[2]} ({ip_loc[0]}, {ip_loc[1]})")
+            if st.button("✅ 加入此位置", type="primary", use_container_width=True):
                 st.session_state.spots.append({
                     "name": name.strip() or f"人{len(st.session_state.spots)+1}",
-                    "lat": loc_res[0], "lon": loc_res[1], "source": loc_res[2]
+                    "lat": ip_loc[0], "lon": ip_loc[1], "source": "ip"
                 })
                 st.toast("✅ 已加入！", icon="🎉")
-                qp_del("lat", "lon", "acc", "src", "geo_err")
-                time.sleep(0.5)
                 st.rerun()
         else:
-            st.caption("請先在上方取得定位")
+            st.caption("請先點上方按鈕取得位置")
 
     elif mode == "使用地圖點選":
         if pk_lat:
@@ -236,7 +180,6 @@ with left:
                 })
                 st.toast("✅ 已加入！", icon="🎉")
                 qp_del("pick_lat", "pick_lon")
-                time.sleep(0.5)
                 st.rerun()
         else:
             st.caption("請在右側地圖點選")
@@ -255,13 +198,13 @@ with left:
                 except: pass
             if cnt: 
                 st.toast(f"✅ 加入 {cnt} 筆", icon="🎉")
-                time.sleep(0.5)
                 st.rerun()
 
     st.divider()
     if st.button("🗑️ 清空", use_container_width=True):
         st.session_state.spots=[]
-        qp_del("lat","lon","acc","src","pick_lat","pick_lon")
+        if "ip_loc" in st.session_state: del st.session_state["ip_loc"]
+        qp_del("pick_lat","pick_lon")
         st.rerun()
 
 with right:
