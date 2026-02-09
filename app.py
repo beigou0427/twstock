@@ -104,7 +104,7 @@ def render_map(spots, center, height=500):
             const lon = e.lnglat.getLng();
             document.getElementById("msg").innerText = `選中: ${{lat.toFixed(5)}}, ${{lon.toFixed(5)}} (跳轉中...)`;
             new AMap.Marker({{ position:[lon, lat], icon:"https://webapi.amap.com/theme/v1.3/markers/n/mark_b.png" }}).setMap(map);
-            setTimeout(() => updateURL(lat, lon), 100);
+            setTimeout(() => updateURL(lat, lon), 50);
         }});
 
         if(ms.length > 0) map.setFitView();
@@ -120,17 +120,19 @@ st.set_page_config(page_title="聚会神器", layout="wide")
 st.title("🍽️ 聚会中点 + 餐厅推荐")
 
 if "spots" not in st.session_state: st.session_state.spots = []
-if "add_mode" not in st.session_state: st.session_state.add_mode = "手動/批量" # 預設模式
+if "add_mode" not in st.session_state: st.session_state.add_mode = "手動/批量"
 
-# 1. 偵測地圖點選參數
+# 1. 偵測 URL 參數並同步到 session_state
 pk_lat = qp_get("pick_lat")
 pk_lon = qp_get("pick_lon")
 
-# ⚠️ 強制切換模式邏輯
 if pk_lat and pk_lon:
+    # 存入 session_state 以便 UI 穩定讀取
+    st.session_state["picked_coords"] = (float(pk_lat), float(pk_lon))
+    # 強制切換模式
     if st.session_state.add_mode != "地圖點選":
         st.session_state.add_mode = "地圖點選"
-        st.rerun()  # 強制重跑一次以刷新 radio 狀態
+        st.rerun()
 
 left, right = st.columns([1, 2], gap="medium")
 
@@ -141,18 +143,18 @@ with left:
         loc = get_ip_loc()
         if loc:
             st.session_state["ip_res"] = loc
-            st.session_state.add_mode = "IP定位結果" # 切換模式
+            st.session_state.add_mode = "IP定位結果"
             st.toast(f"IP: {loc[2]}", icon="✅")
             st.rerun()
         else: st.error("定位失敗")
 
     ip_res = st.session_state.get("ip_res")
+    picked = st.session_state.get("picked_coords") # 從 session 讀取點選結果
 
-    # 綁定 session_state 確保模式同步
     mode = st.radio(
         "來源", 
         ["IP定位結果", "地圖點選", "手動/批量"], 
-        key="add_mode"  # 關鍵：綁定 session_state
+        key="add_mode"
     )
 
     name = st.text_input("名字", "朋友"+str(len(st.session_state.spots)+1))
@@ -163,29 +165,36 @@ with left:
             if st.button("✅ 加入 IP 點", type="primary", use_container_width=True):
                 st.session_state.spots.append({"name":name, "lat":ip_res[0], "lon":ip_res[1], "src":"ip"})
                 st.toast("已加入", icon="🎉")
-                del st.session_state["ip_res"]
-                st.session_state.add_mode = "手動/批量" # 加完切回預設
+                if "ip_res" in st.session_state: del st.session_state["ip_res"]
+                st.session_state.add_mode = "手動/批量"
                 st.rerun()
         else: st.caption("請先點上方 IP 定位")
 
     elif mode == "地圖點選":
-        if pk_lat:
-            # 這裡一定會顯示按鈕
-            st.info(f"📍 {pk_lat}, {pk_lon}")
+        # 這裡優先讀取 session 裡的 picked_coords
+        if picked:
+            lat, lon = picked
+            st.info(f"📍 {lat:.5f}, {lon:.5f}")
+            
             if st.button("✅ 加入此點", type="primary", use_container_width=True):
-                st.session_state.spots.append({"name":name, "lat":float(pk_lat), "lon":float(pk_lon), "src":"map"})
+                st.session_state.spots.append({"name":name, "lat":lat, "lon":lon, "src":"map"})
                 st.toast("已加入", icon="🎉")
+                
+                # 清理狀態
                 qp_del("pick_lat", "pick_lon")
-                st.session_state.add_mode = "手動/批量" # 加完切回預設
+                if "picked_coords" in st.session_state: del st.session_state["picked_coords"]
+                
+                st.session_state.add_mode = "手動/批量"
                 time.sleep(0.5)
                 st.rerun()
-            
+                
             if st.button("❌ 取消選取", use_container_width=True):
                 qp_del("pick_lat", "pick_lon")
+                if "picked_coords" in st.session_state: del st.session_state["picked_coords"]
                 st.session_state.add_mode = "手動/批量"
                 st.rerun()
-        else: 
-            st.warning("👈 請在右側地圖上點一下")
+        else:
+            st.warning("👈 請在右側地圖上點一下，會自動跳轉回來")
 
     else:
         l_in = st.text_input("緯度,經度", placeholder="39.90,116.40")
@@ -202,6 +211,7 @@ with left:
     if st.button("🗑️ 清空", use_container_width=True):
         st.session_state.spots=[]
         qp_del("pick_lat", "pick_lon")
+        if "picked_coords" in st.session_state: del st.session_state["picked_coords"]
         st.rerun()
 
 with right:
