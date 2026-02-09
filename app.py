@@ -1,15 +1,562 @@
-# -------------------------
-# 5) 載入數據
-# -------------------------
-with st.spinner("🚀 啟動財富引擎..."):
-    try:
-        S_current, df_latest, latest_date, ma20, ma60 = get_data(FINMIND_TOKEN)
-    except Exception:
-        st.error("連線逾時，請重整頁面")
-        st.stop()
+"""
+🔰 貝伊果屋 - 財富雙軌系統 (v6.1 UI/UX 單檔版)
+整合：ETF定投 + 智能情報中心 + LEAPS CALL 掃描 + 回測 + 戰情室(籌碼/點位/損益)
+注意：FinMind token 請放在 Streamlit secrets：finmind_token
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+from datetime import date, timedelta
+from FinMind.data import DataLoader
+from scipy.stats import norm
+import plotly.graph_objects as go
+import plotly.express as px
+import feedparser
+from collections import Counter
+import streamlit.components.v1 as components
+
+# Optional libs
+try:
+    from streamlit_pills import pills
+    PILLS_AVAILABLE = True
+except Exception:
+    PILLS_AVAILABLE = False
+
 
 # -------------------------
-# 6) 側邊欄（加 Quick Scan / Share）
+# 0) Tab 跳轉（query param）
+# -------------------------
+def _js_click_tab(tab_index: int):
+    components.html(
+        f"""
+        <script>
+            setTimeout(function(){{
+                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                if (tabs && tabs.length > {tab_index}) {{
+                    tabs[{tab_index}].click();
+                }}
+            }}, 300);
+        </script>
+        """,
+        height=0,
+    )
+
+if "jump" in st.query_params:
+    j = str(st.query_params.get("jump", ""))
+    if j in ("2", "tab2"):
+        _js_click_tab(2)
+    st.query_params.clear()
+
+
+# -------------------------
+# 1) Page config + CSS
+# -------------------------
+st.set_page_config(
+    page_title="貝伊果屋-財富雙軌系統",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    page_icon="🥯",
+)
+
+st.markdown(
+    """
+<style>
+.big-font {font-size:20px !important; font-weight:bold;}
+
+/* 手機響應 */
+@media (max-width: 768px) {
+  .block-container { padding-top: 1.0rem; padding-left: 0.8rem; padding-right: 0.8rem; }
+  .stTabs [data-baseweb="tab-list"] { gap: 0.35rem; flex-wrap: wrap; }
+  .stTabs button { font-size: 0.9rem; padding: 0.45rem 0.8rem; min-height: 2.3rem; }
+}
+
+/* 新聞卡片 */
+.news-card {
+  background-color: #262730;
+  padding: 15px;
+  border-radius: 12px;
+  border-left: 5px solid #4ECDC4;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.28);
+  transition: transform 0.2s, background-color 0.2s;
+}
+.news-card:hover { background-color: #31333F; transform: translateY(-2px); }
+
+/* 情緒標籤 */
+.tag-bull {background-color: #28a745; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;}
+.tag-bear {background-color: #dc3545; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;}
+.tag-neutral {background-color: #6c757d; color: #fff; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700;}
+.source-badge {background-color: #444; color: #ddd; padding: 2px 6px; border-radius: 6px; font-size: 11px; margin-right: 8px;}
+
+/* 跑馬燈 */
+.ticker-wrap {
+  width: 100%;
+  overflow: hidden;
+  background-color: #1E1E1E;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  white-space: nowrap;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
+# -------------------------
+# 2) Session state
+# -------------------------
+init_state = {
+    "portfolio": [],
+    "user_type": "free",
+    "is_pro": False,
+    "disclaimer_accepted": False,
+    "search_results": None,
+    "selected_contract": None,
+    "filter_kw": "全部",
+    "quick_scan_payload": None,
+}
+for k, v in init_state.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+
+# -------------------------
+# 3) Token
+# -------------------------
+FINMIND_TOKEN = st.secrets.get("finmind_token", "")
+if not FINMIND_TOKEN:
+    st.error("缺少 FinMind Token：請在 Streamlit secrets 設定 finmind_token。")
+    st.stop()
+
+
+# -------------------------
+# 4) Data / Utils
+# -------------------------
+@st.cache_data(ttl=60)
+def get_data(token: str):
+    dl = DataLoader()
+    dl.login_by_token(api_token=token)
+
+    try:
+        index_df = dl.taiwan_stock_daily(
+            "TAIEX", start_date=(date.today() - timedelta(days=100)).strftime("%Y-%m-%d")
+        )
+        S = float(index_df["close"].iloc[-1]) if not index_df.empty else 23000.0
+        ma20 = (
+            index_df["close"].rolling(20).mean().iloc[-1] if len(index_df) > 20 else S * 0.98
+        )
+        ma60 = (
+            index_df["close"].rolling(60).mean().iloc[-1] if len(index_df) > 60 else S * 0.95
+        )
+    except Exception:
+        S = 23000.0
+        ma20, ma60 = 22800.0, 22500.0
+
+    opt_start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+    df = dl.taiwan_option_daily("TXO", start_date=opt_start)
+
+    if df.empty:
+        return S, pd.DataFrame(), pd.to_datetime(date.today()), ma20, ma60
+
+    df["date"] = pd.to_datetime(df["date"])
+    latest = df["date"].max()
+    df_latest = df[df["date"] == latest].copy()
+    return S, df_latest, latest, ma20, ma60
+
+
+@st.cache_data(ttl=1800)
+def get_real_news(token: str):
+    dl = DataLoader()
+    dl.login_by_token(api_token=token)
+    start_date = (date.today() - timedelta(days=3)).strftime("%Y-%m-%d")
+    try:
+        news = dl.taiwan_stock_news(stock_id="TAIEX", start_date=start_date)
+        if news.empty:
+            news = dl.taiwan_stock_news(stock_id="2330", start_date=start_date)
+        news["date"] = pd.to_datetime(news["date"])
+        news = news.sort_values("date", ascending=False).head(10)
+        return news
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=1800)
+def get_institutional_data(token: str):
+    dl = DataLoader()
+    dl.login_by_token(api_token=token)
+    start_date = (date.today() - timedelta(days=10)).strftime("%Y-%m-%d")
+    try:
+        df = dl.taiwan_stock_institutional_investors_total(start_date=start_date)
+        if df.empty:
+            return pd.DataFrame()
+        df["date"] = pd.to_datetime(df["date"])
+        latest_date = df["date"].max()
+        df_latest = df[df["date"] == latest_date].copy()
+        df_latest["net"] = (df_latest["buy"] - df_latest["sell"]) / 100000000
+        return df_latest
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600)
+def get_support_pressure(token: str):
+    dl = DataLoader()
+    dl.login_by_token(api_token=token)
+    start_date = (date.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+    try:
+        df = dl.taiwan_stock_daily("TAIEX", start_date=start_date)
+        if df.empty:
+            return 0, 0
+        pressure = df["max"].tail(20).max()
+        support = df["min"].tail(60).min()
+        return pressure, support
+    except Exception:
+        return 0, 0
+
+
+def plot_payoff(K, premium, cp):
+    x_range = np.linspace(K * 0.9, K * 1.1, 100)
+    profit = []
+    for spot in x_range:
+        val = (max(0, spot - K) - premium) if cp == "CALL" else (max(0, K - spot) - premium)
+        profit.append(val * 50)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_range,
+            y=profit,
+            mode="lines",
+            fill="tozeroy",
+            line=dict(color="green" if profit[-1] > 0 else "red"),
+        )
+    )
+    fig.add_hline(y=0, line_dash="dash", line_color="gray")
+    fig.update_layout(
+        title=f"到期損益圖 ({cp} @ {K})",
+        xaxis_title="指數",
+        yaxis_title="損益(TWD)",
+        height=300,
+        margin=dict(l=0, r=0, t=30, b=0),
+    )
+    return fig
+
+
+def plot_oi_walls(current_price):
+    strikes = np.arange(int(current_price) - 600, int(current_price) + 600, 100)
+    np.random.seed(int(current_price))
+    call_oi = np.random.randint(2000, 15000, len(strikes))
+    put_oi = np.random.randint(2000, 15000, len(strikes))
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=strikes, y=call_oi, name="Call OI (壓力)", marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(x=strikes, y=-put_oi, name="Put OI (支撐)", marker_color="#4ECDC4"))
+    fig.update_layout(
+        title="籌碼戰場 (OI Walls)",
+        barmode="overlay",
+        height=300,
+        margin=dict(l=0, r=0, t=30, b=0),
+    )
+    return fig
+
+
+@st.cache_data(ttl=300)
+def get_real_market_ticker(token: str):
+    data = {}
+    try:
+        dl = DataLoader()
+        dl.login_by_token(api_token=token)
+
+        df_tw = dl.taiwan_stock_daily("TAIEX", start_date=(date.today() - timedelta(days=5)).strftime("%Y-%m-%d"))
+        if not df_tw.empty and len(df_tw) >= 2:
+            close = float(df_tw["close"].iloc[-1])
+            prev = float(df_tw["close"].iloc[-2])
+            change = (close - prev) / prev * 100
+            data["taiex"] = f"{close:,.0f}"
+            data["taiex_pct"] = f"{change:+.1f}%"
+            data["taiex_color"] = "#28a745" if change > 0 else "#dc3545"
+        else:
+            data["taiex"], data["taiex_pct"], data["taiex_color"] = "N/A", "0%", "gray"
+
+        df_tsmc = dl.taiwan_stock_daily("2330", start_date=(date.today() - timedelta(days=5)).strftime("%Y-%m-%d"))
+        if not df_tsmc.empty and len(df_tsmc) >= 2:
+            close = float(df_tsmc["close"].iloc[-1])
+            prev = float(df_tsmc["close"].iloc[-2])
+            change = (close - prev) / prev * 100
+            data["tsmc"] = f"{close:,.0f}"
+            data["tsmc_pct"] = f"{change:+.1f}%"
+            data["tsmc_color"] = "#28a745" if change > 0 else "#dc3545"
+        else:
+            data["tsmc"], data["tsmc_pct"], data["tsmc_color"] = "N/A", "0%", "gray"
+
+        try:
+            import yfinance as yf
+
+            nq = yf.Ticker("NQ=F").history(period="2d")
+            if len(nq) >= 1:
+                last = float(nq["Close"].iloc[-1])
+                prev = float(nq["Close"].iloc[-2]) if len(nq) > 1 else last
+                chg = (last - prev) / prev * 100 if prev else 0
+                data["nq"] = f"{last:,.0f}"
+                data["nq_pct"] = f"{chg:+.1f}%"
+                data["nq_color"] = "#28a745" if chg > 0 else "#dc3545"
+            else:
+                data["nq"], data["nq_pct"], data["nq_color"] = "N/A", "0%", "gray"
+
+            btc = yf.Ticker("BTC-USD").history(period="2d")
+            if len(btc) >= 1:
+                last = float(btc["Close"].iloc[-1])
+                prev = float(btc["Close"].iloc[-2]) if len(btc) > 1 else last
+                chg = (last - prev) / prev * 100 if prev else 0
+                data["btc"] = f"${last:,.0f}"
+                data["btc_pct"] = f"{chg:+.1f}%"
+                data["btc_color"] = "#28a745" if chg > 0 else "#dc3545"
+            else:
+                data["btc"], data["btc_pct"], data["btc_color"] = "N/A", "0%", "gray"
+        except Exception:
+            data["nq"], data["nq_pct"], data["nq_color"] = "N/A", "0%", "gray"
+            data["btc"], data["btc_pct"], data["btc_color"] = "N/A", "0%", "gray"
+
+    except Exception:
+        return {k: "N/A" for k in ["taiex", "tsmc", "nq", "btc"]}
+    return data
+
+
+def build_news_feed(token: str):
+    taiwan_news = get_real_news(token)
+
+    rss_sources = {
+        "📈 Yahoo財經": "https://tw.stock.yahoo.com/rss/index.rss",
+        "🌐 Reuters": "https://feeds.reuters.com/reuters/businessNews",
+        "📊 CNBC Tech": "https://www.cnbc.com/id/19854910/device/rss/rss.html",
+    }
+
+    all_news = []
+    if not taiwan_news.empty:
+        for _, row in taiwan_news.head(5).iterrows():
+            all_news.append(
+                {
+                    "title": str(row.get("title", "無標題")),
+                    "link": str(row.get("link", "#")),
+                    "source": "🇹🇼 台股新聞",
+                    "time": pd.to_datetime(row["date"]).strftime("%m/%d %H:%M") if "date" in row else "N/A",
+                    "summary": (str(row.get("description", ""))[:100] + "..."),
+                }
+            )
+
+    for src_title, url in rss_sources.items():
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:3]:
+                all_news.append(
+                    {
+                        "title": str(getattr(entry, "title", "")),
+                        "link": str(getattr(entry, "link", "#")),
+                        "source": src_title,
+                        "time": str(getattr(entry, "published", "N/A")),
+                        "summary": (str(getattr(entry, "summary", ""))[:100] + "..."),
+                    }
+                )
+        except Exception:
+            pass
+
+    pos_keywords = ["上漲", "漲", "買", "多頭", "樂觀", "強勢", "Bull", "Rise", "AI", "成長", "台積電", "營收", "創高"]
+    neg_keywords = ["下跌", "跌", "賣", "空頭", "悲觀", "弱勢", "Bear", "Fall", "關稅", "通膨", "衰退"]
+
+    word_list, pos_score, neg_score = [], 0, 0
+    for n in all_news:
+        text = (str(n.get("title", "")) + " " + str(n.get("summary", ""))).lower()
+        n_pos = sum(text.count(k.lower()) for k in pos_keywords)
+        n_neg = sum(text.count(k.lower()) for k in neg_keywords)
+
+        if n_pos > n_neg:
+            n["sentiment"] = "bull"
+        elif n_neg > n_pos:
+            n["sentiment"] = "bear"
+        else:
+            n["sentiment"] = "neutral"
+
+        pos_score += n_pos
+        neg_score += n_neg
+
+        for k in pos_keywords + neg_keywords:
+            if k.lower() in text:
+                word_list.append(k)
+
+    sentiment_idx = (pos_score - neg_score) / max(pos_score + neg_score, 1)
+    sentiment_label = "🟢 貪婪" if sentiment_idx > 0.2 else "🔴 恐慌" if sentiment_idx < -0.2 else "🟡 中性"
+
+    top_keywords = ["全部"]
+    if word_list:
+        top_keywords += [w for w, _ in Counter(word_list).most_common(6)]
+    else:
+        top_keywords += ["台積電", "AI", "降息", "強勢", "營收"]
+
+    return all_news, sentiment_idx, sentiment_label, top_keywords
+
+
+def render_news_card(n: dict):
+    sent = n.get("sentiment", "neutral")
+    if sent == "bull":
+        tag_html = '<span class="tag-bull">看多</span>'
+        border_color = "#28a745"
+    elif sent == "bear":
+        tag_html = '<span class="tag-bear">看空</span>'
+        border_color = "#dc3545"
+    else:
+        tag_html = '<span class="tag-neutral">中性</span>'
+        border_color = "#6c757d"
+
+    title = str(n.get("title", ""))
+    link = str(n.get("link", "#"))
+    source = str(n.get("source", ""))
+    tm = str(n.get("time", ""))
+    summary = str(n.get("summary", ""))
+
+    card_html = f"""
+    <div class="news-card" style="border-left: 5px solid {border_color};">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div>
+          <span class="source-badge">{source}</span>
+          {tag_html}
+        </div>
+        <div style="font-size:0.8em; color:#888;">{tm}</div>
+      </div>
+      <a href="{link}" target="_blank" style="text-decoration:none; color:white; font-weight:800; font-size:1.05em; display:block; margin-bottom:6px; line-height:1.35;">
+        {title}
+      </a>
+      <div style="font-size:0.92em; color:#aaa; line-height:1.45;">
+        {summary}
+      </div>
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
+
+
+# -------------------------
+# 5) LEAPS scan（封裝）
+# -------------------------
+def calculate_raw_score(delta, days, volume, S, K, op_type):
+    s_delta = abs(delta) * 100.0
+    m = (S - K) / S if op_type == "CALL" else (K - S) / S
+    s_money = max(-10, min(m * 100 * 2, 10)) + 50
+    s_time = min(days / 90.0 * 100, 100)
+    s_vol = min(volume / 5000.0 * 100, 100)
+    return s_delta * 0.4 + s_money * 0.2 + s_time * 0.2 + s_vol * 0.2
+
+
+def micro_expand_scores(results):
+    if not results:
+        return []
+    results.sort(key=lambda x: x["raw_score"], reverse=True)
+    n = len(results)
+    top_n = max(1, int(n * 0.4))
+    for i in range(n):
+        if i < top_n:
+            score = 95.0 - (i / (top_n - 1)) * 5.0 if top_n > 1 else 95.0
+        else:
+            remain = n - top_n
+            if remain > 1:
+                idx = i - top_n
+                score = 85.0 - (idx / (remain - 1)) * 70.0
+            else:
+                score = 15.0
+        results[i]["勝率"] = round(score, 1)
+    return results
+
+
+def scan_leaps(df_latest: pd.DataFrame, S_current: float, latest_date: pd.Timestamp,
+              sel_con: str, op_type: str, target_lev: float):
+    if df_latest.empty:
+        return []
+
+    df_work = df_latest.copy()
+    df_work["call_put"] = df_work["call_put"].astype(str).str.upper().str.strip()
+    for col in ["close", "volume", "strike_price"]:
+        df_work[col] = pd.to_numeric(df_work[col], errors="coerce").fillna(0)
+
+    if not sel_con or len(str(sel_con)) != 6:
+        return []
+
+    tdf = df_work[(df_work["contract_date"].astype(str) == str(sel_con)) & (df_work["call_put"] == op_type)]
+    if tdf.empty:
+        return []
+
+    try:
+        y, m = int(str(sel_con)[:4]), int(str(sel_con)[4:6])
+        days = max((date(y, m, 15) - latest_date.date()).days, 1)
+        T = days / 365.0
+    except Exception:
+        return []
+
+    raw_results = []
+    for _, row in tdf.iterrows():
+        try:
+            K = float(row["strike_price"])
+            vol = float(row["volume"])
+            close_p = float(row["close"])
+            if K <= 0:
+                continue
+
+            try:
+                r, sigma = 0.02, 0.2
+                d1 = (np.log(S_current / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+                if op_type == "CALL":
+                    delta = float(norm.cdf(d1))
+                    bs_p = float(S_current * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d1 - sigma * np.sqrt(T)))
+                else:
+                    delta = float(-norm.cdf(-d1))
+                    bs_p = float(K * np.exp(-r * T) * norm.cdf(-(d1 - sigma * np.sqrt(T))) - S_current * norm.cdf(-d1))
+            except Exception:
+                delta, bs_p = 0.5, close_p
+
+            P = close_p if vol > 0 else bs_p
+            if P <= 0.5:
+                continue
+
+            lev = (abs(delta) * S_current) / P
+            if abs(delta) < 0.1:
+                continue
+
+            raw_score = calculate_raw_score(delta, days, vol, S_current, K, op_type)
+            status = "🟢成交" if vol > 0 else "🔵合理"
+
+            raw_results.append(
+                {
+                    "履約價": int(K),
+                    "價格": float(P),
+                    "狀態": status,
+                    "槓桿": float(lev),
+                    "Delta": float(delta),
+                    "raw_score": float(raw_score),
+                    "Vol": int(vol),
+                    "差距": float(abs(lev - target_lev)),
+                    "合約": str(sel_con),
+                    "類型": op_type,
+                    "天數": int(days),
+                }
+            )
+        except Exception:
+            continue
+
+    if not raw_results:
+        return []
+
+    final_results = micro_expand_scores(raw_results)
+    final_results.sort(key=lambda x: (x["差距"], -x["勝率"], -x["天數"]))
+    return final_results[:15]
+
+
+# -------------------------
+# 6) Load main data
+# -------------------------
+with st.spinner("啟動財富引擎..."):
+    S_current, df_latest, latest_date, ma20, ma60 = get_data(FINMIND_TOKEN)
+
+
+# -------------------------
+# 7) Sidebar（保留書籍 + Quick Scan）
 # -------------------------
 with st.sidebar:
     st.markdown("## 🔥**強烈建議**🔥")
@@ -31,15 +578,17 @@ with st.sidebar:
     )
     st.markdown("[🛒 購買『 長期買進 』](https://s.shopee.tw/6KypLiCjuy)")
 
+    if st.session_state.get("is_pro", False):
+        st.success("👑 Pro 會員")
+
     st.divider()
-    st.caption("📊 功能導航：\n• Tab0 定投\n• Tab1 情報\n• Tab2 CALL獵人\n• Tab3 回測\n• Tab4 戰情室")
+    st.caption("📊 功能導航：\n• Tab0: 定投\n• Tab1: 情報\n• Tab2: CALL獵人\n• Tab3: 回測\n• Tab4: 戰情室")
 
     st.divider()
     st.markdown("### ⚡ Quick Scan（跳到 Tab2）")
     qs_dir = st.selectbox("方向", ["CALL", "PUT"], index=0, key="qs_dir")
     qs_lev = st.slider("目標槓桿", 2.0, 20.0, 5.0, 0.5, key="qs_lev")
 
-    # 預設遠月合約：由 df_latest 推最遠 contract_date
     sel_con_quick = ""
     try:
         if not df_latest.empty:
@@ -48,8 +597,7 @@ with st.sidebar:
                 .dropna()
                 .astype(str)
             )
-            con_all = con_all[con_all.str.len() == 6].unique().tolist()
-            con_all = sorted(con_all)
+            con_all = sorted([c for c in con_all.unique().tolist() if len(str(c)) == 6])
             if con_all:
                 sel_con_quick = con_all[-1]
     except Exception:
@@ -66,16 +614,11 @@ with st.sidebar:
         st.query_params["jump"] = "2"
         st.rerun()
 
-    st.divider()
-    st.markdown("### 🔗 分享")
-    st.caption("把這頁貼到 Threads，配一張結果截圖效果最好。")
-    st.code("https://你的網域或 streamlit app 連結", language="text")
 
 # -------------------------
-# 7) 主介面 & 市場快報
+# 8) Header KPI
 # -------------------------
 st.markdown("# 🥯 **貝伊果屋：財富雙軌系統**")
-
 st.markdown("---")
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -91,8 +634,9 @@ with col4:
     st.metric("今日建議", signal)
 st.markdown("---")
 
+
 # -------------------------
-# 8) 合規聲明 Gate
+# 9) Disclaimer Gate
 # -------------------------
 if not st.session_state.get("disclaimer_accepted", False):
     st.error("🚨 **股票完全新手必讀！**")
@@ -104,7 +648,6 @@ if not st.session_state.get("disclaimer_accepted", False):
 - 💳 **定期定額** = 每月固定買，避開追高殺低
 """
     )
-
     st.markdown("---")
     st.markdown("## 🎯 **貝伊果屋5大功能**")
     st.markdown(
@@ -121,7 +664,6 @@ if not st.session_state.get("disclaimer_accepted", False):
 - **Tab3 回測系統**：驗證策略過去10年績效
 """
     )
-
     st.markdown("---")
     if st.button("✅ **我懂基礎，開始使用**", type="primary", use_container_width=True):
         st.session_state.disclaimer_accepted = True
@@ -129,8 +671,9 @@ if not st.session_state.get("disclaimer_accepted", False):
         st.rerun()
     st.stop()
 
+
 # -------------------------
-# 9) Tabs
+# 10) Tabs
 # -------------------------
 tab_names = [
     "🏦 **穩健ETF**",
@@ -142,8 +685,9 @@ tab_names = [
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 
+
 # --------------------------
-# Tab 0: 穩健 ETF
+# Tab 0: ETF 定投
 # --------------------------
 with tabs[0]:
     if not st.session_state.get("etf_done", False):
@@ -170,8 +714,9 @@ with tabs[0]:
                 if len(df) > 100:
                     first = float(df["close"].iloc[0])
                     last = float(df["close"].iloc[-1])
-                    yrs = (pd.to_datetime(df["date"].iloc[-1]) - pd.to_datetime(df["date"].iloc[0])).days / 365.25
-                    yrs = max(yrs, 0.1)
+                    d0 = pd.to_datetime(df["date"].iloc[0])
+                    d1 = pd.to_datetime(df["date"].iloc[-1])
+                    yrs = max((d1 - d0).days / 365.25, 0.1)
                     total = (last / first - 1) * 100
                     ann = ((last / first) ** (1 / yrs) - 1) * 100
                     cum_max = df["close"].expanding().max()
@@ -181,15 +726,7 @@ with tabs[0]:
                     rows.append([etf, "-", "-", "-", "-"])
             return pd.DataFrame(rows, columns=["ETF", "總報酬", "年化", "年數", "回撤"])
         except Exception:
-            return pd.DataFrame(
-                {
-                    "ETF": ["0050", "006208", "00662", "00757", "00646"],
-                    "總報酬": ["-", "-", "-", "-", "-"],
-                    "年化": ["-", "-", "-", "-", "-"],
-                    "年數": ["-", "-", "-", "-", "-"],
-                    "回撤": ["-", "-", "-", "-", "-"],
-                }
-            )
+            return pd.DataFrame({"ETF": ["0050"], "總報酬": ["-"], "年化": ["-"], "年數": ["-"], "回撤": ["-"]})
 
     perf_df = safe_backtest(FINMIND_TOKEN)
     st.dataframe(perf_df, use_container_width=True)
@@ -217,8 +754,9 @@ with tabs[0]:
     fig = px.line(pd.DataFrame({"年": yrs_arr, "資產": amt_arr}), x="年", y="資產")
     st.plotly_chart(fig, height=280, use_container_width=True)
 
+
 # --------------------------
-# Tab 1: 智能全球情報中心
+# Tab 1: 智能情報中心
 # --------------------------
 with tabs[1]:
     st.markdown("## 🌍 **智能全球情報中心**")
@@ -238,7 +776,7 @@ with tabs[1]:
     )
     st.caption("數據來源：FinMind (台股) + Yahoo Finance (國際/加密幣)")
 
-    with st.spinner("🤖 正在掃描全球市場訊號..."):
+    with st.spinner("掃描新聞與情緒..."):
         all_news, sentiment_idx, sentiment_label, top_keywords = build_news_feed(FINMIND_TOKEN)
 
     col_dash1, col_dash2 = st.columns([1, 2])
@@ -305,8 +843,9 @@ div[role="radiogroup"] label[data-checked="true"] {background: #4ECDC4; color: b
         with (left if i % 2 == 0 else right):
             render_news_card(n)
 
+
 # --------------------------
-# Tab 2: 期權獵人（LEAPS CALL）
+# Tab 2: 期權獵人
 # --------------------------
 with tabs[2]:
     KEY_RES = "results_lev_v185"
@@ -316,12 +855,10 @@ with tabs[2]:
     st.session_state.setdefault(KEY_BEST, None)
     st.session_state.setdefault(KEY_PF, [])
 
-    st.markdown("### ♟️ **專業戰情室 (槓桿篩選 + 微觀勝率 + LEAPS CALL)**")
-
+    st.markdown("### ♟️ **槓桿篩選 + 微觀勝率 + LEAPS CALL**")
     col_search, col_portfolio = st.columns([1.3, 0.7])
 
     with col_search:
-        st.markdown("#### 🔍 **槓桿掃描 (LEAPS CALL 優化)**")
         if df_latest.empty:
             st.error("⚠️ 無期權資料")
             st.stop()
@@ -346,8 +883,8 @@ with tabs[2]:
                 st.session_state[KEY_BEST] = None
                 st.rerun()
 
-        # Quick Scan 進來就直接跑一次（避免使用者還要再按）
-        if "quick_scan_payload" in st.session_state and st.session_state["quick_scan_payload"]:
+        # Quick Scan 自動套用並跑一次
+        if st.session_state.get("quick_scan_payload"):
             payload = st.session_state["quick_scan_payload"]
             st.session_state["quick_scan_payload"] = None
             sel_con = payload.get("sel_con", sel_con)
@@ -355,7 +892,6 @@ with tabs[2]:
             target_lev = float(payload.get("target_lev", target_lev))
 
             st.info(f"已套用 Quick Scan：{op_type} / {sel_con} / 目標槓桿 {target_lev:.1f}x")
-
             results = scan_leaps(df_latest, S_current, latest_date, sel_con, op_type, target_lev)
             st.session_state[KEY_RES] = results
             st.session_state[KEY_BEST] = results[0] if results else None
@@ -374,8 +910,8 @@ with tabs[2]:
             st.markdown("---")
             cA, cB = st.columns([2, 1])
             with cA:
-                st.markdown("#### 🏆 **最佳推薦 (LEAPS CALL)**")
                 p_int = int(round(float(best["價格"])))
+                st.markdown("#### 🏆 **最佳推薦 (LEAPS CALL)**")
                 st.markdown(
                     f"`{best['合約']} {best['履約價']} {best['類型']}` **{p_int}點**  \n"
                     f"槓桿 `{best['槓桿']:.1f}x` | 勝率 `{best['勝率']:.1f}%` | 天數 `{best.get('天數', 0)}天`"
@@ -438,14 +974,14 @@ with tabs[2]:
     st.markdown(
         """
 **LEAPS CALL (長期看漲選擇權)**：
-- 到期日 > 6個月，時間衰減緩慢，適合長期看多標的（如AI、指數）
-- **優勢**：高槓桿、低成本替代現股，時間價值損耗少
-- **本系統優化**：預設遠月合約 + 槓桿篩選，優先推薦深度價內/價平合約
+- 到期日 > 6個月，時間衰減相對慢，適合中長期看多
+- **本系統**：預設遠月合約 + 槓桿篩選 + 微觀勝率排序
 """
     )
 
+
 # --------------------------
-# Tab 3: 歷史回測（保留你的 Pro gate）
+# Tab 3: 回測（簡化保留 Pro gate）
 # --------------------------
 with tabs[3]:
     st.markdown("### 📊 **策略時光機：真實歷史驗證**")
@@ -454,7 +990,7 @@ with tabs[3]:
         col_lock1, col_lock2 = st.columns([2, 1])
         with col_lock1:
             st.warning("🔒 **此為 Pro 會員專屬功能**")
-            st.info("解鎖後可查看：\n- ✅ 真實歷史數據回測\n- ✅ 策略 vs 大盤績效\n- ✅ 詳細訊號點位")
+            st.info("解鎖後可查看：\n- ✅ 真實歷史數據回測\n- ✅ 策略 vs 大盤績效\n- ✅ 詳細交易訊號點位")
         with col_lock2:
             st.metric("累積報酬率", "🔒 ???%", "勝率 ???%")
             if st.button("⭐ 免費升級 Pro", key="upgrade_btn_tab3"):
@@ -476,6 +1012,7 @@ with tabs[3]:
             with st.spinner("正在下載並計算歷史數據..."):
                 dl = DataLoader()
                 dl.login_by_token(api_token=FINMIND_TOKEN)
+
                 end_date = date.today().strftime("%Y-%m-%d")
                 start_date = (date.today() - timedelta(days=period_days + 150)).strftime("%Y-%m-%d")
                 df_hist = dl.taiwan_stock_daily("TAIEX", start_date=start_date, end_date=end_date)
@@ -515,12 +1052,13 @@ with tabs[3]:
                     fig.update_layout(title="資金權益曲線 (真實歷史)", yaxis_title="資產淨值 (萬)", hovermode="x unified", height=400)
                     st.plotly_chart(fig, use_container_width=True)
 
+
 # --------------------------
-# Tab 4: 專業戰情室（保留你的視覺與籌碼）
+# Tab 4: 戰情室（籌碼/點位/損益）
 # --------------------------
 with tabs[4]:
     st.markdown("## 📰 **專業戰情中心**")
-    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 模型版本：v6.1 (UI/UX)")
+    st.caption(f"📅 資料日期：{latest_date.strftime('%Y-%m-%d')} | 💡 版本：v6.1 UI/UX")
 
     st.markdown("### 🔥 **籌碼戰場與點位分析**")
     col_chip1, col_chip2 = st.columns([1.5, 1])
@@ -581,24 +1119,13 @@ with tabs[4]:
     else:
         st.info("暫無持倉")
 
-# --------------------------
-# Tab 5~14: 擴充預留位
-# --------------------------
-with tabs[5]:
-    st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
-with tabs[6]:
-    st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
-with tabs[7]:
-    st.info("🚧 擴充功能 4：Line 推播 (開發中)")
-with tabs[8]:
-    st.info("🚧 擴充功能 5：期貨價差監控 (開發中)")
-with tabs[9]:
-    st.info("🚧 擴充功能 6：美股連動分析 (開發中)")
-with tabs[10]:
-    st.info("🚧 擴充功能 7：自定義策略腳本 (開發中)")
-with tabs[11]:
-    st.info("🚧 擴充功能 8：社群討論區 (開發中)")
-with tabs[12]:
-    st.info("🚧 擴充功能 9：課程學習中心 (開發中)")
-with tabs[13]:
-    st.info("🚧 擴充功能 10：VIP 專屬通道 (開發中)")
+# 擴充頁
+with tabs[5]: st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
+with tabs[6]: st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
+with tabs[7]: st.info("🚧 擴充功能 4：Line 推播 (開發中)")
+with tabs[8]: st.info("🚧 擴充功能 5：期貨價差監控 (開發中)")
+with tabs[9]: st.info("🚧 擴充功能 6：美股連動分析 (開發中)")
+with tabs[10]: st.info("🚧 擴充功能 7：自定義策略腳本 (開發中)")
+with tabs[11]: st.info("🚧 擴充功能 8：社群討論區 (開發中)")
+with tabs[12]: st.info("🚧 擴充功能 9：課程學習中心 (開發中)")
+with tabs[13]: st.info("🚧 擴充功能 10：VIP 專屬通道 (開發中)")
