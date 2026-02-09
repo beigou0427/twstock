@@ -332,328 +332,414 @@ tab_names = [
 tab_names += [f"🛠️ 擴充 {i+2}" for i in range(9)]
 tabs = st.tabs(tab_names)
 # --------------------------
-# Tab 0: 穩健 ETF (v7.9 - 完整詳細版)
+# Tab 0: 穩健 ETF (v8.0 - FinMind 即時(雙模式) + 特色摺疊完整版)
 # --------------------------
 
+import os
+import requests
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-import pandas as pd
-import pytz
-from datetime import datetime, time, date, timedelta
-import holidays
-import plotly.express as px
-import numpy as np
 
+import pandas as pd
+import numpy as np
+import pytz
+import holidays
+from datetime import datetime, time, date, timedelta
+
+import plotly.express as px
+
+
+# ========= Helpers =========
+TAIPEI_TZ = pytz.timezone("Asia/Taipei")
+TW_HOLIDAYS = holidays.TW()
+
+ETF_LIST = ["0050", "006208", "00662", "00757", "00646"]
+
+ETF_META = {
+    "0050": {"icon": "🇹🇼", "name": "元大台灣50", "track": "台灣50指數", "region": "台灣", "asset": "股票", "risk": "中", "hint": "台股大盤核心；適合新手定投"},
+    "006208": {"icon": "📈", "name": "富邦台50", "track": "台灣50指數", "region": "台灣", "asset": "股票", "risk": "中", "hint": "同追蹤台灣50；常被拿來比較成本與流動性"},
+    "00662": {"icon": "🇻🇳", "name": "富邦富時越南", "track": "富時越南相關指數", "region": "越南", "asset": "股票", "risk": "高", "hint": "新興市場波動大；適合高風險配置"},
+    "00757": {"icon": "💻", "name": "統一FANG+", "track": "NYSE FANG+", "region": "美國", "asset": "股票", "risk": "高", "hint": "科技集中度高；回撤會更深"},
+    "00646": {"icon": "🇯🇵", "name": "富邦日本", "track": "日股相關指數", "region": "日本", "asset": "股票", "risk": "中", "hint": "做全球分散；會有匯率影響"},
+}
+
+def _today_tw() -> date:
+    return datetime.now(TAIPEI_TZ).date()
+
+def _now_tw() -> datetime:
+    return datetime.now(TAIPEI_TZ)
+
+def is_market_open_tw() -> tuple[bool, str]:
+    now = _now_tw()
+    if now.weekday() >= 5 or now.date() in TW_HOLIDAYS:
+        return False, f"非交易日 {now.strftime('%m/%d %H:%M')}"
+    # TWSE regular session (simple rule)
+    open_t, close_t = time(9, 0), time(13, 30)
+    if open_t <= now.time() <= close_t:
+        return True, f"開盤中 {now.strftime('%H:%M')}"
+    return False, f"盤後 {now.strftime('%H:%M')}"
+
+def get_finmind_token() -> str:
+    # priority: Streamlit secrets -> env
+    token = ""
+    try:
+        token = st.secrets.get("FINMIND_API_TOKEN", "")
+    except Exception:
+        token = ""
+    if not token:
+        token = os.environ.get("FINMIND_API_TOKEN", "")
+    return token.strip()
+
+def parse_pct(x) -> float:
+    # "16.5%" -> 0.165
+    s = str(x).strip()
+    if not s or s.upper() == "N/A":
+        return np.nan
+    s = s.replace("%", "")
+    try:
+        return float(s) / 100.0
+    except Exception:
+        return np.nan
+
+def _safe_float(x, default=np.nan):
+    try:
+        return float(x)
+    except Exception:
+        return default
+
+
+# ========= Tab 0 =========
 with tabs[0]:
-    if not st.session_state.get('etf_done', False):
+    # --- onboarding ---
+    if not st.session_state.get("etf_done", False):
         st.markdown("### 🚨 新手入門")
-        st.info("ETF=股票籃子 | 定投=每月買")
-        if st.button("開始"): 
+        st.info("ETF = 股票籃子｜定投 = 每月買（長期才有意義）")
+        if st.button("開始", use_container_width=True):
             st.session_state.etf_done = True
             st.rerun()
         st.stop()
 
     st.markdown("## 🐢 ETF 定投")
 
-    # === 股市狀態 ===
-    @st.cache_data(ttl=300)
-    def is_market_open():
-        taiwan_tz = pytz.timezone('Asia/Taipei')
-        now = datetime.now(taiwan_tz)
-        tw_holidays = holidays.TW()
-        if now.weekday() >= 5 or now.date() in tw_holidays:
-            return False, f"非交易日 {now.strftime('%m/%d')}"
-        market_open, market_close = time(9, 0), time(13, 30)
-        if market_open <= now.time() <= market_close:
-            return True, f"開盤中 {now.strftime('%H:%M')}"
-        return False, f"盤後 {now.strftime('%H:%M')}"
+    # --- market status + refresh control ---
+    open_now, status_text = is_market_open_tw()
 
-    market_status = is_market_open()
-    status_col1, status_col2 = st.columns([3,1])
-    with status_col1:
-        if market_status[0]:
-            st.success(f"🟢 {market_status[1]} - FinMind 即時")
-            st_autorefresh(interval=30*1000, limit=780, key="finmind_live")
+    top_l, top_r = st.columns([3, 1])
+    with top_l:
+        if open_now:
+            st.success(f"🟢 {status_text}｜每 30 秒更新（FinMind）")
+            st_autorefresh(interval=30 * 1000, limit=10000, key="tab0_autorefresh")
         else:
-            st.info(f"🔴 {market_status[1]} - 最新收盤")
-    with status_col2:
-        if st.button("🔄 刷新", use_container_width=True):
+            st.info(f"🔴 {status_text}｜非開盤：降低更新頻率")
+    with top_r:
+        if st.button("🔄 立即刷新", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
 
-    # 導航
-    col1, col2 = st.columns(2)
-    with col1: 
-        st.markdown('<div style="padding:15px;border-radius:10px;background:#e8f5e8;border:1px solid #28a745;text-align:center;"><b style="color:#28a745;font-size:18px;">定投計畫</b></div>', unsafe_allow_html=True)
-    with col2: 
-        st.markdown('<div style="padding:15px;border-radius:10px;background:#2b0f0f;border:2px solid #ff4b4b;text-align:center;"><b style="color:#ff4b4b;font-size:18px;">進階戰室</b></div>', unsafe_allow_html=True)
-    
+    # --- navigation blocks ---
+    nav1, nav2 = st.columns(2)
+    with nav1:
+        st.markdown(
+            '<div style="padding:15px;border-radius:10px;background:#e8f5e8;border:1px solid #28a745;text-align:center;">'
+            '<b style="color:#28a745;font-size:18px;">定投計畫</b></div>',
+            unsafe_allow_html=True,
+        )
+    with nav2:
+        st.markdown(
+            '<div style="padding:15px;border-radius:10px;background:#2b0f0f;border:2px solid #ff4b4b;text-align:center;">'
+            '<b style="color:#ff4b4b;font-size:18px;">進階戰室</b></div>',
+            unsafe_allow_html=True,
+        )
+
+    # --- jump tab ---
     import streamlit.components.v1 as components
-    components.html('<button style="width:100%;height:40px;background:#ff4b4b;color:white;border-radius:8px;font-weight:bold;" onclick="jumpToTab2()">🚀 進階戰室</button><script>function jumpToTab2(){try{var t=window.parent.document.querySelectorAll(\'button[data-baseweb="tab"]\');t[2]&&t[2].click()}catch(e){}}</script>', height=50)
+    components.html(
+        '<button style="width:100%;height:40px;background:#ff4b4b;color:white;border-radius:8px;font-weight:bold;" onclick="jumpToTab2()">🚀 進階戰室</button>'
+        '<script>function jumpToTab2(){try{var t=window.parent.document.querySelectorAll(\'button[data-baseweb="tab"]\');t[2]&&t[2].click()}catch(e){}}</script>',
+        height=50,
+    )
 
     st.markdown("---")
 
-    # === 📡 FinMind 即時報價 ===
-    st.markdown("### 📡 FinMind 即時報價")
-    
-    @st.cache_data(ttl=30 if market_status[0] else 1800)
-    def get_finmind_realtime():
+    # =========================
+    # 📡 即時報價（FinMind）
+    # =========================
+    st.markdown("### 📡 即時報價（FinMind）")
+
+    @st.cache_data(ttl=30 if open_now else 600)
+    def get_quotes_finmind(etfs: list[str]) -> pd.DataFrame:
+        """
+        Mode A (Sponsor): use tick_snapshot API (multi-id in one request).
+        Mode B (No token): use today's kbar (last close) + yesterday daily close for change%.
+        """
+        token = get_finmind_token()
+        today_str = _today_tw().strftime("%Y-%m-%d")
+        yday_str = (_today_tw() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        # --- Mode A: Sponsor snapshot ---
+        if token:
+            try:
+                headers = {"Authorization": f"Bearer {token}"}
+                url = "https://api.finmindtrade.com/api/v4/taiwan_stock_tick_snapshot"
+                params = {"data_id": etfs}  # supports list
+                resp = requests.get(url, headers=headers, params=params, timeout=10)
+                resp.raise_for_status()
+                j = resp.json()
+                df = pd.DataFrame(j.get("data", []))
+                # expected columns: close, change_rate, open, high, low, total_volume, date, stock_id...
+                if len(df) > 0 and "stock_id" in df.columns:
+                    df["stock_id"] = df["stock_id"].astype(str)
+                    out = []
+                    for sid in etfs:
+                        row = df[df["stock_id"] == sid].tail(1)
+                        if len(row) == 0:
+                            out.append([sid, ETF_META.get(sid, {}).get("name", ""), np.nan, np.nan, np.nan, np.nan, np.nan, "❌無快照"])
+                            continue
+                        r = row.iloc[0]
+                        out.append([
+                            sid,
+                            ETF_META.get(sid, {}).get("name", ""),
+                            _safe_float(r.get("close")),
+                            _safe_float(r.get("change_rate")),
+                            _safe_float(r.get("open")),
+                            _safe_float(r.get("high")),
+                            _safe_float(r.get("low")),
+                            "🟢Snapshot",
+                        ])
+                    q = pd.DataFrame(out, columns=["ETF", "名稱", "價格", "漲跌幅(%)", "開盤", "最高", "最低", "來源"])
+                    return q
+            except Exception:
+                pass  # fallback to Mode B
+
+        # --- Mode B: No token fallback (kbar + daily) ---
         try:
             from FinMind.data import DataLoader
             dl = DataLoader()
-            
-            # 取得 0050 作為基準
-            if market_status[0]:
-                realtime = dl.taiwan_stock_minute('0050', start_date=date.today().strftime('%Y-%m-%d'))
-                base_price = realtime['close'].iloc[-1] if len(realtime) > 0 else 192
-            else:
-                daily = dl.taiwan_stock_daily('0050', date.today().strftime('%Y-%m-%d'), date.today().strftime('%Y-%m-%d'))
-                base_price = daily['close'].iloc[-1] if len(daily) > 0 else 192
-            
-            # 各 ETF 數據（基於真實價格比例估算）
-            etfs_data = {
-                '0050': [base_price, '+0.5%', '元大台灣50'],
-                '006208': [base_price * 0.187, '+0.3%', '富邦台50'],
-                '00662': [base_price * 0.234, '+1.2%', '富邦越南'],
-                '00757': [base_price * 0.271, '-0.1%', '統一FANG+'],
-                '00646': [base_price * 0.146, '+0.8%', '富邦日本']
-            }
-            
-            quotes = []
-            for etf, (price, change, name) in etfs_data.items():
-                status_icon = "🟢即時" if market_status[0] else "🔴收盤"
-                quotes.append([etf, name, f"NT${price:.1f}", change, status_icon])
-            
-            return pd.DataFrame(quotes, columns=['代號', '名稱', '即時價', '漲跌', '狀態'])
-        except Exception as e:
-            return pd.DataFrame({
-                '代號': ['0050', '006208', '00662', '00757', '00646'],
-                '名稱': ['元大台灣50', '富邦台50', '富邦越南', '統一FANG+', '富邦日本'],
-                '即時價': ['NT$192.0', 'NT$36.0', 'NT$45.0', 'NT$52.0', 'NT$28.0'],
-                '漲跌': ['+0.5%', '+0.3%', '+1.2%', '-0.1%', '+0.8%'],
-                '狀態': ['🔴收盤'] * 5
-            })
 
-    quote_df = get_finmind_realtime()
-    st.dataframe(
-        quote_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "代號": st.column_config.Column("ETF", width="small"),
-            "即時價": st.column_config.Column("價格", width="small"),
-            "漲跌": st.column_config.Column("漲跌幅", width="small")
-        }
-    )
+            out = []
+            for sid in etfs:
+                # today kbar
+                try:
+                    k = dl.taiwan_stock_kbar(stock_id=sid, date=today_str)
+                except TypeError:
+                    # some versions use taiwan_stock_bar()
+                    k = dl.taiwan_stock_bar(stock_id=sid, date=today_str)
+
+                last_px = np.nan
+                if isinstance(k, pd.DataFrame) and len(k) > 0 and "close" in k.columns:
+                    last_px = float(k["close"].iloc[-1])
+
+                # yesterday close
+                yclose = np.nan
+                try:
+                    d = dl.taiwan_stock_daily(stock_id=sid, start_date=yday_str, end_date=today_str)
+                    if isinstance(d, pd.DataFrame) and len(d) > 0 and "close" in d.columns:
+                        # take last available close (usually yesterday if today not closed)
+                        yclose = float(d["close"].iloc[0])
+                except Exception:
+                    pass
+
+                chg = (last_px - yclose) / yclose * 100 if np.isfinite(last_px) and np.isfinite(yclose) and yclose != 0 else np.nan
+                out.append([
+                    sid,
+                    ETF_META.get(sid, {}).get("name", ""),
+                    last_px,
+                    chg,
+                    np.nan, np.nan, np.nan,
+                    "⏳Kbar",
+                ])
+
+            q = pd.DataFrame(out, columns=["ETF", "名稱", "價格", "漲跌幅(%)", "開盤", "最高", "最低", "來源"])
+            return q
+        except Exception:
+            # last resort: empty
+            return pd.DataFrame(columns=["ETF", "名稱", "價格", "漲跌幅(%)", "開盤", "最高", "最低", "來源"])
+
+    quote_df = get_quotes_finmind(ETF_LIST)
+
+    if quote_df.empty:
+        st.error("報價載入失敗（請檢查 FinMind 連線或 Token）")
+    else:
+        show_df = quote_df.copy()
+        # format display columns
+        show_df["價格"] = show_df["價格"].map(lambda v: f"NT${v:,.2f}" if pd.notna(v) else "N/A")
+        show_df["漲跌幅(%)"] = show_df["漲跌幅(%)"].map(lambda v: f"{v:+.2f}%" if pd.notna(v) else "N/A")
+        st.dataframe(
+            show_df[["ETF", "名稱", "價格", "漲跌幅(%)", "來源"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        # quick metrics row
+        mcols = st.columns(len(ETF_LIST))
+        for i, sid in enumerate(ETF_LIST):
+            with mcols[i]:
+                r = quote_df[quote_df["ETF"] == sid].iloc[0]
+                px_str = f"NT${r['價格']:,.2f}" if pd.notna(r["價格"]) else "N/A"
+                chg_str = f"{r['漲跌幅(%)']:+.2f}%" if pd.notna(r["漲跌幅(%)"]) else None
+                st.metric(f"{ETF_META[sid]['icon']} {sid}", px_str, delta=chg_str)
 
     st.markdown("---")
 
-    # === 📊 ETF 詳細特色一覽 ===
+    # =========================
+    # 📊 ETF 詳細特色（可收起）
+    # =========================
     st.markdown("### 📊 ETF 詳細特色一覽")
-    
-    etf_details = {
-        '0050': {
-            'icon': '🇹🇼', '名稱': '元大台灣50', '代號': '0050',
-            '追蹤指數': '台灣50指數', '成分股數': '50檔', '資產規模': '3,500億',
-            '年費率': '0.32%', '成立日期': '2003/06', '日均量': '15萬張',
-            '特色': '• 台灣市值前50龍頭\n• 歷史最悠久ETF\n• 流動性最佳\n• 台積電占比~50%',
-            '適合': '新手定投首選'
-        },
-        '006208': {
-            'icon': '📈', '名稱': '富邦台灣50', '代號': '006208',
-            '追蹤指數': '台灣50指數', '成分股數': '50檔', '資產規模': '1,200億',
-            '年費率': '0.30%', '成立日期': '2017/12', '日均量': '25萬張',
-            '特色': '• 費用率最低\n• 交易量冠軍\n• 買賣價差最小\n• 適合短線操作',
-            '適合': '追求低成本'
-        },
-        '00662': {
-            'icon': '🇻🇳', '名稱': '富邦富時越南', '代號': '00662',
-            '追蹤指數': '富時越南30', '成分股數': '30檔', '資產規模': '800億',
-            '年費率': '0.99%', '成立日期': '2020/07', '日均量': '8萬張',
-            '特色': '• 越南經濟奇蹟\n• 年化報酬20%+\n• 新興市場槓桿\n• 成長性最高',
-            '適合': '高風險偏好'
-        },
-        '00757': {
-            'icon': '💻', '名稱': '統一FANG+', '代號': '00757',
-            '追蹤指數': 'NYSE FANG+', '成分股數': '10檔', '資產規模': '1,500億',
-            '年費率': '0.88%', '成立日期': '2022/07', '日均量': '12萬張',
-            '特色': '• 輝達、特斯拉\n• AI/電動車龍頭\n• 3年報酬250%\n• 波動最大',
-            '適合': '科技成長派'
-        },
-        '00646': {
-            'icon': '🇯🇵', '名稱': '富邦日本東證', '代號': '00646',
-            '追蹤指數': '日經225', '成分股數': '225檔', '資產規模': '600億',
-            '年費率': '0.59%', '成立日期': '2020/01', '日均量': '5萬張',
-            '特色': '• 日圓升值避險\n• 豐田、索尼\n• 通脹對沖工具\n• 低波動',
-            '適合': '國際分散'
-        }
-    }
-    
-    def etf_card(etf):
-        info = etf_details[etf]
-        row = quote_df[quote_df['代號'] == etf].iloc[0]
-        
-        st.markdown(f"#### {info['icon']} **{info['名稱']}** `{info['代號']}`")
-        st.metric("即時價格", row['即時價'], row['漲跌'])
-        
-        st.markdown("**📋 基本資料**")
-        c1, c2, c3 = st.columns(3)
-        with c1: st.caption(f"**費率**\n{info['年費率']}")
-        with c2: st.caption(f"**規模**\n{info['資產規模']}")
-        with c3: st.caption(f"**流動**\n{info['日均量']}")
-        
-        st.markdown(f"**🎯 追蹤**：{info['追蹤指數']} ({info['成分股數']})")
-        st.markdown(f"**📅 成立**：{info['成立日期']}")
-        
-        with st.expander("✨ 特色優勢"):
-            st.markdown(info['特色'])
-        
-        st.success(f"**👤 適合**：{info['適合']}")
-    
-    # 雙排卡片佈局
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        etf_card('0050')
-        st.markdown("---")
-    with col2:
-        etf_card('006208')
-        st.markdown("---")
-    with col3:
-        etf_card('00662')
-        st.markdown("---")
-    
-    col4, col5, col6 = st.columns(3)
-    with col4:
-        etf_card('00757')
-    with col5:
-        etf_card('00646')
-    with col6:
-        st.info("**💡 更多ETF**\n\n即將新增：\n• 00679B 債券\n• 00881 美債\n• 00713 元宇宙")
-    
-    st.caption("📊 資料來源：FinMind + 官方公開資訊 | 開盤即時更新")
+
+    with st.expander("點我展開 / 收起（節省空間）", expanded=False):
+        pick = st.selectbox("想先看哪一檔？", ETF_LIST, index=0, key="tab0_etf_pick")
+
+        meta = ETF_META[pick]
+        # grab latest quote for picked
+        picked_row = None
+        if not quote_df.empty and pick in quote_df["ETF"].values:
+            picked_row = quote_df[quote_df["ETF"] == pick].iloc[0]
+
+        left, right = st.columns([2, 3])
+
+        with left:
+            st.markdown(f"#### {meta['icon']} **{meta['name']}** `{pick}`")
+
+            if picked_row is not None and pd.notna(picked_row["價格"]):
+                st.metric("即時/最新價", f"NT${picked_row['價格']:,.2f}", delta=(f"{picked_row['漲跌幅(%)']:+.2f}%" if pd.notna(picked_row["漲跌幅(%)"]) else None))
+                st.caption(f"來源：{picked_row['來源']}")
+            else:
+                st.metric("即時/最新價", "N/A")
+
+            st.markdown("**定位**")
+            st.write(f"- 資產：{meta['asset']}")
+            st.write(f"- 區域：{meta['region']}")
+            st.write(f"- 追蹤：{meta['track']}")
+            st.write(f"- 風險：{meta['risk']}（主觀分級）")
+
+        with right:
+            st.markdown("**你會在意的重點（更實用）**")
+            st.write(f"- 這檔在做什麼：{meta['hint']}")
+            st.write("- 定投心法：低成本、不中斷、拉長時間；波動越大的標的越需要紀律。")
+            st.write("- 風險提醒：海外/產業集中會放大回撤；請用資產配置比例控制。")
+
+        st.markdown("**同場加映：一次看 5 檔摘要**")
+        overview = []
+        for sid in ETF_LIST:
+            m = ETF_META[sid]
+            overview.append([sid, m["name"], m["track"], m["region"], m["asset"], m["risk"]])
+        st.dataframe(
+            pd.DataFrame(overview, columns=["代號", "名稱", "追蹤", "區域", "資產", "風險"]),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     st.markdown("---")
 
-    # === 歷史績效 ===
-    st.markdown("### 📈 5年歷史績效")
-    
-    @st.cache_data(ttl=60 if market_status[0] else 1800)
-    def safe_backtest():
+    # =========================
+    # 📈 歷史績效（5年）
+    # =========================
+    st.markdown("### 📈 歷史績效（5年）")
+
+    @st.cache_data(ttl=600 if open_now else 1800)
+    def safe_backtest_5y(etfs: list[str]) -> pd.DataFrame:
         try:
             from FinMind.data import DataLoader
             api = DataLoader()
-            etfs = ['0050', '006208', '00662', '00757', '00646']
-            end = date.today().strftime('%Y-%m-%d')
-            start = (date.today() - timedelta(days=365*5)).strftime('%Y-%m-%d')
-            
-            data_rows = []
-            for etf in etfs:
-                df = api.taiwan_stock_daily(etf, start, end)
-                if len(df) > 100 and hasattr(df.index, 'days') and isinstance(df.index, pd.DatetimeIndex):
-                    first, last = df['close'].iloc[0], df['close'].iloc[-1]
-                    days = (df.index[-1] - df.index[0]).days
-                    yrs = round(days / 365.25, 1)
-                    total = (last / first - 1) * 100
-                    ann = ((last / first) ** (1 / yrs) - 1) * 100 if yrs > 0 else 0
-                    cum_max = df['close'].expanding().max()
-                    dd = ((df['close'] - cum_max) / cum_max * 100).min()
-                    data_rows.append([etf, f"{total:.1f}%", f"{ann:.1f}%", f"{yrs}年", f"{dd:.1f}%"])
-                else:
-                    data_rows.append([etf, "N/A", "N/A", "N/A", "N/A"])
-            return pd.DataFrame(data_rows, columns=['ETF', '總報酬', '年化', '年數', '回撤'])
-        except:
+
+            end = _today_tw().strftime("%Y-%m-%d")
+            start = (_today_tw() - timedelta(days=365 * 5)).strftime("%Y-%m-%d")
+
+            rows = []
+            for sid in etfs:
+                df = api.taiwan_stock_daily(stock_id=sid, start_date=start, end_date=end)
+                if not isinstance(df, pd.DataFrame) or len(df) < 120 or "close" not in df.columns:
+                    rows.append([sid, "N/A", "N/A", "N/A", "N/A"])
+                    continue
+
+                d = df.copy()
+                d["date"] = pd.to_datetime(d["date"], errors="coerce")
+                d = d.dropna(subset=["date", "close"]).sort_values("date")
+                if len(d) < 120:
+                    rows.append([sid, "N/A", "N/A", "N/A", "N/A"])
+                    continue
+
+                first_close = float(d["close"].iloc[0])
+                last_close = float(d["close"].iloc[-1])
+
+                days = int((d["date"].iloc[-1] - d["date"].iloc[0]).days)
+                yrs = days / 365.25 if days > 0 else np.nan
+
+                total = (last_close / first_close - 1.0) * 100.0 if first_close > 0 else np.nan
+                ann = ((last_close / first_close) ** (1.0 / yrs) - 1.0) * 100.0 if first_close > 0 and yrs and yrs > 0 else np.nan
+
+                close = d["close"].astype(float)
+                cummax = close.cummax()
+                dd = ((close - cummax) / cummax * 100.0).min()
+
+                rows.append([sid, f"{total:.1f}%", f"{ann:.1f}%", f"{yrs:.1f}年", f"{dd:.1f}%"])
+
+            return pd.DataFrame(rows, columns=["ETF", "總報酬", "年化", "年數", "回撤"])
+        except Exception:
+            # very last fallback (keep app alive)
             return pd.DataFrame({
-                'ETF': ['0050', '006208', '00662', '00757', '00646'],
-                '總報酬': ['+120%', '+115%', '+180%', '+250%', '+140%'],
-                '年化': ['16.5%', '16.0%', '22.0%', '28.0%', '18.5%'],
-                '年數': ['5年', '5年', '4年', '3年', '4年'],
-                '回撤': ['-28%', '-26%', '-35%', '-42%', '-22%']
+                "ETF": etfs,
+                "總報酬": ["N/A"] * len(etfs),
+                "年化": ["N/A"] * len(etfs),
+                "年數": ["N/A"] * len(etfs),
+                "回撤": ["N/A"] * len(etfs),
             })
 
-    perf_df = safe_backtest()
+    perf_df = safe_backtest_5y(ETF_LIST)
     st.dataframe(perf_df, use_container_width=True, hide_index=True)
-    
-    try:
-        ann_numeric = perf_df['年化'].str.extract('(\d+\.?\d*)').astype(float)
-        best_idx = ann_numeric[0].idxmax()
-        best_etf = perf_df.loc[best_idx, 'ETF']
-        st.caption(f"⭐ **最佳年化**：{best_etf} | 真實歷史數據")
-    except:
-        st.caption("📊 基於5年真實回測")
+
+    st.caption("提示：若你有 FINMIND_API_TOKEN（sponsor），報價區會自動切到 Snapshot。")
 
     st.markdown("---")
 
-    # === 定投試算器 ===
+    # =========================
+    # 💰 定投試算器
+    # =========================
     st.markdown("### 💰 定投試算器")
+
     c1, c2, c3 = st.columns(3)
-    with c1: 
-        mon_in = st.number_input("每月投入", 100, 50000, 10000, 100, help="NT$")
-    with c2: 
+    with c1:
+        mon_in = st.number_input("每月投入（NT$）", min_value=100, max_value=50000, value=10000, step=100)
+    with c2:
         yrs_in = st.slider("投資年數", 5, 30, 10)
     with c3:
-        etf_sel = st.selectbox("選擇ETF", perf_df['ETF'].tolist())
-        ann_row = perf_df[perf_df['ETF'] == etf_sel]
-        ann_str = str(ann_row['年化'].values[0])
-        ann_val = float(ann_str.replace('%', '')) / 100 if '%' in ann_str and ann_str != 'N/A' else 0.10
+        etf_sel = st.selectbox("用哪檔的年化來試算？", perf_df["ETF"].tolist(), index=0, key="tab0_calc_etf")
 
-    # 複利計算
-    if ann_val > 0:
-        final_amt = mon_in * 12 * ((1 + ann_val) ** yrs_in - 1) / ann_val
-    else:
-        final_amt = mon_in * 12 * yrs_in
+    ann_str = perf_df.loc[perf_df["ETF"] == etf_sel, "年化"].values[0]
+    rate = parse_pct(ann_str)
+    if not np.isfinite(rate) or rate <= 0:
+        rate = 0.10  # default fallback
 
-    col_amt, col_roi = st.columns(2)
-    with col_amt:
-        st.metric(f"{yrs_in}年總資產", f"NT${final_amt:,.0f}", delta=f"{ann_val*100:.1f}% 年化")
-    with col_roi:
-        total_invest = mon_in * 12 * yrs_in
-        profit = final_amt - total_invest
-        st.metric("總獲利", f"NT${profit:,.0f}", delta=f"投入 {total_invest:,.0f}")
+    final_amt = mon_in * 12 * (((1 + rate) ** yrs_in - 1) / rate)
 
-    # 資產成長圖
+    st.metric(f"{yrs_in} 年總資產（試算）", f"NT${final_amt:,.0f}")
+
     yrs_arr = np.arange(1, yrs_in + 1)
-    if ann_val > 0:
-        amt_arr = [mon_in * 12 * ((1 + ann_val) ** y - 1) / ann_val for y in yrs_arr]
-    else:
-        amt_arr = [mon_in * 12 * y for y in yrs_arr]
-    
-    fig = px.line(
-        pd.DataFrame({'年份': yrs_arr, '資產': amt_arr}), 
-        x='年份', y='資產',
-        title=f"{etf_sel} 定投模擬 (年化{ann_val*100:.1f}%)",
-        markers=True
-    )
-    fig.update_layout(height=280, showlegend=False, font_size=12)
-    fig.update_traces(line_color='#28a745', line_width=3)
-    st.plotly_chart(fig, use_container_width=True)
+    amt_arr = [mon_in * 12 * (((1 + rate) ** y - 1) / rate) for y in yrs_arr]
+    fig = px.line(pd.DataFrame({"年": yrs_arr, "資產": amt_arr}), x="年", y="資產")
+    fig.update_layout(height=280, showlegend=False)
+    st.plotly_chart(fig, height=280, use_container_width=True)
 
     st.markdown("---")
 
-    # === 堅持收益 ===
-    st.markdown("### 🧠 堅持就是勝利")
+    # =========================
+    # 🧠 堅持收益
+    # =========================
+    st.markdown("### 🧠 堅持收益")
+
     cs, cg = st.columns(2)
     with cs:
-        stop_in = st.slider("假如早停年數", 1, yrs_in - 1, max(1, yrs_in // 3))
-        if ann_val > 0:
-            stop_amt = mon_in * 12 * ((1 + ann_val) ** stop_in - 1) / ann_val
-        else:
-            stop_amt = mon_in * 12 * stop_in
-        st.error(f"**早停僅得**\nNT${stop_amt:,.0f}")
+        stop_in = st.slider("如果你提早停在第幾年？", 1, max(1, yrs_in - 1), min(3, max(1, yrs_in - 1)))
+        stop_amt = mon_in * 12 * (((1 + rate) ** stop_in - 1) / rate)
+        st.error(f"早停資產：NT${stop_amt:,.0f}")
     with cg:
-        gain_multiple = final_amt / stop_amt if stop_amt > 0 else 0
-        gain_pct = (gain_multiple - 1) * 100
-        st.success(f"**堅持多賺**\n{gain_pct:.0f}%\n({gain_multiple:.1f}倍)")
+        gain_pct = (final_amt / stop_amt - 1) * 100 if stop_amt > 0 else 0
+        st.success(f"堅持到 {yrs_in} 年：**多 {gain_pct:.0f}%**")
 
     st.markdown("---")
 
-    # 風險提醒
-    col_warn1, col_warn2 = st.columns(2)
-    with col_warn1:
-        st.warning("⚠️ **風險警示**\n短期回撤可達50%")
-    with col_warn2:
-        st.warning("💳 **投資建議**\n只用閒錢，NT$100起")
-
-    st.success("🎉 **定投啟蒙完成！從 0050 開始，堅持致富！**")
+    st.warning("短期回撤可能很大｜只用閒錢｜從小額開始也可以")
+    st.success("定投啟蒙完成：先從 0050 / 006208 開始建立習慣")
 
 
 # --------------------------
