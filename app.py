@@ -17,7 +17,7 @@ AMAP_REST_KEY = "a9075050dd895616798e9d039d89bdde"
 # ---------- Query params（兼容新舊 Streamlit） ----------
 def qp_get(key: str, default=None):
     try:
-        # st.query_params：dict-like，value 通常是 str（重複 key 才需要 get_all）[web:144]
+        # st.query_params：dict-like，value 通常是 str（重複 key 才需要 get_all）
         qp = st.query_params
         if key not in qp:
             return default
@@ -33,13 +33,11 @@ def qp_get(key: str, default=None):
 
 
 def qp_del(*keys):
-    # 刪除 query param（新舊版都盡量處理）
     try:
         for k in keys:
             if k in st.query_params:
                 del st.query_params[k]
     except Exception:
-        # 舊版沒有單獨刪除的好方法，略過即可
         pass
 
 
@@ -113,7 +111,7 @@ def amap_nearby_restaurants(lat, lon, radius_m=3000, keywords="餐厅|火锅|烧
     return df
 
 
-# ---------- GPS：HTML5 Geolocation（不靠第三方包） ----------
+# ---------- GPS：HTML5 Geolocation（穩定回填版） ----------
 def gps_block():
     st.subheader("📍 手機 GPS 定位（免安裝套件）")
 
@@ -134,39 +132,70 @@ def gps_block():
         except Exception:
             st.warning("已取得定位但解析失敗，請再試一次。")
 
-    # Geolocation 需 HTTPS + 使用者授權，且可能被 Permissions-Policy 限制。[web:224]
-    # 這裡用 window.top.location 逃離 components iframe，避免 iframe 內跳轉不生效。
     html = """
     <div style="padding:12px;border:2px dashed #999;border-radius:10px;">
       <button id="btn" onclick="getLocation()"
         style="padding:12px 18px;font-size:16px;border:none;border-radius:10px;background:#111;color:#fff;cursor:pointer;">
         取得我的 GPS 座標
       </button>
+
       <div id="status" style="margin-top:10px;font-family:sans-serif;font-size:14px;color:#333;"></div>
-      <div style="margin-top:6px;font-family:sans-serif;font-size:12px;color:#666;">
-        提示：首次會跳出定位授權；若你之前按過「拒絕」，請到瀏覽器網站設定改成允許再試。
+
+      <!-- 如果自動跳轉失敗，顯示這個手動回填連結 -->
+      <a id="backlink" target="_top" rel="noopener"
+         style="display:none;margin-top:10px;padding:10px 14px;border-radius:10px;background:#0b5;color:#fff;text-decoration:none;">
+         ✅ 點我完成回填
+      </a>
+
+      <div style="margin-top:8px;font-family:sans-serif;font-size:12px;color:#666;">
+        若卡住：請點上方綠色按鈕。首次需授權；需 HTTPS。
       </div>
     </div>
 
     <script>
-      function goWithParams(obj) {
-        const url = new URL(window.top.location.href);
-        Object.keys(obj).forEach(k => url.searchParams.set(k, obj[k]));
-        // 清掉舊錯誤
-        url.searchParams.delete("geo_err");
-        window.top.location.href = url.toString();
+      function buildUrl(lat, lon, acc) {
+        // 使用 document.referrer 比較容易拿到 parent 的 URL
+        const base = document.referrer || window.location.href;
+        try {
+            const url = new URL(base);
+            url.searchParams.set("lat", lat);
+            url.searchParams.set("lon", lon);
+            url.searchParams.set("acc", acc);
+            url.searchParams.delete("geo_err");
+            return url.toString();
+        } catch(e) {
+            return base + "?lat=" + lat + "&lon=" + lon + "&acc=" + acc;
+        }
+      }
+
+      function setBacklink(u) {
+        const a = document.getElementById("backlink");
+        a.href = u;
+        a.style.display = "inline-block";
       }
 
       function fail(msg) {
-        const url = new URL(window.top.location.href);
-        url.searchParams.set("geo_err", msg);
-        window.top.location.href = url.toString();
+        const base = document.referrer || window.location.href;
+        let u = base;
+        try {
+            const url = new URL(base);
+            url.searchParams.set("geo_err", msg);
+            u = url.toString();
+        } catch(e) {}
+        setBacklink(u);
+        document.getElementById("status").innerText = "定位失敗：" + msg;
+      }
+
+      function tryNavigate(u) {
+        // 依序嘗試跳轉
+        try { window.top.location.href = u; return; } catch(e) {}
+        try { window.parent.location.href = u; return; } catch(e) {}
+        try { window.location.href = u; } catch(e) {}
       }
 
       function getLocation() {
         const status = document.getElementById("status");
         if (!navigator.geolocation) {
-          status.innerText = "Geolocation not supported";
           fail("Geolocation not supported");
           return;
         }
@@ -176,12 +205,16 @@ def gps_block():
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
             const acc = pos.coords.accuracy;
-            status.innerText = "定位成功，正在回填…";
-            goWithParams({lat: lat, lon: lon, acc: acc});
+
+            const u = buildUrl(lat, lon, acc);
+            status.innerText = "定位成功！若未自動回填，請點下方按鈕。";
+            setBacklink(u);
+
+            // 立刻嘗試自動回填
+            tryNavigate(u);
           },
           (err) => {
             const msg = (err && err.message) ? err.message : "unknown error";
-            status.innerText = "定位失敗：" + msg;
             fail(msg);
           },
           { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
@@ -189,7 +222,7 @@ def gps_block():
       }
     </script>
     """
-    components.html(html, height=190)
+    components.html(html, height=220)
     return None
 
 
@@ -207,7 +240,7 @@ def render_amap(spots, center, height=560):
     c_lat, c_lon = float(center[0]), float(center[1])
     markers_json = json.dumps(markers, ensure_ascii=False)
 
-    # 安全密鑰要先於 loader.js 設定，否則可能 INVALID_USER_SCODE/403。[web:193][web:194]
+    # 安全密鑰要先於 loader.js 設定，否則可能 INVALID_USER_SCODE/403
     html = f"""
     <div id="amap_container" style="width: 100%; height: {height}px;"></div>
     <div id="map_status" style="margin-top:8px;font-size:12px;color:#666;font-family:sans-serif;"></div>
@@ -222,10 +255,16 @@ def render_amap(spots, center, height=560):
       const status = document.getElementById("map_status");
 
       function writePick(lat, lon) {{
-        const url = new URL(window.top.location.href);
-        url.searchParams.set("pick_lat", lat);
-        url.searchParams.set("pick_lon", lon);
-        window.top.location.href = url.toString();
+        // 這邊也用 tryNavigate 的概念比較保險，但為了簡潔先用 window.top
+        try {{
+            const url = new URL(window.top.location.href);
+            url.searchParams.set("pick_lat", lat);
+            url.searchParams.set("pick_lon", lon);
+            window.top.location.href = url.toString();
+        }} catch(e) {{
+            // 若被阻擋，就只能提示手動複製了（通常同源不會擋）
+            status.innerText = "無法自動回填，請手動複製";
+        }}
       }}
 
       function boot() {{
@@ -256,7 +295,6 @@ def render_amap(spots, center, height=560):
               title: m.name || ("人" + (idx+1))
             }});
             mk.on("click", () => {{
-              // 點 marker 直接回填該點座標（方便用「加入點選座標」）
               writePick(m.lat, m.lon);
             }});
             ms.push(mk);
@@ -388,7 +426,6 @@ with right:
         st.info("先新增至少 1 個位置；右邊會用高德地圖顯示，並可點圖取座標。")
     else:
         df = pd.DataFrame(st.session_state.spots)
-
         show_df = df.copy()
         for c in show_df.columns:
             show_df[c] = show_df[c].astype(str).replace("nan", "")
