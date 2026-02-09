@@ -126,7 +126,7 @@ for k, v in init_state.items():
 # -------------------------
 # 3) Token
 # -------------------------
-FINMIND_TOKEN = st.secrets.get("finmind_token", "")
+FINMIND_TOKEN = st.secrets.get("finmind_token", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0wOSAxOToxMzo1NyIsInVzZXJfaWQiOiJiYWdlbDA0MjciLCJlbWFpbCI6ImFzZDc4MzM1MjBAeWFob28uY29tLnR3IiwiaXAiOiIxLjE3Mi45OC4xOTYifQ.ItQ1NFbigzu6adIxZ6GJanlnzMvUJRBr_7NlJsP2OH8")
 if not FINMIND_TOKEN:
     st.error("缺少 FinMind Token：請在 Streamlit secrets 設定 finmind_token。")
     st.stop()
