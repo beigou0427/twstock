@@ -6,17 +6,15 @@ import streamlit.components.v1 as components
 import pandas as pd
 import requests
 
-# ====== 你的高德Key（REST查餐廳、JS畫地圖）======
-AMAP_KEY = "a9075050dd895616798e9d039d89bdde"
-
-# 如你在高德控制台啟用了「安全密鑰」，把 securityJsCode 填在這（可留空）
-AMAP_SECURITY_JS_CODE = ""  # 例如："xxxxxxxxxxxxxxxxxxxx"
+# ====== 高德 Key（JS地圖 + REST餐廳）======
+AMAP_KEY = "0cd3a5f0715be098c172e5359b94e99d"
+AMAP_SECURITY_JS_CODE = "89b4b0c537e7e364af191c498542e593"
 
 
-# ---------- Query params（接收定位/地圖點擊回傳） ----------
+# ---------- Query params（接收 GPS / 地圖點擊 回傳） ----------
 def qp_get(key: str, default=None):
     try:
-        qp = st.query_params
+        qp = st.query_params  # 新版 API [web:144]
         if key in qp:
             v = qp[key]
             if isinstance(v, list):
@@ -36,7 +34,7 @@ def qp_del(*keys):
             if k in st.query_params:
                 del st.query_params[k]
     except Exception:
-        # 舊版沒有好方法刪單一key，就忽略
+        # 舊版沒法精準刪單一 key，就略過
         pass
 
 
@@ -65,9 +63,10 @@ def calc_center_spherical(locs):
     return round(float(lat), 6), round(float(lon), 6)
 
 
-# ---------- 高德周邊餐廳 ----------
+# ---------- 高德周邊餐廳（REST） ----------
 @st.cache_data(ttl=120)
 def amap_nearby_restaurants(lat, lon, radius_m=3000, keywords="餐厅|火锅|烧烤|咖啡", offset=20):
+    # 周邊搜索常用欄位：key/location/keywords/types/radius/page/offset/extensions [web:156]
     url = "https://restapi.amap.com/v3/place/around"
     params = {
         "key": AMAP_KEY,
@@ -160,14 +159,15 @@ def geolocate_block():
     return None
 
 
-# ---------- 高德JS地圖（嵌入） ----------
-def render_amap(spots, center, height=520):
+# ---------- 高德 JS 地圖（嵌入 Streamlit） ----------
+def render_amap(spots, center, height=540):
     """
-    spots: list[dict] each has name, lat, lon
+    spots: list[dict] each has name, lat, lon, source
     center: (lat, lon)
-    地圖點擊會把 pick_lat/pick_lon 寫回 URL
+    互動：
+      - 點地圖 -> 回寫 pick_lat/pick_lon 到 URL
+      - 點 marker -> 也回寫 pick_lat/pick_lon（方便快速加入既有點）
     """
-    # 準備 markers data（JS 用 lng,lat）
     markers = []
     for s in spots:
         try:
@@ -185,22 +185,25 @@ def render_amap(spots, center, height=520):
     c_lat, c_lon = float(center[0]), float(center[1])
     markers_json = json.dumps(markers, ensure_ascii=False)
 
-    # AMap Loader +（可選）安全密鑰
-    sec = AMAP_SECURITY_JS_CODE.strip()
-    sec_line = f'window._AMapSecurityConfig = {{securityJsCode: "{sec}"}};' if sec else ""
-
+    # 重要：安全密鑰要先於 loader.js 設定 [web:193][web:194]
     html = f"""
     <div id="amap_container" style="width: 100%; height: {height}px;"></div>
 
     <script>
-      {sec_line}
+      window._AMapSecurityConfig = {{securityJsCode: "{AMAP_SECURITY_JS_CODE}"}};
     </script>
-
     <script src="https://webapi.amap.com/loader.js"></script>
+
     <script>
       const markers = {markers_json};
 
       function boot() {{
+        if (typeof AMapLoader === "undefined") {{
+          document.getElementById("amap_container").innerHTML =
+            "<div style='padding:12px;font-family:sans-serif;color:#b00;'>AMapLoader not found</div>";
+          return;
+        }}
+
         AMapLoader.load({{
           key: "{AMAP_KEY}",
           version: "2.0"
@@ -210,15 +213,14 @@ def render_amap(spots, center, height=520):
             center: [{c_lon}, {c_lat}]
           }});
 
-          // 中點 marker（紅色）
+          // 中點 marker
           const centerMarker = new AMap.Marker({{
             position: [{c_lon}, {c_lat}],
-            title: "Center",
-            anchor: "bottom-center"
+            title: "Center"
           }});
           map.add(centerMarker);
 
-          // 其他人 marker
+          // 使用者 marker
           const ms = [];
           markers.forEach((m) => {{
             const mk = new AMap.Marker({{
@@ -237,7 +239,6 @@ def render_amap(spots, center, height=520):
 
           // 點地圖取座標
           map.on("click", (e) => {{
-            // e.lnglat 有 getLng/getLat [事件文檔一般描述 lnglat] 
             const lat = e.lnglat.getLat();
             const lon = e.lnglat.getLng();
             const url = new URL(window.location.href);
@@ -256,14 +257,13 @@ def render_amap(spots, center, height=520):
         }});
       }}
 
-      // loader.js 可能晚到，稍微等一下
       setTimeout(boot, 50);
     </script>
     """
     components.html(html, height=height + 10)
 
 
-# =================== UI ===================
+# =================== App UI ===================
 st.set_page_config(page_title="聚会中点 + 餐厅推荐（高德地图）", layout="wide")
 st.title("聚会中点 + 餐厅推荐（地圖用高德）")
 
@@ -346,7 +346,7 @@ with left:
             qp_del("pick_lat", "pick_lon")
             st.rerun()
     else:
-        st.caption("在右側高德地圖上點一下，就會回填座標。")
+        st.caption("到右側高德地圖點一下，就會回填座標到這裡。")
 
     st.divider()
     if st.button("清空全部", type="primary", use_container_width=True):
@@ -360,7 +360,8 @@ with right:
         st.info("先新增至少 1 個位置；右邊會用高德地圖顯示，並可點圖取座標。")
     else:
         df = pd.DataFrame(st.session_state.spots)
-        # 顯示用：全轉字串避免 pyarrow 問題
+
+        # 顯示用：避免 pyarrow 型別混雜，全部轉字串
         show_df = df.copy()
         for c in show_df.columns:
             show_df[c] = show_df[c].astype(str).replace("nan", "")
@@ -375,7 +376,7 @@ with right:
         c3.metric("推荐经度", f"{c_lon}")
 
         st.subheader("🗺️ 高德地图（可點擊取座標）")
-        render_amap(st.session_state.spots, (c_lat, c_lon), height=540)
+        render_amap(st.session_state.spots, (c_lat, c_lon), height=560)
 
         st.divider()
         st.subheader("🍜 附近餐厅推荐（以中点为中心）")
@@ -387,7 +388,7 @@ with right:
             with st.spinner("查询中…"):
                 rest = amap_nearby_restaurants(c_lat, c_lon, radius_m=radius, keywords=keywords, offset=20)
             if rest.empty:
-                st.warning("查不到结果：可能是Key/额度/地点较偏或关键字太窄。")
+                st.warning("查不到结果：可能是 Key/额度/地点较偏或关键字太窄。")
             else:
                 st.dataframe(rest.head(topn), use_container_width=True, hide_index=True)
 
@@ -396,4 +397,4 @@ with right:
         csv = show_df[["name", "lat", "lon", "source"]].to_csv(index=False, encoding="utf-8-sig")
         st.download_button("下载CSV", csv, file_name="meeting_spots.csv", mime="text/csv", use_container_width=True)
 
-st.caption("提示：如果高德地圖空白，請確認你的 Key 已開啟 Web端(JS API)；若啟用安全密鑰，填入 securityJsCode 後再部署。")
+st.caption("若高德地圖空白：請確認此 Key 已開啟 Web端(JS API)，且安全密鑰已正確配置。")
