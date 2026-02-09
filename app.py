@@ -6,15 +6,19 @@ import streamlit.components.v1 as components
 import pandas as pd
 import requests
 
-# ====== 高德 Key（JS地圖 + REST餐廳）======
-AMAP_KEY = "0cd3a5f0715be098c172e5359b94e99d"
+# ====== Key 分離 ======
+# 地圖用（JS API）
+AMAP_JS_KEY = "0cd3a5f0715be098c172e5359b94e99d"
 AMAP_SECURITY_JS_CODE = "89b4b0c537e7e364af191c498542e593"
+
+# 找餐廳用（Web Service / REST）
+AMAP_REST_KEY = "a9075050dd895616798e9d039d89bdde"
 
 
 # ---------- Query params（接收 GPS / 地圖點擊 回傳） ----------
 def qp_get(key: str, default=None):
     try:
-        qp = st.query_params  # 新版 API [web:144]
+        qp = st.query_params
         if key in qp:
             v = qp[key]
             if isinstance(v, list):
@@ -34,7 +38,6 @@ def qp_del(*keys):
             if k in st.query_params:
                 del st.query_params[k]
     except Exception:
-        # 舊版沒法精準刪單一 key，就略過
         pass
 
 
@@ -66,13 +69,12 @@ def calc_center_spherical(locs):
 # ---------- 高德周邊餐廳（REST） ----------
 @st.cache_data(ttl=120)
 def amap_nearby_restaurants(lat, lon, radius_m=3000, keywords="餐厅|火锅|烧烤|咖啡", offset=20):
-    # 周邊搜索常用欄位：key/location/keywords/types/radius/page/offset/extensions [web:156]
     url = "https://restapi.amap.com/v3/place/around"
     params = {
-        "key": AMAP_KEY,
+        "key": AMAP_REST_KEY,                 # ✅ 這裡用餐廳Key [web:156]
         "location": f"{lon},{lat}",
         "keywords": keywords,
-        "types": "050000",  # 餐飲
+        "types": "050000",
         "radius": int(radius_m),
         "page": 1,
         "offset": int(offset),
@@ -160,14 +162,7 @@ def geolocate_block():
 
 
 # ---------- 高德 JS 地圖（嵌入 Streamlit） ----------
-def render_amap(spots, center, height=540):
-    """
-    spots: list[dict] each has name, lat, lon, source
-    center: (lat, lon)
-    互動：
-      - 點地圖 -> 回寫 pick_lat/pick_lon 到 URL
-      - 點 marker -> 也回寫 pick_lat/pick_lon（方便快速加入既有點）
-    """
+def render_amap(spots, center, height=560):
     markers = []
     for s in spots:
         try:
@@ -185,7 +180,7 @@ def render_amap(spots, center, height=540):
     c_lat, c_lon = float(center[0]), float(center[1])
     markers_json = json.dumps(markers, ensure_ascii=False)
 
-    # 重要：安全密鑰要先於 loader.js 設定 [web:193][web:194]
+    # ✅ 安全密鑰需先於 loader.js 設定 [web:173][web:190][web:182]
     html = f"""
     <div id="amap_container" style="width: 100%; height: {height}px;"></div>
 
@@ -198,14 +193,8 @@ def render_amap(spots, center, height=540):
       const markers = {markers_json};
 
       function boot() {{
-        if (typeof AMapLoader === "undefined") {{
-          document.getElementById("amap_container").innerHTML =
-            "<div style='padding:12px;font-family:sans-serif;color:#b00;'>AMapLoader not found</div>";
-          return;
-        }}
-
         AMapLoader.load({{
-          key: "{AMAP_KEY}",
+          key: "{AMAP_JS_KEY}",
           version: "2.0"
         }}).then((AMap) => {{
           const map = new AMap.Map("amap_container", {{
@@ -213,14 +202,12 @@ def render_amap(spots, center, height=540):
             center: [{c_lon}, {c_lat}]
           }});
 
-          // 中點 marker
           const centerMarker = new AMap.Marker({{
             position: [{c_lon}, {c_lat}],
             title: "Center"
           }});
           map.add(centerMarker);
 
-          // 使用者 marker
           const ms = [];
           markers.forEach((m) => {{
             const mk = new AMap.Marker({{
@@ -237,7 +224,6 @@ def render_amap(spots, center, height=540):
           }});
           map.add(ms);
 
-          // 點地圖取座標
           map.on("click", (e) => {{
             const lat = e.lnglat.getLat();
             const lon = e.lnglat.getLng();
@@ -247,7 +233,6 @@ def render_amap(spots, center, height=540):
             window.location.href = url.toString();
           }});
 
-          // 自適應視野
           const all = ms.concat([centerMarker]);
           if (all.length) map.setFitView(all);
 
@@ -396,5 +381,3 @@ with right:
         st.subheader("💾 导出")
         csv = show_df[["name", "lat", "lon", "source"]].to_csv(index=False, encoding="utf-8-sig")
         st.download_button("下载CSV", csv, file_name="meeting_spots.csv", mime="text/csv", use_container_width=True)
-
-st.caption("若高德地圖空白：請確認此 Key 已開啟 Web端(JS API)，且安全密鑰已正確配置。")
