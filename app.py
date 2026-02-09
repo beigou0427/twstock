@@ -4,13 +4,13 @@ import numpy as np
 import requests
 from math import radians, degrees, sin, cos, atan2, sqrt
 
-# 高德Key（你的申请后填入）
-AMAP_KEY = st.secrets.get("AMAP_KEY", "YOUR_KEY_HERE")  # Streamlit Secrets最佳
+# 🔥 你的Key已写死（生产用Secrets替换）
+AMAP_KEY = "a9075050dd895616798e9d039d89bdde"
 
 @st.cache_data
 def calc_center(locs):
     if not locs: return [39.90, 116.40]
-    x = y = z = 0
+    x=y=z=0
     for lat, lon in locs:
         rlat, rlon = radians(float(lat)), radians(float(lon))
         x += cos(rlat) * cos(rlon)
@@ -24,87 +24,96 @@ def calc_center(locs):
     return [round(lat, 6), round(lon, 6)]
 
 @st.cache_data
-def nearby_restaurants(lat, lon, key, radius=2000):
-    """高德附近餐厅"""
+def nearby_rest(lat, lon):
     url = "https://restapi.amap.com/v3/place/around"
     params = {
-        "key": key,
+        "key": AMAP_KEY,
         "location": f"{lon},{lat}",
-        "keywords": "餐厅|美食",
-        "types": "050000",  # 餐饮
-        "radius": radius,
-        "offset": 10,
-        "page": 1
+        "keywords": "餐厅|火锅|川菜|粤菜|日料",
+        "types": "050000",
+        "radius": 3000,
+        "offset": 10
     }
     try:
-        resp = requests.get(url, params=params)
+        resp = requests.get(url, params=params, timeout=10)
         data = resp.json()
-        if data["status"] == "1":
+        if data.get("status") == "1":
             pois = []
-            for item in data["pois"][:8]:
+            for p in data["pois"][:10]:
+                biz = p.get("biz_ext", {})
                 pois.append({
-                    "name": item.get("name", ""),
-                    "address": item.get("address", ""),
-                    "rating": item.get("biz_ext", {}).get("rating", ""),
-                    "price": item.get("biz_ext", {}).get("cost", ""),
-                    "distance": item.get("distance", ""),
-                    "tel": item.get("tel", "")
+                    "餐厅": p.get("name", ""),
+                    "地址": p.get("address", ""),
+                    "评分": biz.get("rating", "暂无"),
+                    "均价": biz.get("cost", "暂无"),
+                    "距离": f"{int(p.get('distance', 0)/1000)}km" if p.get('distance') else "",
+                    "电话": p.get("tel", "")
                 })
             return pd.DataFrame(pois)
-    except:
-        pass
-    return pd.DataFrame()
+    except Exception as e:
+        st.error(f"API错误: {e}")
+    return pd.DataFrame(columns=["餐厅", "地址", "评分", "均价", "距离", "电话"])
 
 st.set_page_config(layout="wide")
-st.title("🍽️ 聚会中点 + 餐厅推荐")
+st.title("🍽️ 贝伊果屋 · 聚会神器")
 
 if "spots" not in st.session_state:
     st.session_state.spots = []
 
 # 输入
-col1, col2 = st.columns([1, 2])
-with col1:
-    st.header("📍 Locations")
-    lat = st.number_input("Lat", 22.0, 45.0, 39.90)
-    lon = st.number_input("Lon", 100.0, 130.0, 116.40)
-    
-    if st.button("Add", use_container_width=True):
+c1, c2 = st.columns([1, 2])
+with c1:
+    st.header("📍 添加位置")
+    lat = st.number_input("纬度", 22.0, 45.0, 39.90, step=0.0001)
+    lon = st.number_input("经度", 100.0, 130.0, 116.40, step=0.0001)
+    if st.button("✅ 添加", use_container_width=True):
         st.session_state.spots.append([lat, lon])
+        st.success("已添加！")
         st.rerun()
 
-with col2:
-    st.header("🏙️ Quick Add")
-    colq1, colq2, colq3 = st.columns(3)
-    if colq1.button("Beijing"): st.session_state.spots.append([39.90,116.40]); st.rerun()
-    if colq2.button("Shanghai"): st.session_state.spots.append([31.23,121.47]); st.rerun()
-    if colq3.button("Tainan"): st.session_state.spots.append([22.99,120.20]); st.rerun()
+with c2:
+    st.header("🏙️ 一键城市")
+    col_city1, col_city2, col_city3 = st.columns(3)
+    if col_city1.button("北京"): st.session_state.spots.append([39.90,116.40]); st.rerun()
+    if col_city2.button("上海"): st.session_state.spots.append([31.23,121.47]); st.rerun()
+    if col_city3.button("台南"): st.session_state.spots.append([22.99,120.20]); st.rerun()
 
 # 结果
 if st.session_state.spots:
-    df = pd.DataFrame(st.session_state.spots, columns=["Lat", "Lon"])
+    df = pd.DataFrame(st.session_state.spots, columns=["纬度", "经度"])
     center = calc_center(st.session_state.spots)
     
-    st.subheader("📊 Results")
-    colr1, colr2, colr3 = st.columns(3)
-    colr1.metric("Center Lat", center[0])
-    colr2.metric("Center Lon", center[1])
-    colr3.metric("Spots", len(df))
+    st.header("🎯 计算结果")
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("中点纬度", center[0])
+    col_m2.metric("中点经度", center[1])
+    col_m3.metric("人数", len(df))
     
-    st.map(pd.DataFrame(st.session_state.spots + [center], columns=['lat','lon']))
+    st.subheader("🗺️ 地图")
+    st.map(pd.DataFrame(st.session_state.spots + [center], columns=['lat', 'lon']))
     
-    # 🔥 餐厅推荐！
-    st.subheader("🍽️ Nearby Restaurants (2km)")
-    if AMAP_KEY != "YOUR_KEY_HERE":
-        rest_df = nearby_restaurants(center[0], center[1], AMAP_KEY)
-        if not rest_df.empty:
-            st.dataframe(rest_df, use_container_width=True)
-        else:
-            st.warning("No restaurants found, check Key")
+    # 🔥 餐厅推荐
+    st.header("🍜 附近餐厅 Top 10")
+    with st.spinner("搜索中..."):
+        rest_df = nearby_rest(center[0], center[1])
+    
+    if not rest_df.empty:
+        st.dataframe(rest_df, use_container_width=True, hide_index=True)
+        st.success("📱 复制餐厅名到高德地图导航！")
     else:
-        st.warning("👆 Add AMAP_KEY to Streamlit Secrets")
+        st.warning("暂无餐厅数据，换个中点试试")
     
-    if st.button("Clear", type="primary"):
-        st.session_state.spots = []
-        st.rerun()
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("🗑️ 清空", type="primary"):
+            st.session_state.spots.clear()
+            st.rerun()
+    with col_btn2:
+        csv = df.round(6).to_csv(index=False)
+        st.download_button("💾 导出位置", csv, "聚点.csv")
 
-st.caption("High moral Key needed for restaurants. BeIGoU 2026")
+else:
+    st.info("👆 添加第一个位置开始！分享链接给朋友协作")
+
+st.markdown("---")
+st.caption("✨ 贝伊果屋 2026 | 北京+上海自动推天津餐厅")
