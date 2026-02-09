@@ -447,263 +447,220 @@ with tabs[0]:
     st.warning("短期回撤大 | 用閒錢 | 每月100元起")
     st.success("定投啟蒙完成！0050開始")
 
-
 # --------------------------
-# Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
+# Tab 0: 穩健 ETF (v7.6 - 完整導航版)
 # --------------------------
-with tabs[1]:
-    st.markdown("## 🌍 **智能全球情報中心**")
 
-    # 🔥 新增：抓取真實市場數據 (台股 + 美股 + 幣圈)
-    @st.cache_data(ttl=300) # 快取 5 分鐘，避免頻繁請求變慢
-    def get_real_market_ticker():
-        data = {}
-        try:
-            # 1. 台股 (FinMind)
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            
-            # TAIEX
-            df_tw = dl.taiwan_stock_daily("TAIEX", start_date=(date.today()-timedelta(days=5)).strftime("%Y-%m-%d"))
-            if not df_tw.empty:
-                close = df_tw['close'].iloc[-1]
-                prev = df_tw['close'].iloc[-2]
-                change = (close - prev) / prev * 100
-                data['taiex'] = f"{close:,.0f}"
-                data['taiex_pct'] = f"{change:+.1f}%"
-                data['taiex_color'] = "#28a745" if change > 0 else "#dc3545"
-            else:
-                data['taiex'] = "N/A"; data['taiex_pct'] = "0%"; data['taiex_color'] = "gray"
+with tabs[0]:
+    # 新手檢查
+    if not st.session_state.get('etf_done', False):
+        st.markdown("### 🚨 新手必讀")
+        st.info("ETF=股票籃子 | 定投=每月自動買")
+        if st.button("開始"): st.session_state.etf_done = True; st.rerun()
+        st.stop()
 
-            # 台積電 (2330)
-            df_tsmc = dl.taiwan_stock_daily("2330", start_date=(date.today()-timedelta(days=5)).strftime("%Y-%m-%d"))
-            if not df_tsmc.empty:
-                close = df_tsmc['close'].iloc[-1]
-                prev = df_tsmc['close'].iloc[-2]
-                change = (close - prev) / prev * 100
-                data['tsmc'] = f"{close:,.0f}"
-                data['tsmc_pct'] = f"{change:+.1f}%"
-                data['tsmc_color'] = "#28a745" if change > 0 else "#dc3545"
-            else:
-                data['tsmc'] = "N/A"; data['tsmc_pct'] = "0%"; data['tsmc_color'] = "gray"
+    st.markdown("## 🐢 ETF 定投計畫")
 
-            # 2. 美股期貨與比特幣 (yfinance)
-            import yfinance as yf
-            
-            # 納斯達克期貨 (NQ=F) 或 S&P500 (ES=F)
-            nq = yf.Ticker("NQ=F").history(period="2d")
-            if len(nq) > 0:
-                last = nq['Close'].iloc[-1]
-                prev = nq['Close'].iloc[-2] if len(nq) > 1 else last
-                chg = (last - prev) / prev * 100
-                data['nq'] = f"{last:,.0f}"
-                data['nq_pct'] = f"{chg:+.1f}%"
-                data['nq_color'] = "#28a745" if chg > 0 else "#dc3545"
-            else:
-                data['nq'] = "N/A"; data['nq_pct'] = "0%"; data['nq_color'] = "gray"
-
-            # 比特幣 (BTC-USD)
-            btc = yf.Ticker("BTC-USD").history(period="2d")
-            if len(btc) > 0:
-                last = btc['Close'].iloc[-1]
-                prev = btc['Close'].iloc[-2] if len(btc) > 1 else last
-                chg = (last - prev) / prev * 100
-                data['btc'] = f"${last:,.0f}"
-                data['btc_pct'] = f"{chg:+.1f}%"
-                data['btc_color'] = "#28a745" if chg > 0 else "#dc3545"
-            else:
-                data['btc'] = "N/A"; data['btc_pct'] = "0%"; data['btc_color'] = "gray"
-
-        except Exception as e:
-            # 出錯時的回退顯示
-            return {k: "N/A" for k in ['taiex','tsmc','nq','btc']}
-            
-        return data
-
-    # 執行抓取
-    m = get_real_market_ticker()
-
-    # 渲染真實跑馬燈
-    st.markdown(f"""
-    <div class="ticker-wrap">
-        🚀 <b>即時行情:</b> 
-        TAIEX: <span style="color:{m.get('taiex_color','gray')}">{m.get('taiex','N/A')} ({m.get('taiex_pct','')})</span> &nbsp;|&nbsp; 
-        台積電: <span style="color:{m.get('tsmc_color','gray')}">{m.get('tsmc','N/A')} ({m.get('tsmc_pct','')})</span> &nbsp;|&nbsp; 
-        Nasdaq期: <span style="color:{m.get('nq_color','gray')}">{m.get('nq','N/A')} ({m.get('nq_pct','')})</span> &nbsp;|&nbsp; 
-        Bitcoin: <span style="color:{m.get('btc_color','gray')}">{m.get('btc','N/A')} ({m.get('btc_pct','')})</span>
-    </div>
+    # === 🔥 完整雙軌導航（原始需求） ===
+    st.markdown("""
+    <style>
+    @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(255,75,75,0.7); }
+        70% { box-shadow: 0 0 0 20px rgba(255,75,75,0); }
+        100% { box-shadow: 0 0 0 0 rgba(255,75,75,0); }
+    }
+    .safe-card { 
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        border: 2px solid #28a745; border-radius: 15px; padding: 20px; 
+        text-align: center; height: 140px; display: flex; flex-direction: column; 
+        justify-content: space-between; box-shadow: 0 4px 15px rgba(40,167,69,0.3);
+    }
+    .risk-card { 
+        background: linear-gradient(135deg, #721c24 0%, #dc3545 50%, #c82333 100%);
+        border: 3px solid #ff4b4b; border-radius: 15px; padding: 20px;
+        text-align: center; height: 140px; display: flex; flex-direction: column; 
+        justify-content: space-between; box-shadow: 0 0 30px rgba(255,75,75,0.6);
+        animation: pulse-red 2s infinite;
+    }
+    .card-title { font-size: 22px; font-weight: bold; margin-bottom: 8px; }
+    .card-desc { font-size: 14px; line-height: 1.4; }
+    .jump-btn {
+        width: 100%; height: 42px; background: #ff4b4b; color: white;
+        border: none; border-radius: 10px; font-size: 16px; font-weight: 600;
+        cursor: pointer; transition: all 0.3s; margin-top: 5px;
+    }
+    .jump-btn:hover { background: #ff3333; transform: scale(1.05); }
+    </style>
     """, unsafe_allow_html=True)
-    
-    st.caption("數據來源：FinMind (台股) + Yahoo Finance (國際/加密幣)")
-    # Session State 初始化
-    if 'filter_kw' not in st.session_state:
-        st.session_state['filter_kw'] = "全部"
 
-    with st.spinner("🤖 正在掃描全球市場訊號..."):
-        # 2. 數據抓取
-        taiwan_news = get_real_news(FINMIND_TOKEN)
-        rss_sources = {
-            "📈 Yahoo財經": "https://tw.stock.yahoo.com/rss/index.rss",
-            "🌐 Reuters": "https://feeds.reuters.com/reuters/businessNews",
-            "📊 CNBC Tech": "https://www.cnbc.com/id/19854910/device/rss/rss.html"
-        }
-        
-        all_news = []
-        if not taiwan_news.empty:
-            for _, row in taiwan_news.head(5).iterrows():
-                all_news.append({
-                    'title': str(row.get('title', '無標題')), 'link': str(row.get('link', '#')),
-                    'source': "🇹🇼 台股新聞", 'time': pd.to_datetime(row['date']).strftime('%m/%d %H:%M'),
-                    'summary': str(row.get('description', ''))[:100] + '...'
-                })
-        
-        import feedparser
-        for title, url in rss_sources.items():
-            try:
-                feed = feedparser.parse(url)
-                for entry in feed.entries[:3]:
-                    all_news.append({
-                        'title': str(entry.title), 'link': str(entry.link), 'source': title,
-                        'time': entry.get('published', 'N/A'), 'summary': str(entry.get('summary', ''))[:100] + '...'
-                    })
-            except: pass
-
-        # 3. AI 情緒與熱詞分析
-        pos_keywords = ['上漲', '漲', '買', '多頭', '樂觀', '強勢', 'Bull', 'Rise', 'AI', '成長', '台積電', '營收', '創高']
-        neg_keywords = ['下跌', '跌', '賣', '空頭', '悲觀', '弱勢', 'Bear', 'Fall', '關稅', '通膨', '衰退']
-        
-        word_list = []
-        pos_score, neg_score = 0, 0
-        
-        for news in all_news:
-            text = (news['title'] + news['summary']).lower()
-            n_pos = sum(text.count(k.lower()) for k in pos_keywords)
-            n_neg = sum(text.count(k.lower()) for k in neg_keywords)
-            
-            if n_pos > n_neg: news['sentiment'] = 'bull'
-            elif n_neg > n_pos: news['sentiment'] = 'bear'
-            else: news['sentiment'] = 'neutral'
-            
-            pos_score += n_pos
-            neg_score += n_neg
-            
-            for k in pos_keywords + neg_keywords:
-                if k.lower() in text:
-                    word_list.append(k)
-
-        sentiment_idx = (pos_score - neg_score) / max(pos_score + neg_score, 1)
-        sentiment_label = "🟢 貪婪" if sentiment_idx > 0.2 else "🔴 恐慌" if sentiment_idx < -0.2 else "🟡 中性"
-        
-        from collections import Counter
-        top_keywords = ["全部"]
-        if word_list:
-            top_keywords += [w[0] for w in Counter(word_list).most_common(6)]
-        else:
-            top_keywords += ["台積電", "AI", "降息", "強勢", "營收"]
-
-    # 4. 儀表板區域
-    col_dash1, col_dash2 = st.columns([1, 2])
+    col_safe, col_risk = st.columns(2, gap="large")
     
-    with col_dash1:
-        st.markdown(f"#### 🌡️ 市場情緒：{sentiment_label}")
-        fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number", 
-            value = 50 + sentiment_idx*50,
-            gauge = {
-                'axis': {'range': [0, 100]}, 
-                'bar': {'color': "#4ECDC4"},
-                'steps': [
-                    {'range': [0, 40], 'color': "rgba(255, 0, 0, 0.2)"},
-                    {'range': [60, 100], 'color': "rgba(0, 255, 0, 0.2)"}
-                ]
-            }
-        ))
-        fig_gauge.update_layout(height=220, margin=dict(l=20,r=20,t=10,b=20), paper_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig_gauge, use_container_width=True)
-    
-    with col_dash2:
-        st.markdown("#### 🔥 **今日市場熱詞**")
-        
-        # 🌟 優先使用 Pills (最美)，失敗則使用隱藏式 Radio
-        try:
-            # 嘗試使用 st.pills (Streamlit 1.40+)
-            selected = st.pills("篩選新聞：", top_keywords, selection_mode="single", default="全部")
-        except:
-            # Fallback: 使用 CSS 美化 Radio 按鈕 (橫向排列)
-            st.markdown("""
-            <style>
-            div[role="radiogroup"] {flex-direction: row; gap: 8px; flex-wrap: wrap;}
-            div[role="radiogroup"] label > div:first-child {display: none;} /* 隱藏圓點 */
-            div[role="radiogroup"] label {
-                background: #333; padding: 4px 12px; border-radius: 15px; border: 1px solid #555; cursor: pointer; transition: 0.3s;
-            }
-            div[role="radiogroup"] label:hover {background: #444; border-color: #4ECDC4;}
-            div[role="radiogroup"] label[data-checked="true"] {background: #4ECDC4; color: black; font-weight: bold;}
-            </style>
-            """, unsafe_allow_html=True)
-            selected = st.radio("篩選新聞：", top_keywords, label_visibility="collapsed")
-            
-        st.session_state['filter_kw'] = selected
-        st.success(f"🔍 篩選：#{selected} | 📊 市場氣氛：{sentiment_label}")
-
-    st.divider()
-    
-    # 5. 過濾與顯示新聞 (修復 TypeError)
-    current_filter = st.session_state['filter_kw']
-    st.markdown(f"### 📰 **精選快訊**")
-    
-    # 🔥 安全過濾：確保 title 轉為字串
-    filtered_news = []
-    for n in all_news:
-        title_str = str(n.get('title', ''))
-        summary_str = str(n.get('summary', ''))
-        
-        if current_filter == "全部":
-            filtered_news.append(n)
-        elif current_filter in title_str or current_filter in summary_str:
-            filtered_news.append(n)
-            
-    if not filtered_news:
-        st.info(f"⚠️ 暫無包含「{current_filter}」的新聞，顯示全部。")
-        filtered_news = all_news 
-    
-    col_news_left, col_news_right = st.columns(2)
-    for i, news in enumerate(filtered_news):
-        # 安全取得 sentiment
-        sent = news.get('sentiment', 'neutral')
-        
-        if sent == 'bull':
-            tag_html = '<span class="tag-bull">看多</span>'
-            border_color = "#28a745"
-        elif sent == 'bear':
-            tag_html = '<span class="tag-bear">看空</span>'
-            border_color = "#dc3545"
-        else:
-            tag_html = '<span class="tag-neutral">中性</span>'
-            border_color = "#6c757d"
-
-        card_html = f"""
-        <div class="news-card" style="border-left: 5px solid {border_color};">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <div>
-                    <span class="source-badge">{news['source']}</span>
-                    {tag_html}
-                </div>
-                <div style="font-size: 0.8em; color: #888;">{news['time']}</div>
-            </div>
-            <a href="{news['link']}" target="_blank" style="text-decoration: none; color: white; font-weight: bold; font-size: 1.1em; display: block; margin-bottom: 5px; line-height: 1.4;">
-                {news['title']}
-            </a>
-            <div style="font-size: 0.9em; color: #aaa; margin-bottom: 5px; line-height: 1.5;">
-                {news['summary']}
+    # 🐢 穩健定投區
+    with col_safe:
+        st.markdown("""
+        <div class="safe-card">
+            <div class="card-title" style="color: #155724;">🐢 穩健定投區</div>
+            <div class="card-desc">
+                每月自動買入ETF<br>
+                <b>10年變富翁</b><br>
+                適合新手、上班族
             </div>
         </div>
-        """
+        """, unsafe_allow_html=True)
+        st.info("👇 向下看**實時報價+試算**")
+
+    # ⚡ 進階戰室（原始需求文案）
+    with col_risk:
+        st.markdown("""
+        <div class="risk-card">
+            <div class="card-title" style="color: #fff;">⚡ 最簡單賺到第一桶金的科學</div>
+            <div class="card-desc">
+                當<b>長期持續買進 + 槓桿</b><br>
+                <span style="color: #ffeb3b;">使用前請注意期權槓桿風險</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
-        if i % 2 == 0:
-            with col_news_left: st.markdown(card_html, unsafe_allow_html=True)
-        else:
-            with col_news_right: st.markdown(card_html, unsafe_allow_html=True)
+        # 🔥 強化跳轉按鈕
+        components.html('''
+        <button class="jump-btn" onclick="jumpToTab2()">
+            🚀 立即進入戰場 (Tab 2) ⏭️
+        </button>
+        <script>
+        function jumpToTab2(){
+            try{
+                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                if(tabs.length > 2){
+                    tabs[2].click();
+                    window.parent.scrollTo(0, 0);
+                    console.log("Jump to Tab 2 success!");
+                }
+            }catch(e){
+                console.error("Tab jump failed:", e);
+            }
+        }
+        </script>
+        ''', height=80)
+
+    st.markdown("---")
+
+    # === 實時報價 ===
+    st.markdown("### 📡 實時報價（5分更新）")
+
+    @st.cache_data(ttl=300)
+    def live_quotes():
+        from FinMind.data import DataLoader
+        from datetime import date, timedelta
+        api = DataLoader()
+        etfs = ['0050', '006208', '00662', '00757', '00646']
+        end = date.today().strftime('%Y-%m-%d')
+        start = (date.today() - timedelta(3)).strftime('%Y-%m-%d')
+        
+        data = []
+        for etf in etfs:
+            try:
+                df = api.taiwan_stock_daily(etf, start, end)
+                if not df.empty:
+                    row = df.iloc[-1]
+                    prev = df.iloc[-2] if len(df)>1 else row
+                    data.append({
+                        'ETF': etf,
+                        '名稱': {'0050':'台灣50','006208':'富邦台50','00662':'NASDAQ','00757':'FANG+','00646':'S&P500'}[etf],
+                        '現價': f"${row.close:.2f}",
+                        '漲跌': f"{row.close-prev.close:+.2f}",
+                        '%': f"{((row.close/prev.close)-1)*100:+.1f}%"
+                    })
+            except:
+                data.append({'ETF': etf, '名稱': etf, '現價': '-', '漲跌': '-', '%': '-'})
+        return pd.DataFrame(data)
+
+    q_df = live_quotes()
+    st.dataframe(q_df, use_container_width=True)
+
+    if st.button("🔄 5秒刷新"):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.markdown("---")
+
+    # === 歷史績效 ===
+    st.markdown("### 📊 5年真實年化")
+
+    @st.cache_data(ttl=1800)
+    def hist_perf():
+        from FinMind.data import DataLoader
+        from datetime import date, timedelta
+        
+        api = DataLoader()
+        etfs = ['0050', '006208', '00662', '00757', '00646']
+        end = date.today().strftime('%Y-%m-%d')
+        start = (date.today() - timedelta(365*5)).strftime('%Y-%m-%d')
+        
+        rows = []
+        for etf in etfs:
+            try:
+                df = api.taiwan_stock_daily(etf, start, end)
+                if len(df) > 50:
+                    f_p = df.close.iloc[0]
+                    l_p = df.close.iloc[-1]
+                    dys = (df.index[-1] - df.index[0]).days
+                    ys = dys / 365.25
+                    
+                    t_ret = (l_p/f_p-1)*100
+                    a_ret = ((l_p/f_p)**(1/ys)-1)*100
+                    
+                    c_max = df.close.expanding().max()
+                    drw = ((df.close - c_max)/c_max * 100).min()
+                    
+                    rows.append([etf, f"{t_ret:.1f}%", f"{a_ret:.1f}%", f"{ys:.1f}", f"{drw:.1f}%"])
+                else:
+                    rows.append([etf, "-", "-", "-", "-"])
+            except:
+                rows.append([etf, "-", "-", "-", "-"])
+        return pd.DataFrame(rows, columns=['ETF', '總報酬', '年化', '年數', '回撤'])
+
+    h_df = hist_perf()
+    st.dataframe(h_df, use_container_width=True)
+
+    st.markdown("---")
+
+    # 定投
+    st.markdown("### 💰 定投試算")
+    c1,c2,c3=st.columns(3)
+    with c1:amt_mo=st.number_input("每月",1000,50000,10000)
+    with c2:yrs_te=st.slider("年數",5,30,10)
+    with c3:
+        etf_te=st.selectbox("ETF",h_df['ETF'].tolist())
+        ann_te=h_df[h_df['ETF']==etf_te]['年化'].values[0]
+        rate_te=0.10
+        if ann_te!='-' and '%' in ann_te:rate_te=float(ann_te.replace('%',''))/100
+
+    fin_val=amt_mo*12*(((1+rate_te)**yrs_te-1)/rate_te)
+    st.metric(f"{yrs_te}年總額",f"NT${fin_val:,.0f}")
+
+    import plotly.express as px;import numpy as np
+    y_arr=np.arange(1,yrs_te+1)
+    v_arr=[amt_mo*12*(((1+rate_te)**y-1)/rate_te)for y in y_arr]
+    fig=px.line(pd.DataFrame({'年':y_arr,'資產':v_arr}),x='年',y='資產')
+    st.plotly_chart(fig,use_container_width=True)
+
+    st.markdown("---")
+
+    # 堅持
+    st.markdown("### 🧠 堅持多賺")
+    cs1,cs2=st.columns(2)
+    with cs1:
+        yr_st=st.slider("早停",1,yrs_te-1,3)
+        val_st=amt_mo*12*(((1+rate_te)**yr_st-1)/rate_te)
+        st.error(f"NT${val_st:,.0f}")
+    with cs2:
+        pct_ex=((fin_val/val_st)-1)*100
+        st.success(f"+{pct_ex:.0f}%")
+
+    st.markdown("---")
+    st.warning("短期回撤大 | 閒錢投資")
+    st.success("定投完成！0050最穩")
+
 # --------------------------
 # Tab 2: 槓桿篩選版 v18.5 (回歸槓桿操作 + LEAPS CALL)
 # --------------------------
