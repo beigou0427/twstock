@@ -6,17 +6,41 @@ import streamlit.components.v1 as components
 import pandas as pd
 import requests
 
-# streamlit-geolocation 組件
-try:
-    from streamlit_geolocation import streamlit_geolocation
-    HAS_GEO = True
-except ImportError:
-    HAS_GEO = False
-
 # ====== Key 分離 ======
+# 地圖用（JS API + 安全密鑰）
 AMAP_JS_KEY = "0cd3a5f0715be098c172e5359b94e99d"
 AMAP_SECURITY_JS_CODE = "89b4b0c537e7e364af191c498542e593"
+# 找餐廳用（Web Service / REST）
 AMAP_REST_KEY = "a9075050dd895616798e9d039d89bdde"
+
+
+# ---------- Query params（兼容新舊 Streamlit） ----------
+def qp_get(key: str, default=None):
+    try:
+        # st.query_params：dict-like，value 通常是 str（重複 key 才需要 get_all）[web:144]
+        qp = st.query_params
+        if key not in qp:
+            return default
+        v = qp[key]
+        if isinstance(v, list):
+            return v[0] if v else default
+        return v
+    except Exception:
+        qp = st.experimental_get_query_params()
+        if key in qp and qp[key]:
+            return qp[key][0]
+        return default
+
+
+def qp_del(*keys):
+    # 刪除 query param（新舊版都盡量處理）
+    try:
+        for k in keys:
+            if k in st.query_params:
+                del st.query_params[k]
+    except Exception:
+        # 舊版沒有單獨刪除的好方法，略過即可
+        pass
 
 
 # ---------- 地理中點（球面平均） ----------
@@ -71,14 +95,16 @@ def amap_nearby_restaurants(lat, lon, radius_m=3000, keywords="餐厅|火锅|烧
             dist = f"{dist_km:.2f} km"
         except Exception:
             dist = ""
-        rows.append({
-            "餐厅": str(p.get("name", "")),
-            "距离": dist,
-            "评分": str(biz.get("rating", "")),
-            "均价": str(biz.get("cost", "")),
-            "地址": str(p.get("address", "")),
-            "电话": str(p.get("tel", "")),
-        })
+        rows.append(
+            {
+                "餐厅": str(p.get("name", "")),
+                "距离": dist,
+                "评分": str(biz.get("rating", "")),
+                "均价": str(biz.get("cost", "")),
+                "地址": str(p.get("address", "")),
+                "电话": str(p.get("tel", "")),
+            }
+        )
 
     df = pd.DataFrame(rows)
     if not df.empty:
@@ -87,46 +113,104 @@ def amap_nearby_restaurants(lat, lon, radius_m=3000, keywords="餐厅|火锅|烧
     return df
 
 
-# ---------- streamlit-geolocation 組件定位 ----------
-def geolocate_block():
-    st.subheader("📍 手機GPS定位")
-    
-    if not HAS_GEO:
-        st.error("streamlit-geolocation 未安裝，請用手動輸入")
-        return None
-    
-    location = streamlit_geolocation()
-    
-    if location and location.get("latitude") and location.get("longitude"):
-        lat = location["latitude"]
-        lon = location["longitude"]
-        acc = location.get("accuracy", 0)
-        st.success(f"✅ 定位成功：{lat:.6f}, {lon:.6f}（精度: ±{int(acc)}m）")
-        return lat, lon, acc
-    else:
-        st.info("👆 點上面按鈕允許GPS權限（需HTTPS）")
-        return None
+# ---------- GPS：HTML5 Geolocation（不靠第三方包） ----------
+def gps_block():
+    st.subheader("📍 手機 GPS 定位（免安裝套件）")
+
+    lat = qp_get("lat")
+    lon = qp_get("lon")
+    acc = qp_get("acc")
+    err = qp_get("geo_err")
+
+    if err:
+        st.error(f"定位失敗：{err}")
+
+    if lat and lon:
+        try:
+            glat, glon = float(lat), float(lon)
+            gacc = float(acc) if acc else None
+            st.success(f"✅ 已取得：{glat:.6f}, {glon:.6f}" + (f"（±{int(gacc)}m）" if gacc else ""))
+            return glat, glon, gacc
+        except Exception:
+            st.warning("已取得定位但解析失敗，請再試一次。")
+
+    # Geolocation 需 HTTPS + 使用者授權，且可能被 Permissions-Policy 限制。[web:224]
+    # 這裡用 window.top.location 逃離 components iframe，避免 iframe 內跳轉不生效。
+    html = """
+    <div style="padding:12px;border:2px dashed #999;border-radius:10px;">
+      <button id="btn" onclick="getLocation()"
+        style="padding:12px 18px;font-size:16px;border:none;border-radius:10px;background:#111;color:#fff;cursor:pointer;">
+        取得我的 GPS 座標
+      </button>
+      <div id="status" style="margin-top:10px;font-family:sans-serif;font-size:14px;color:#333;"></div>
+      <div style="margin-top:6px;font-family:sans-serif;font-size:12px;color:#666;">
+        提示：首次會跳出定位授權；若你之前按過「拒絕」，請到瀏覽器網站設定改成允許再試。
+      </div>
+    </div>
+
+    <script>
+      function goWithParams(obj) {
+        const url = new URL(window.top.location.href);
+        Object.keys(obj).forEach(k => url.searchParams.set(k, obj[k]));
+        // 清掉舊錯誤
+        url.searchParams.delete("geo_err");
+        window.top.location.href = url.toString();
+      }
+
+      function fail(msg) {
+        const url = new URL(window.top.location.href);
+        url.searchParams.set("geo_err", msg);
+        window.top.location.href = url.toString();
+      }
+
+      function getLocation() {
+        const status = document.getElementById("status");
+        if (!navigator.geolocation) {
+          status.innerText = "Geolocation not supported";
+          fail("Geolocation not supported");
+          return;
+        }
+        status.innerText = "定位中…請允許定位權限";
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            const acc = pos.coords.accuracy;
+            status.innerText = "定位成功，正在回填…";
+            goWithParams({lat: lat, lon: lon, acc: acc});
+          },
+          (err) => {
+            const msg = (err && err.message) ? err.message : "unknown error";
+            status.innerText = "定位失敗：" + msg;
+            fail(msg);
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        );
+      }
+    </script>
+    """
+    components.html(html, height=190)
+    return None
 
 
-# ---------- 高德 JS 地圖 ----------
+# ---------- 高德 JS 地圖（嵌入 Streamlit） ----------
 def render_amap(spots, center, height=560):
     markers = []
     for s in spots:
         try:
-            markers.append({
-                "name": str(s.get("name", "")),
-                "lat": float(s.get("lat")),
-                "lon": float(s.get("lon")),
-            })
+            markers.append(
+                {"name": str(s.get("name", "")), "lat": float(s.get("lat")), "lon": float(s.get("lon")), "source": str(s.get("source", ""))}
+            )
         except Exception:
             pass
 
     c_lat, c_lon = float(center[0]), float(center[1])
     markers_json = json.dumps(markers, ensure_ascii=False)
 
+    # 安全密鑰要先於 loader.js 設定，否則可能 INVALID_USER_SCODE/403。[web:193][web:194]
     html = f"""
     <div id="amap_container" style="width: 100%; height: {height}px;"></div>
-    <div id="map_status" style="margin-top:8px;font-size:12px;color:#666;"></div>
+    <div id="map_status" style="margin-top:8px;font-size:12px;color:#666;font-family:sans-serif;"></div>
 
     <script>
       window._AMapSecurityConfig = {{securityJsCode: "{AMAP_SECURITY_JS_CODE}"}};
@@ -137,9 +221,16 @@ def render_amap(spots, center, height=560):
       const markers = {markers_json};
       const status = document.getElementById("map_status");
 
+      function writePick(lat, lon) {{
+        const url = new URL(window.top.location.href);
+        url.searchParams.set("pick_lat", lat);
+        url.searchParams.set("pick_lon", lon);
+        window.top.location.href = url.toString();
+      }}
+
       function boot() {{
         if (typeof AMapLoader === "undefined") {{
-          status.innerText = "AMapLoader 加載失敗";
+          status.innerText = "AMapLoader 載入失敗";
           return;
         }}
 
@@ -152,63 +243,50 @@ def render_amap(spots, center, height=560):
             center: [{c_lon}, {c_lat}]
           }});
 
-          // 中點 marker（紅色）
           const centerMarker = new AMap.Marker({{
             position: [{c_lon}, {c_lat}],
-            title: "推薦中點",
-            label: {{content: "⭐中點", direction: "top"}}
+            title: "中點"
           }});
           map.add(centerMarker);
 
-          // 用戶 marker
           const ms = [];
           markers.forEach((m, idx) => {{
             const mk = new AMap.Marker({{
               position: [m.lon, m.lat],
-              title: m.name,
-              label: {{content: m.name || `人${{idx+1}}`, direction: "bottom"}}
+              title: m.name || ("人" + (idx+1))
+            }});
+            mk.on("click", () => {{
+              // 點 marker 直接回填該點座標（方便用「加入點選座標」）
+              writePick(m.lat, m.lon);
             }});
             ms.push(mk);
           }});
           map.add(ms);
 
-          // 點地圖取座標（透過 postMessage 回傳 Streamlit）
           map.on("click", (e) => {{
             const lat = e.lnglat.getLat();
             const lon = e.lnglat.getLng();
-            status.innerText = `點擊座標：${{lat.toFixed(6)}}, ${{lon.toFixed(6)}}`;
-            
-            // 添加臨時標記
-            const tempMarker = new AMap.Marker({{
-              position: [lon, lat],
-              icon: new AMap.Icon({{
-                size: new AMap.Size(25, 34),
-                image: '//a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-default.png'
-              }})
-            }});
-            map.add(tempMarker);
+            status.innerText = `點擊座標：${{lat.toFixed(6)}}, ${{lon.toFixed(6)}}（已回填）`;
+            writePick(lat, lon);
           }});
 
-          // 自適應視野
           const all = ms.concat([centerMarker]);
           if (all.length) map.setFitView(all);
-          status.innerText = "地圖載入成功！點擊地圖可顯示座標";
-
+          status.innerText = "地圖載入成功：點地圖可回填座標";
         }}).catch((e) => {{
-          status.innerText = "地圖加載失敗: " + (e && e.message ? e.message : e);
+          status.innerText = "地圖載入失敗：" + (e && e.message ? e.message : e);
         }});
       }}
 
-      setTimeout(boot, 100);
+      setTimeout(boot, 80);
     </script>
     """
-    components.html(html, height=height + 30)
+    components.html(html, height=height + 40)
 
 
 # =================== App UI ===================
-st.set_page_config(page_title="聚会中点 + 餐厅推荐", layout="wide")
-st.title("🍽️ 聚会中点 + 餐厅推荐")
-st.caption("手機GPS定位 + 高德地圖 + 周邊餐廳推薦")
+st.set_page_config(page_title="聚会中点 + 餐厅推荐（高德地图）", layout="wide")
+st.title("聚会中点 + 餐厅推荐（地圖用高德）")
 
 if "spots" not in st.session_state:
     st.session_state.spots = []
@@ -216,104 +294,134 @@ if "spots" not in st.session_state:
 left, right = st.columns([1.15, 1.85], gap="large")
 
 with left:
-    loc = geolocate_block()
+    loc = gps_block()
+    cbtn1, cbtn2 = st.columns(2)
+    if cbtn1.button("清除GPS结果", use_container_width=True):
+        qp_del("lat", "lon", "acc", "geo_err")
+        st.rerun()
+    if cbtn2.button("清除地图点选", use_container_width=True):
+        qp_del("pick_lat", "pick_lon")
+        st.rerun()
+
     st.divider()
-
     st.subheader("➕ 添加位置")
-    name = st.text_input("名字", value="", placeholder="例如：小明")
+    name = st.text_input("名字（可选）", value="", placeholder="例如：阿明 / 小美")
 
-    mode = st.radio("方式", ["用GPS定位", "手動輸入", "批量粘貼"], horizontal=True)
+    mode = st.radio("添加方式", ["用GPS(刚获取)", "手动输入", "批量粘贴"], horizontal=True)
 
-    if mode == "用GPS定位":
+    if mode == "用GPS(刚获取)":
         if loc:
             glat, glon, gacc = loc
-            if st.button("✅ 加入GPS位置", type="primary", use_container_width=True):
-                st.session_state.spots.append({
-                    "name": name.strip() or f"人{len(st.session_state.spots)+1}",
-                    "lat": glat,
-                    "lon": glon,
-                    "source": "gps"
-                })
-                st.balloons()
+            if st.button("加入这笔(GPS)", type="primary", use_container_width=True):
+                st.session_state.spots.append(
+                    {"name": name.strip() or f"人{len(st.session_state.spots)+1}", "lat": glat, "lon": glon, "source": "gps"}
+                )
+                qp_del("lat", "lon", "acc", "geo_err")
                 st.rerun()
         else:
-            st.info("等待GPS定位...")
+            st.info("先按上面『取得我的 GPS 座標』。")
 
-    elif mode == "手動輸入":
-        lat_in = st.number_input("緯度", value=39.90, format="%.6f")
-        lon_in = st.number_input("經度", value=116.40, format="%.6f")
-        if st.button("加入", type="primary", use_container_width=True):
-            st.session_state.spots.append({
-                "name": name.strip() or f"人{len(st.session_state.spots)+1}",
-                "lat": float(lat_in),
-                "lon": float(lon_in),
-                "source": "manual"
-            })
+    elif mode == "手动输入":
+        lat_in = st.number_input("纬度 lat", value=39.90, format="%.6f")
+        lon_in = st.number_input("经度 lon", value=116.40, format="%.6f")
+        if st.button("加入这笔(手动)", type="primary", use_container_width=True):
+            st.session_state.spots.append(
+                {"name": name.strip() or f"人{len(st.session_state.spots)+1}", "lat": float(lat_in), "lon": float(lon_in), "source": "manual"}
+            )
             st.rerun()
 
     else:
-        st.caption("每行：`名字,緯度,經度` 或 `緯度,經度`")
-        bulk = st.text_area("批量", height=120, placeholder="小明,39.9042,116.4074\n31.2304,121.4737")
-        if st.button("批量導入", type="primary", use_container_width=True):
+        st.caption("每行一人：`名字,纬度,经度` 或 `纬度,经度`；逗号或空格都行。")
+        bulk = st.text_area("批量输入", height=140, placeholder="阿明,39.9042,116.4074\n31.2304,121.4737")
+        if st.button("批量导入", type="primary", use_container_width=True):
             added = 0
             for line in bulk.splitlines():
-                parts = [p.strip() for p in line.replace("，", ",").replace(" ", ",").split(",") if p.strip()]
+                line = line.strip()
+                if not line:
+                    continue
+                parts = [p for p in line.replace("，", ",").replace(" ", ",").split(",") if p != ""]
                 try:
                     if len(parts) == 2:
                         nm = f"人{len(st.session_state.spots)+1}"
                         latv, lonv = float(parts[0]), float(parts[1])
                     else:
-                        nm = parts[0] or f"人{len(st.session_state.spots)+1}"
+                        nm = parts[0].strip() or f"人{len(st.session_state.spots)+1}"
                         latv, lonv = float(parts[1]), float(parts[2])
                     st.session_state.spots.append({"name": nm, "lat": latv, "lon": lonv, "source": "bulk"})
                     added += 1
-                except:
+                except Exception:
                     pass
-            st.success(f"已導入 {added} 筆")
+            st.success(f"已导入 {added} 笔")
             st.rerun()
 
     st.divider()
-    if st.button("🗑️ 清空全部", type="secondary", use_container_width=True):
+    st.subheader("🧭 地圖點選結果")
+    pick_lat = qp_get("pick_lat")
+    pick_lon = qp_get("pick_lon")
+    if pick_lat and pick_lon:
+        st.info(f"你點的座標：{pick_lat}, {pick_lon}")
+        if st.button("加入點選座標", use_container_width=True):
+            try:
+                st.session_state.spots.append(
+                    {"name": name.strip() or f"人{len(st.session_state.spots)+1}", "lat": float(pick_lat), "lon": float(pick_lon), "source": "map_click"}
+                )
+                qp_del("pick_lat", "pick_lon")
+                st.rerun()
+            except Exception:
+                st.warning("點選座標解析失敗")
+    else:
+        st.caption("到右側高德地圖點一下，就會回填座標到這裡。")
+
+    st.divider()
+    c3, c4 = st.columns(2)
+    if c3.button("删除最后一笔", use_container_width=True) and st.session_state.spots:
+        st.session_state.spots.pop()
+        st.rerun()
+    if c4.button("清空全部", type="primary", use_container_width=True):
         st.session_state.spots = []
+        qp_del("pick_lat", "pick_lon", "lat", "lon", "acc", "geo_err")
         st.rerun()
 
 with right:
+    st.subheader("📌 位置清单 / 中点 / 地图")
     if not st.session_state.spots:
-        st.info("👈 先添加位置")
+        st.info("先新增至少 1 個位置；右邊會用高德地圖顯示，並可點圖取座標。")
     else:
         df = pd.DataFrame(st.session_state.spots)
+
         show_df = df.copy()
         for c in show_df.columns:
-            show_df[c] = show_df[c].astype(str)
-
-        st.subheader("📌 位置清單")
+            show_df[c] = show_df[c].astype(str).replace("nan", "")
         st.dataframe(show_df[["name", "lat", "lon", "source"]], use_container_width=True, hide_index=True)
 
         locs = [(r["lat"], r["lon"]) for _, r in df.iterrows()]
         c_lat, c_lon = calc_center_spherical(locs)
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("人數", len(locs))
-        col2.metric("中點緯度", f"{c_lat}")
-        col3.metric("中點經度", f"{c_lon}")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("人数", len(locs))
+        c2.metric("推荐纬度", f"{c_lat}")
+        c3.metric("推荐经度", f"{c_lon}")
 
-        st.subheader("🗺️ 高德地圖")
-        render_amap(st.session_state.spots, (c_lat, c_lon))
+        st.subheader("🗺️ 高德地图（可點擊取座標）")
+        render_amap(st.session_state.spots, (c_lat, c_lon), height=560)
 
         st.divider()
-        st.subheader("🍜 附近餐廳")
-        keywords = st.text_input("關鍵字", value="餐厅|火锅|烧烤|咖啡")
-        radius = st.slider("半徑(米)", 500, 5000, 3000, 100)
-        topn = st.slider("顯示數", 5, 20, 10)
+        st.subheader("🍜 附近餐厅推荐（以中点为中心）")
+        keywords = st.text_input("关键字", value="餐厅|火锅|烧烤|咖啡")
+        radius = st.slider("半径（米）", 500, 5000, 3000, 100)
+        topn = st.slider("显示数量", 5, 20, 10, 1)
 
-        if st.button("🔍 查詢餐廳", type="primary"):
-            with st.spinner("搜索中..."):
-                rest = amap_nearby_restaurants(c_lat, c_lon, radius_m=radius, keywords=keywords)
+        if st.button("查询餐厅", type="primary"):
+            with st.spinner("查询中…"):
+                rest = amap_nearby_restaurants(c_lat, c_lon, radius_m=radius, keywords=keywords, offset=20)
             if rest.empty:
-                st.warning("查無結果")
+                st.warning("查不到结果：可能是 Key/额度/地点较偏或关键字太窄。")
             else:
                 st.dataframe(rest.head(topn), use_container_width=True, hide_index=True)
 
         st.divider()
-        csv = show_df[["name", "lat", "lon"]].to_csv(index=False, encoding="utf-8-sig")
-        st.download_button("💾 下載CSV", csv, "meeting_spots.csv", "text/csv", use_container_width=True)
+        st.subheader("💾 导出")
+        csv = show_df[["name", "lat", "lon", "source"]].to_csv(index=False, encoding="utf-8-sig")
+        st.download_button("下载CSV", csv, file_name="meeting_spots.csv", mime="text/csv", use_container_width=True)
+
+st.caption("GPS 需要 HTTPS + 使用者授權，且可能被瀏覽器/政策限制；若失敗請看上方錯誤提示並到瀏覽器網站設定允許定位。")
