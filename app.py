@@ -1416,9 +1416,9 @@ with tabs[4]:
 # --------------------------
 with tabs[5]:
     st.markdown("### 📰 貝伊果屋新聞情報中心")
-    st.caption("FinMind + Yahoo 財經 | AI 智慧分析 | 穩定版")
+    st.caption("FinMind + Yahoo 財經 | AI 智慧分析 | 下載進度可視化")
 
-    # === 搜尋介面 (靜態 Key) ===
+    # === 搜尋介面 ===
     col_s1, col_s2, col_s3 = st.columns([1.5, 1, 1])
     with col_s1:
         search_kw = st.text_input("🔍 關鍵字", "2330", key="news_search_kw")
@@ -1433,150 +1433,136 @@ with tabs[5]:
     analysis_mode = st.radio("選擇分析模式", ["📊 情緒儀表板", "❓ AI 智能問答"], horizontal=True)
 
     if st.button("🚀 開始分析", type="primary", key="news_analyze_btn"):
-        with st.spinner("正在搜尋全網新聞並進行 AI 分析..."):
+        
+        # 1. 顯示下載進度條 (模擬 UX)
+        progress_bar = st.progress(0, text="準備啟動 AI 引擎...")
+        status_text = st.empty()
+        
+        # 抓取新聞
+        status_text.info("📡 正在全網搜索新聞資料...")
+        progress_bar.progress(10, text="正在連線 FinMind 資料庫...")
+        
+        # 定義抓取函數
+        @st.cache_data(ttl=1800)
+        def fetch_news_data(_kw, _days):
+            news_list = []
+            try:
+                dl = DataLoader()
+                dl.login_by_token(api_token=FINMIND_TOKEN)
+                start = (date.today() - timedelta(days=_days)).strftime('%Y-%m-%d')
+                df = dl.taiwan_stock_news(stock_id=_kw, start_date=start)
+                if not df.empty:
+                    for _, row in df.head(40).iterrows():
+                        news_list.append({'title': row.get('title', ''), 'source': '🔥 FinMind', 'link': row.get('link', '#'), 'date': str(row.get('date', ''))[:10]})
+            except: pass
             
-            # 1. 穩定抓取函數
-            @st.cache_data(ttl=1800)
-            def fetch_news_data(_kw, _days):
-                news_list = []
-                # FinMind
-                try:
-                    dl = DataLoader()
-                    dl.login_by_token(api_token=FINMIND_TOKEN)
-                    start = (date.today() - timedelta(days=_days)).strftime('%Y-%m-%d')
-                    df = dl.taiwan_stock_news(stock_id=_kw, start_date=start)
-                    if not df.empty:
-                        for _, row in df.head(40).iterrows():
-                            news_list.append({
-                                'title': row.get('title', '無標題'),
-                                'source': '🔥 FinMind',
-                                'link': row.get('link', '#'),
-                                'date': str(row.get('date', ''))[:10]
-                            })
-                except: pass
+            try:
+                import feedparser, urllib.parse
+                encoded = urllib.parse.quote(_kw)
+                rss_url = f"https://tw.stock.yahoo.com/rss2.0/search?q={encoded}&region=TW"
+                feed = feedparser.parse(rss_url)
+                for entry in feed.entries[:20]:
+                    news_list.append({'title': entry.title, 'source': '📈 Yahoo', 'link': getattr(entry, 'link', '#'), 'date': getattr(entry, 'published', '今日')[:10]})
+            except: pass
+            return pd.DataFrame(news_list)
 
-                # Yahoo RSS
-                try:
-                    import feedparser
-                    import urllib.parse
-                    encoded = urllib.parse.quote(_kw)
-                    rss_url = f"https://tw.stock.yahoo.com/rss2.0/search?q={encoded}&region=TW"
-                    feed = feedparser.parse(rss_url)
-                    for entry in feed.entries[:20]:
-                        news_list.append({
-                            'title': entry.title,
-                            'source': '📈 Yahoo',
-                            'link': getattr(entry, 'link', '#'),
-                            'date': getattr(entry, 'published', '今日')[:10]
-                        })
-                except: pass
+        df_news = fetch_news_data(search_kw, search_days)
+        progress_bar.progress(30, text="新聞資料蒐集完成！")
+        
+        if df_news.empty:
+            status_text.warning("⚠️ 暫無相關新聞")
+            progress_bar.empty()
+        else:
+            status_text.success(f"✅ 成功蒐集 **{len(df_news)}** 則新聞，準備載入 AI 模型...")
+            
+            # 2. 載入模型 (帶進度提示)
+            from transformers import pipeline
+            
+            @st.cache_resource
+            def get_ai_pipeline(task):
+                if task == "sentiment":
+                    return pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
+                elif task == "qa":
+                    return pipeline("question-answering", model="distilbert-base-uncased-distilled-squad")
+                return None
+
+            # 模擬模型載入進度 (因實際載入是 blocking，只能用文字提示)
+            progress_bar.progress(50, text="⏳ 正在下載/載入 AI 模型 (首次需 1-2 分鐘)...")
+            
+            # 實際載入
+            if analysis_mode == "📊 情緒儀表板":
+                pipe = get_ai_pipeline("sentiment")
+                progress_bar.progress(70, text="模型載入完成！正在分析情緒...")
                 
-                return pd.DataFrame(news_list)
+                results = []
+                total = len(df_news)
+                for i, (_, row) in enumerate(df_news.iterrows()):
+                    try:
+                        res = pipe(row['title'][:512])[0]
+                        label_map = {'5 stars': '🟢強利多', '4 stars': '🟢利多', '1 star': '🔴強利空', '2 stars': '🔴利空', '3 stars': '⚪中性'}
+                        results.append({
+                            'title': row['title'],
+                            'sentiment': label_map.get(res['label'], '⚪中性'),
+                            'score': res['score'],
+                            'source': row['source'],
+                            'link': row['link']
+                        })
+                    except: pass
+                    # 更新分析進度
+                    curr_prog = 70 + int((i / total) * 30)
+                    progress_bar.progress(min(curr_prog, 99), text=f"正在分析第 {i+1}/{total} 則新聞...")
+                
+                progress_bar.progress(100, text="✅ 分析完成！")
+                time.sleep(0.5)
+                progress_bar.empty()
+                status_text.empty()
+                
+                df_res = pd.DataFrame(results)
+                
+                # === 顯示結果 ===
+                kpi_cols = st.columns(5)
+                sent_types = ['🟢強利多', '🟢利多', '🔴強利空', '🔴利空', '⚪中性']
+                for i, stype in enumerate(sent_types):
+                    count = len(df_res[df_res['sentiment'] == stype])
+                    kpi_cols[i].metric(stype, count)
+                
+                fig = px.pie(df_res, names='sentiment', title=f"{search_kw} 情緒分佈", 
+                           color='sentiment', 
+                           color_discrete_map={'🟢強利多':'limegreen', '🟢利多':'green', '🔴強利空':'darkred', '🔴利空':'red', '⚪中性':'gray'})
+                st.plotly_chart(fig, use_container_width=True)
+                
+                st.markdown("### 📋 重點新聞")
+                for _, row in df_res.head(10).iterrows():
+                    color = "green" if "利多" in row['sentiment'] else "red" if "利空" in row['sentiment'] else "gray"
+                    st.markdown(f"""
+                    <div style="padding:10px; border-left:4px solid {color}; background:rgba(128,128,128,0.1); margin-bottom:5px;">
+                        <b style="color:{color}">{row['sentiment']} ({row['score']:.0%})</b><br>
+                        <a href="{row['link']}" target="_blank" style="text-decoration:none; color:inherit;">{row['title']}</a>
+                        <div style="font-size:0.8em; color:gray">{row['source']}</div>
+                    </div>""", unsafe_allow_html=True)
 
-            df_news = fetch_news_data(search_kw, search_days)
-            
-            if df_news.empty:
-                st.warning("⚠️ 暫無相關新聞")
-            else:
-                st.success(f"✅ 成功蒐集 **{len(df_news)}** 則新聞")
+            elif analysis_mode == "❓ AI 智能問答":
+                progress_bar.progress(60, text="載入 Q&A 模型中...")
+                pipe = get_ai_pipeline("qa")
+                progress_bar.progress(100, text="✅ 模型就緒！")
+                time.sleep(0.5)
+                progress_bar.empty()
+                status_text.empty()
 
-                # 2. 載入模型 (Cache Resource)
-                from transformers import pipeline
-
-                @st.cache_resource
-                def get_ai_pipeline(task):
-                    if task == "sentiment":
-                        return pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
-                    elif task == "qa":
-                        return pipeline("question-answering", model="distilbert-base-uncased-distilled-squad")
-                    return None
-
-                # 3. 執行分析
-                if analysis_mode == "📊 情緒儀表板":
-                    pipe = get_ai_pipeline("sentiment")
-                    results = []
-                    
-                    for _, row in df_news.iterrows():
-                        try:
-                            res = pipe(row['title'][:512])[0]
-                            label_map = {
-                                '5 stars': '🟢強利多', '4 stars': '🟢利多', 
-                                '1 star': '🔴強利空', '2 stars': '🔴利空', 
-                                '3 stars': '⚪中性'
-                            }
-                            sentiment = label_map.get(res['label'], '⚪中性')
-                            score = res['score']
-                            
-                            results.append({
-                                'title': row['title'],
-                                'sentiment': sentiment,
-                                'score': score,
-                                'source': row['source'],
-                                'link': row['link']
-                            })
-                        except:
-                            results.append({
-                                'title': row['title'],
-                                'sentiment': '⚪中性',
-                                'score': 0.5,
-                                'source': row['source'],
-                                'link': row['link']
-                            })
-                    
-                    df_res = pd.DataFrame(results)
-                    
-                    # KPI
-                    s_bull = len(df_res[df_res['sentiment']=='🟢強利多'])
-                    bull = len(df_res[df_res['sentiment']=='🟢利多'])
-                    s_bear = len(df_res[df_res['sentiment']=='🔴強利空'])
-                    bear = len(df_res[df_res['sentiment']=='🔴利空'])
-                    neutral = len(df_res[df_res['sentiment']=='⚪中性'])
-
-                    c1, c2, c3, c4, c5 = st.columns(5)
-                    c1.metric("🟢強利多", s_bull)
-                    c2.metric("🟢利多", bull)
-                    c3.metric("🔴強利空", s_bear)
-                    c4.metric("🔴利空", bear)
-                    c5.metric("⚪中性", neutral)
-
-                    # 圓餅圖
-                    fig = px.pie(values=[s_bull, bull, s_bear, bear, neutral], 
-                               names=['強利多', '利多', '強利空', '利空', '中性'],
-                               title=f"{search_kw} 情緒分佈",
-                               color_discrete_sequence=['limegreen', 'green', 'darkred', 'red', 'gray'])
-                    st.plotly_chart(fig, use_container_width=True)
-
-                    # 詳細新聞
-                    st.markdown("### 📋 重點新聞")
-                    for _, row in df_res.head(10).iterrows():
-                        color = "green" if "利多" in row['sentiment'] else "red" if "利空" in row['sentiment'] else "gray"
-                        st.markdown(f"""
-                        <div style="padding:10px; border-left:4px solid {color}; background:rgba(128,128,128,0.1); margin-bottom:5px;">
-                            <b style="color:{color}">{row['sentiment']} ({row['score']:.0%})</b><br>
-                            <a href="{row['link']}" target="_blank" style="text-decoration:none; color:inherit;">{row['title']}</a>
-                            <div style="font-size:0.8em; color:gray">{row['source']}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                elif analysis_mode == "❓ AI 智能問答":
-                    pipe = get_ai_pipeline("qa")
-                    st.markdown("### 🤖 智能問答")
-                    
-                    context = " ".join(df_news['title'].tolist())
-                    question = st.text_input("問問題", "這些新聞整體情緒如何？", key="qa_input_q")
-                    
-                    if question:
-                        try:
-                            # ✅ 正確調用方式：直接傳參數，不放 dict
+                st.markdown("### 🤖 智能問答")
+                context = " ".join(df_news['title'].tolist())
+                question = st.text_input("問問題", "這些新聞整體情緒如何？", key="qa_input_q")
+                
+                if question:
+                    try:
+                        with st.spinner("AI 思考中..."):
                             qa_res = pipe(question=question, context=context[:1000])
-                            
                             st.success(f"**回答**：{qa_res['answer']}")
                             st.caption(f"信心度：{qa_res['score']:.1%}")
-                        except Exception as e:
-                            st.error(f"無法回答：{str(e)}")
-                            st.info("💡 嘗試縮短問題或更換關鍵字")
+                    except Exception as e:
+                        st.error("無法回答，請簡化問題")
 
-    st.caption("💡 首次使用需下載 AI 模型 (約 500MB)")
+    st.caption("💡 首次使用需下載 AI 模型 (約 500MB)，請耐心等待進度條跑完")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
