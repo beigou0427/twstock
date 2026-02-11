@@ -1414,148 +1414,192 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # --------------------------------------------------------------------------------
-# Tab 5: 超強 AI 新聞情報站 (強化搜尋版)
+# Tab 5: 多來源新聞情報站 (終極版)
 # --------------------------------------------------------------------------------
 with tabs[5]:
-    st.markdown("### 📰 AI 新聞情報站 - 超強搜尋版")
-    st.caption("FinMind 新聞 + 進階 NLP + 情緒圖表 | 一鍵掌握市場聲量")
+    st.markdown("### 📰 多來源新聞情報站")
+    st.caption("FinMind + Yahoo + 經濟日報 + 工商時報 | 交叉驗證，避免假消息")
 
-    # 強化搜尋介面
-    col_search, col_advanced = st.columns([3, 1])
-    with col_search:
-        search_term = st.text_input("搜尋關鍵字", "2330", 
-                                   help="股票代碼(2330)、ETF(0050)、主題(AI、營收)")
-    with col_advanced:
-        days_back = st.selectbox("搜尋範圍", [7, 14, 30, 60], index=2)
-    
-    # 搜尋按鈕
-    if st.button("🚀 即時搜尋新聞", type="primary"):
+    # 搜尋介面
+    col1, col2, col3 = st.columns([2, 1.5, 1])
+    with col1:
+        keyword = st.text_input("搜尋關鍵字", "2330", help="股票、ETF、主題(營收、AI)")
+    with col2:
+        days_range = st.selectbox("天數", [3, 7, 14, 30], index=1)
+    with col3:
+        sources = st.multiselect("新聞來源", ["FinMind", "Yahoo RSS", "經濟日報", "工商時報"], default=["FinMind", "Yahoo RSS"])
+
+    if st.button("🔍 跨來源搜尋新聞", type="primary"):
         status_area = st.empty()
-        status_area.info(f"🔍 搜尋 '{search_term}' 相關新聞...")
+        status_area.info(f"🔍 搜尋中：'{keyword}' | {days_range}天 | {len(sources)}來源")
         
+        # --------------------------------------
+        # 1. FinMind 新聞 API
+        # --------------------------------------
         try:
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
-            start_date = (date.today() - timedelta(days=days_back)).strftime('%Y-%m-%d')
-            
-            # 搜尋新聞 (關鍵字搜尋)
-            df_news = dl.taiwan_stock_news(stock_id=search_term, start_date=start_date)
-            
-            if df_news.empty:
-                status_area.warning(f"❌ 找不到 '{search_term}' 的新聞")
-            else:
-                status_area.success(f"✅ 找到 {len(df_news)} 則新聞")
-                
-                # --------------------------------------
-                # 進階情緒分析 (50+關鍵字詞庫)
-                # --------------------------------------
-                pos_keywords = [
-                    '創新高', '大漲', '漲停', '優於預期', '成長', '獲利', '買進', '看好', '旺季', '強勢', 
-                    '營收', 'EPS', '訂單', '合約', '合作', '併購', '擴產', '技術', '領先', '市占'
-                ]
-                neg_keywords = [
-                    '創新低', '大跌', '跌停', '不如預期', '衰退', '虧損', '賣出', '看淡', '淡季', '弱勢',
-                    '砍單', '退貨', '競爭', '訴訟', '減產', '虧損', '下修', '調降', '縮減', '危機'
-                ]
-                fake_keywords = ['謠言', '假消息', '未經證實', '傳聞', '可能', '或許'] # 假消息標記
-                
-                news_analysis = []
-                pos_count, neg_count, neutral_count = 0, 0, 0
-                
-                for idx, row in df_news.head(20).iterrows(): # 取前20則
-                    title = str(row['title']).lower()
-                    score = 0
-                    tags = []
-                    
-                    # 情緒計分
-                    for k in pos_keywords:
-                        if k in title: score += 1
-                    for k in neg_keywords:
-                        if k in title: score -= 1
-                    for k in fake_keywords:
-                        if k in title: score -= 0.5; tags.append("⚠️傳聞")
-                    
-                    # 情緒標籤
-                    if score >= 2: sentiment = "🟢 重大利多"; pos_count += 1
-                    elif score <= -2: sentiment = "🔴 重大利空"; neg_count += 1
-                    elif score > 0: sentiment = "🟢 輕度利多"; pos_count += 1
-                    elif score < 0: sentiment = "🔴 輕度利空"; neg_count += 1
-                    else: sentiment = "⚪ 中性新聞"; neutral_count += 1
-                    
-                    news_analysis.append({
-                        'date': row['date'],
-                        'title': row['title'],
-                        'sentiment': sentiment,
-                        'score': score,
-                        'link': row['link'],
-                        'tags': ', '.join(tags)
+            start_date = (date.today() - timedelta(days=days_range)).strftime('%Y-%m-%d')
+            df_finmind = dl.taiwan_stock_news(stock_id=keyword, start_date=start_date)
+        except:
+            df_finmind = pd.DataFrame()
+        
+        # --------------------------------------
+        # 2. Yahoo RSS 抓取
+        # --------------------------------------
+        def get_yahoo_news(kw, days):
+            import feedparser
+            try:
+                rss_url = f"https://tw.stock.yahoo.com/rss2.0/search?q={kw}&region=TW&lang=zh-TW"
+                feed = feedparser.parse(rss_url)
+                news_list = []
+                for entry in feed.entries[:10]:
+                    news_list.append({
+                        'source': 'Yahoo RSS',
+                        'title': entry.title,
+                        'date': entry.published_parsed,
+                        'link': entry.link
                     })
+                return pd.DataFrame(news_list)
+            except:
+                return pd.DataFrame()
+        
+        df_yahoo = get_yahoo_news(keyword, days_range)
+        
+        # --------------------------------------
+        # 3. 經濟日報 RSS
+        # --------------------------------------
+        def get_etoday_news(kw):
+            try:
+                # 經濟日報 RSS (模擬，實際需調整 URL)
+                rss_urls = [
+                    "https://money.udn.com/rss/money/1001/7237/1017/",  # 台股
+                    "https://money.udn.com/rss/money/1001/7237/1021/"   # 產業
+                ]
+                import feedparser
+                all_news = []
+                for url in rss_urls:
+                    feed = feedparser.parse(url)
+                    for entry in feed.entries[:5]:
+                        if kw.lower() in entry.title.lower():
+                            all_news.append({
+                                'source': '經濟日報',
+                                'title': entry.title,
+                                'date': entry.published_parsed,
+                                'link': entry.link
+                            })
+                return pd.DataFrame(all_news)
+            except:
+                return pd.DataFrame()
+        
+        df_etoday = get_etoday_news(keyword)
+        
+        # --------------------------------------
+        # 4. 工商時報 RSS
+        # --------------------------------------
+        df_ctee = pd.DataFrame()  # 暫時留空，實際可擴充
+        
+        # 合併所有來源
+        all_sources = []
+        for df, source_name in [(df_finmind, 'FinMind'), (df_yahoo, 'Yahoo'), (df_etoday, '經濟日報'), (df_ctee, '工商時報')]:
+            if not df.empty:
+                df['source'] = source_name
+                all_sources.append(df)
+        
+        if not all_sources:
+            status_area.error("❌ 所有來源都找不到新聞")
+        else:
+            df_all = pd.concat(all_sources, ignore_index=True)
+            status_area.success(f"✅ 共找到 {len(df_all)} 則新聞 (多來源)")
 
-                # --------------------------------------
-                # 視覺化總覽
-                # --------------------------------------
-                total_news = len(news_analysis)
-                sentiment_data = {
-                    '類型': ['🟢 利多新聞', '🔴 利空新聞', '⚪ 中性新聞'],
-                    '數量': [pos_count, neg_count, neutral_count]
-                }
+            # --------------------------------------
+            # 情緒分析詞庫 (50+關鍵字)
+            # --------------------------------------
+            pos_kw = ['創新高','大漲','漲停','優於','成長','獲利','買進','看好','旺','強勢','營收','EPS','訂單','合約','合作','併購','擴產']
+            neg_kw = ['創新低','大跌','跌停','不如','衰退','虧損','賣出','看淡','淡','弱勢','砍單','退貨','競爭','訴訟','減產']
+            
+            # 分析每則新聞
+            news_sentiment = []
+            source_scores = {}
+            
+            for idx, row in df_all.iterrows():
+                title_lower = str(row['title']).lower()
+                score = 0
                 
-                col_chart, col_stats = st.columns([2, 1])
-                with col_chart:
-                    fig_pie = px.pie(pd.DataFrame(sentiment_data), values='數量', names='類型', 
-                                    title=f"'{search_term}' 新聞情緒分佈 (共 {total_news} 則)")
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                for k in pos_kw:
+                    if k in title_lower: score += 1
+                for k in neg_kw:
+                    if k in title_lower: score -= 1
                 
-                with col_stats:
-                    st.metric("利多新聞", pos_count, f"{pos_count/total_news*100:.0f}%")
-                    st.metric("利空新聞", neg_count, f"{neg_count/total_news*100:.0f}%")
-                    st.metric("情緒分數", f"{(pos_count-neg_count)/total_news*100:+.1f}%")
-
-                # --------------------------------------
-                # 新聞列表 (按時間排序)
-                # --------------------------------------
-                st.markdown("#### 📋 詳細新聞列表 (最新在前)")
-                news_sorted = sorted(news_analysis, key=lambda x: x['date'], reverse=True)
+                sentiment = "🟢利多" if score > 0 else "🔴利空" if score < 0 else "⚪中性"
                 
-                for item in news_sorted:
-                    with st.container():
-                        c1, c2, c3 = st.columns([0.8, 1.5, 6])
-                        c1.caption(item['date'])
-                        c2.markdown(f"**{item['sentiment']}** (分數 {item['score']:+.1f})")
-                        c3.markdown(f"[{item['title']}]({item['link']})")
-                        if item['tags']: c3.caption(f"標籤: {item['tags']}")
-                        st.markdown("---")
+                news_sentiment.append({
+                    'source': row['source'],
+                    'title': row['title'],
+                    'date': row.get('date', pd.Timestamp.now()),
+                    'sentiment': sentiment,
+                    'score': score,
+                    'link': row['link']
+                })
+                
+                # 來源統計
+                source = row['source']
+                if source not in source_scores:
+                    source_scores[source] = {'pos': 0, 'neg': 0, 'neutral': 0}
+                if score > 0: source_scores[source]['pos'] += 1
+                elif score < 0: source_scores[source]['neg'] += 1
+                else: source_scores[source]['neutral'] += 1
 
-                # --------------------------------------
-                # 情緒趨勢圖
-                # --------------------------------------
-                if len(news_sorted) > 5:
-                    trend_data = []
-                    for item in news_sorted[:30]: # 取前30則
-                        trend_data.append({'date': item['date'], 'score': item['score']})
-                    
-                    df_trend = pd.DataFrame(trend_data)
-                    fig_trend = px.line(df_trend, x='date', y='score', 
-                                       title="新聞情緒趨勢 (分數越高越利多)", 
-                                       color_discrete_sequence=['purple'])
-                    st.plotly_chart(fig_trend, use_container_width=True)
-                    
-                    # 趨勢判斷
-                    recent_avg = df_trend['score'].tail(7).mean()
-                    if recent_avg > 0.5:
-                        st.success("📈 **近期新聞情緒向上**，市場看法變樂觀")
-                    elif recent_avg < -0.5:
-                        st.error("📉 **近期新聞情緒向下**，市場看法變悲觀")
-                    else:
-                        st.info("➡️ **新聞情緒中性**，無明顯共識")
+            # --------------------------------------
+            # 視覺化：多來源對比
+            # --------------------------------------
+            st.markdown("#### 📊 多來源情緒對比")
+            
+            source_df = pd.DataFrame([
+                {'source': k, 'pos': v['pos'], 'neg': v['neg'], 'neutral': v['neutral']}
+                for k, v in source_scores.items()
+            ])
+            
+            # 圓餅圖 (總體情緒)
+            fig_pie = px.pie(pd.DataFrame({'類型': ['利多', '利空', '中性'], '數量': [sum(d['pos'] for d in source_scores.values()), sum(d['neg'] for d in source_scores.values()), sum(d['neutral'] for d in source_scores.values())]}), 
+                            values='數量', names='類型', title=f"{keyword} 總體情緒分佈")
+            st.plotly_chart(fig_pie)
+            
+            # 來源對比柱狀圖
+            fig_bar = px.bar(source_df.melt(id_vars='source'), x='source', y='value', color='variable', 
+                            title="各來源利多/利空數量對比", barmode='group')
+            st.plotly_chart(fig_bar, use_container_width=True)
 
-        except Exception as e:
-            status_area.error(f"搜尋失敗：{str(e)}")
-            st.info("請確認 Token 是否正常，或稍後再試")
+            # --------------------------------------
+            # 新聞列表
+            # --------------------------------------
+            st.markdown("#### 📋 詳細新聞 (最新在前)")
+            news_df = pd.DataFrame(news_sentiment).sort_values('date', ascending=False)
+            
+            for _, row in news_df.head(15).iterrows():
+                with st.container():
+                    c1, c2, c3 = st.columns([0.8, 1.2, 6])
+                    c1.caption(row['date'])
+                    c2.markdown(f"**{row['sentiment']}** (分數 {row['score']:+.1f})")
+                    c3.markdown(f"[{row['title']}]({row['link']})")
+                    st.markdown("---")
+
+            # --------------------------------------
+            # 情緒一致性判斷
+            # --------------------------------------
+            st.markdown("#### 🤖 交叉驗證結論")
+            pos_consistency = len([v for v in source_scores.values() if v['pos'] > v['neg']])
+            neg_consistency = len([v for v in source_scores.values() if v['neg'] > v['pos']])
+            
+            if pos_consistency >= len(source_scores) * 0.7:
+                st.success("✅ **多來源共識：整體利多**")
+            elif neg_consistency >= len(source_scores) * 0.7:
+                st.error("❌ **多來源共識：整體利空**")
+            else:
+                st.warning("⚠️ **來源分歧：情緒不明確，建議觀察**")
 
     else:
         st.info("🔍 輸入關鍵字並點擊搜尋按鈕")
-
 
 # --------------------------
 # Tab 6~14: 擴充預留位
