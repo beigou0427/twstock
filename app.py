@@ -1414,42 +1414,40 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # --------------------------------------------------------------------------------
-# Tab 5: LLM AI 新聞情緒分析（Hugging Face 版）
+# Tab 5: LLM 新聞總結與分析站
 # --------------------------------------------------------------------------------
 with tabs[5]:
-    st.markdown("### 🤖 LLM AI 新聞情報站")
-    st.caption("Hugging Face Transformers | 98%準確率 | 理解上下文與諷刺")
+    st.markdown("### 🤖 LLM 新聞總結站")
+    st.caption("情緒分析 + AI 摘要 + 群組總結 | 一鍵掌握重點")
 
-    # 搜尋介面
-    col1, col2 = st.columns([2, 1])
+    # 搜尋與模型選擇
+    col1, col2, col3 = st.columns([1.5, 1, 1.5])
     with col1:
-        keyword = st.text_input("關鍵字/代碼", "2330")
+        keyword = st.text_input("關鍵字", "2330")
     with col2:
         days_range = st.selectbox("天數", [7, 14, 30], index=1)
+    with col3:
+        llm_task = st.selectbox("LLM任務", [
+            "📊 情緒分析",
+            "✂️ 單篇摘要", 
+            "📝 利多總結",
+            "📝 利空總結",
+            "❓ Q&A問答"
+        ], index=0)
 
-    # LLM 模型選擇
-    model_choice = st.selectbox("AI模型", [
-        "cardiffnlp/twitter-roberta-base-sentiment-latest",  # 最新 Twitter 情緒
-        "nlptown/bert-base-multilingual-uncased-sentiment",  # 多語言
-        "uer/roberta-base-finetuned-cluecorpussmall-sentiment"  # 中文專用
-    ], index=0)
-
-    if st.button("🤖 LLM 全網新聞分析", type="primary"):
-        with st.spinner("LLM 分析中..."):
+    if st.button("🚀 LLM 智慧分析", type="primary"):
+        with st.spinner("LLM 處理中..."):
+            from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+            
             # -------------------------------------------------------
-            # 1. 抓取新聞（多來源）
+            # 1. 抓取新聞
             # -------------------------------------------------------
             status = st.empty()
-            status.info("📡 抓取新聞...")
+            status.info("📡 抓新聞...")
             
-            def get_news_sources(kw, days):
-                import feedparser
-                import urllib.parse
-                
-                encoded = urllib.parse.quote(kw)
-                all_news = []
-                
-                # FinMind
+            # 簡化版多來源抓取（穩定性優先）
+            def fetch_news_batch(kw, days):
+                # FinMind + RSS 混合
                 try:
                     dl = DataLoader()
                     dl.login_by_token(api_token=FINMIND_TOKEN)
@@ -1457,133 +1455,139 @@ with tabs[5]:
                     df_fm = dl.taiwan_stock_news(stock_id=kw, start_date=start)
                     if not df_fm.empty:
                         df_fm['source'] = 'FinMind'
-                        all_news.append(df_fm[['title', 'source']])
+                        return df_fm[['title', 'source']].head(50)
                 except: pass
                 
-                # RSS
+                # RSS 備援
+                import feedparser, urllib.parse
+                encoded = urllib.parse.quote(kw)
                 rss_urls = [
                     f"https://tw.stock.yahoo.com/rss2.0/search?q={encoded}&region=TW&lang=zh-TW",
                     f"https://money.udn.com/rss/search/{encoded}"
                 ]
+                all_news = []
                 for url in rss_urls:
                     try:
                         feed = feedparser.parse(url)
-                        for entry in feed.entries[:10]:
-                            all_news.append([{
-                                'title': entry.title,
-                                'source': 'RSS'
-                            }])
+                        for entry in feed.entries[:20]:
+                            all_news.append({'title': entry.title, 'source': 'RSS'})
                     except: pass
                 
-                if all_news:
-                    df_all = pd.concat([pd.DataFrame(n) for n in all_news], ignore_index=True)
-                    return df_all.drop_duplicates('title').head(100)  # 最多100則
-                return pd.DataFrame()
+                return pd.DataFrame(all_news[:50])
             
-            df_news = get_news_sources(keyword, days_range)
+            df_news = fetch_news_batch(keyword, days_range)
             
             if df_news.empty:
-                st.error("抓不到新聞")
-            else:
-                status.success(f"✅ {len(df_news)} 則新聞準備分析")
+                st.error("❌ 抓不到新聞，請檢查關鍵字或 Token")
+                st.stop()
+            
+            status.success(f"✅ {len(df_news)} 則新聞")
 
-                # -------------------------------------------------------
-                # 2. LLM 情緒分析（Hugging Face Pipeline）
-                # -------------------------------------------------------
-                status.info("🤖 LLM 分析中...")
-                
-                from transformers import pipeline
-                
-                # 載入模型（自動下載，首次需網路）
-                @st.cache_resource
-                def load_sentiment_model(model_name):
+            # -------------------------------------------------------
+            # 2. LLM Pipeline 載入
+            # -------------------------------------------------------
+            @st.cache_resource
+            def load_llm_pipeline(task_type):
+                if task_type == "📊 情緒分析":
                     return pipeline("sentiment-analysis", 
-                                  model=model_name,
-                                  return_all_scores=True)
-                
-                model = load_sentiment_model(model_choice)
-                
-                # 批次分析（每批20則，避免記憶體爆）
+                                  model="cardiffnlp/twitter-roberta-base-sentiment-latest")
+                elif "摘要" in task_type:
+                    # T5 或 BART 摘要模型
+                    return pipeline("summarization", 
+                                  model="facebook/bart-large-cnn")
+                else:
+                    # 問答模型
+                    return pipeline("question-answering", 
+                                  model="deepset/roberta-base-squad2")
+            
+            llm_pipe = load_llm_pipeline(llm_task)
+            
+            # -------------------------------------------------------
+            # 3. 根據任務執行
+            # -------------------------------------------------------
+            if "情緒分析" in llm_task:
+                # 批次情緒分析
                 results = []
-                for i in range(0, len(df_news), 20):
-                    batch = df_news.iloc[i:i+20]['title'].tolist()
-                    batch_results = model(batch)
-                    
-                    for j, res in enumerate(batch_results):
-                        # 取最高信心分數
-                        top_label = max(res, key=lambda x: x['score'])
-                        results.append({
-                            'title': batch[j],
-                            'source': df_news.iloc[i+j]['source'],
-                            'sentiment': top_label['label'],
-                            'confidence': top_label['score'],
-                            'all_scores': res
-                        })
+                for _, row in df_news.iterrows():
+                    res = llm_pipe(row['title'])[0]
+                    results.append({
+                        'title': row['title'],
+                        'source': row['source'],
+                        'sentiment': res['label'],
+                        'confidence': res['score']
+                    })
                 
-                df_results = pd.DataFrame(results)
+                df_sent = pd.DataFrame(results)
+                df_sent['zh_label'] = df_sent['sentiment'].map({
+                    'POSITIVE': '🟢利多', '4 stars': '🟢利多',
+                    'NEGATIVE': '🔴利空', '1 star': '🔴利空',
+                    'NEUTRAL': '⚪中性'
+                }).fillna(df_sent['sentiment'])
                 
-                # 轉換標籤（LLM輸出通常是 POSITIVE/NEGATIVE/NEUTRAL）
-                df_results['zh_sentiment'] = df_results['sentiment'].map({
-                    'POSITIVE': '🟢利多', '4 stars': '🟢利多', '5 stars': '🟢利多',
-                    'NEGATIVE': '🔴利空', '1 star': '🔴利空', 
-                    'NEUTRAL': '⚪中性', '2 stars': '⚪中性', '3 stars': '⚪中性'
-                }).fillna(df_results['sentiment'])
+                # KPI + 圓餅圖
+                pos = len(df_sent[df_sent['zh_label']=='🟢利多'])
+                neg = len(df_sent[df_sent['zh_label']=='🔴利空'])
+                neu = len(df_sent[df_sent['zh_label']=='⚪中性'])
                 
-                status.success("✅ LLM 分析完成！")
-
-                # -------------------------------------------------------
-                # 3. 視覺化與結果
-                # -------------------------------------------------------
+                col1, col2, col3 = st.columns(3)
+                col1.metric("🟢利多", pos)
+                col2.metric("🔴利空", neg)
+                col3.metric("⚪中性", neu)
                 
-                # KPI
-                c1, c2, c3, c4 = st.columns(4)
-                pos_count = len(df_results[df_results['zh_sentiment']=='🟢利多'])
-                neg_count = len(df_results[df_results['zh_sentiment']=='🔴利空'])
-                neu_count = len(df_results[df_results['zh_sentiment']=='⚪中性'])
+                fig = px.pie(values=[pos, neg, neu], names=['利多', '利空', '中性'], 
+                            title=f"{keyword} LLM 情緒分析")
+                st.plotly_chart(fig)
                 
-                c1.metric("🟢利多", pos_count)
-                c2.metric("🔴利空", neg_count)
-                c3.metric("⚪中性", neu_count)
-                c4.metric("平均信心", f"{df_results['confidence'].mean():.1%}")
-
-                # 圓餅圖
-                fig_pie = px.pie(values=[pos_count, neg_count, neu_count], 
-                                names=['🟢利多', '🔴利空', '⚪中性'],
-                                title=f"{keyword} LLM 情緒分析")
-                st.plotly_chart(fig_pie)
-
-                # Top 高信心新聞
-                st.markdown("### 🔥 高信心利多新聞（信心 > 85%）")
-                high_conf_bull = df_results[
-                    (df_results['zh_sentiment']=='🟢利多') & 
-                    (df_results['confidence']>0.85)
-                ].sort_values('confidence', ascending=False)
+                # 高信心 Top 10
+                top_pos = df_sent[df_sent['zh_label']=='🟢利多'].nlargest(10, 'confidence')
+                st.markdown("### 🟢 高信心利多新聞")
+                for _, r in top_pos.iterrows():
+                    st.success(f"**{r['confidence']:.1%}**: {r['title']}")
                 
-                for _, row in high_conf_bull.head(10).iterrows():
-                    st.success(f"**信心 {row['confidence']:.1%}**: {row['title']}")
+                top_neg = df_sent[df_sent['zh_label']=='🔴利空'].nsmallest(10, 'confidence')
+                st.markdown("### 🔴 高信心利空新聞")
+                for _, r in top_neg.iterrows():
+                    st.error(f"**{r['confidence']:.1%}**: {r['title']}")
 
-                st.markdown("### 💥 高信心利空新聞（信心 > 85%）")
-                high_conf_bear = df_results[
-                    (df_results['zh_sentiment']=='🔴利空') & 
-                    (df_results['confidence']>0.85)
-                ].sort_values('confidence')
+            elif "單篇摘要" in llm_task:
+                # 逐篇摘要
+                summaries = []
+                for i, row in df_news.head(10).iterrows():  # 前10篇
+                    summary = llm_pipe(row['title'], max_length=50, min_length=10, do_sample=False)[0]['summary_text']
+                    summaries.append({
+                        'title': row['title'],
+                        'summary': summary,
+                        'source': row['source']
+                    })
                 
-                for _, row in high_conf_bear.head(10).iterrows():
-                    st.error(f"**信心 {row['confidence']:.1%}**: {row['title']}")
+                df_sum = pd.DataFrame(summaries)
+                st.dataframe(df_sum, use_container_width=True)
 
-                # 完整數據表
-                with st.expander("📊 完整分析結果"):
-                    st.dataframe(df_results[['zh_sentiment', 'confidence', 'title', 'source']], use_container_width=True)
+            elif "利多總結" in llm_task:
+                # 利多新聞總結
+                bull_news = ' '.join(df_news['title'].tolist())
+                prompt = f"請總結以下利多新聞的重點（繁體中文，3-5句）：\n{bull_news[:4000]}"
+                summary = llm_pipe(prompt, max_length=150, min_length=50)[0]['summary_text']
+                st.markdown("### 🟢 利多新聞總結")
+                st.write(summary)
 
-                st.caption("💡 LLM 模型會理解上下文與諷刺，準確率比規則詞庫高 6%")
+            elif "利空總結" in llm_task:
+                # 同上
+                bear_prompt = f"請總結以下利空新聞的重點（繁體中文）：\n{' '.join(df_news['title'].tolist())[:4000]}"
+                summary = llm_pipe(bear_prompt, max_length=150)[0]['summary_text']
+                st.markdown("### 🔴 利空新聞總結")
+                st.write(summary)
 
-## 🔥 **部署前準備**（重要！）
+            elif "Q&A問答" in llm_task:
+                # 問答模式
+                context = ' '.join(df_news['title'].tolist())
+                question = st.text_input("問問題", "這些新聞對股票是利多還是利空？")
+                if question:
+                    qa_res = llm_pipe(question, context=context[:512])  # 截斷長度
+                    st.success(f"**回答**：{qa_res['answer']}")
+                    st.caption(f"信心：{qa_res['score']:.1%}")
 
-**首次運行需要下載模型**（約 500MB-2GB）：
-
-```bash
-# 在終端執行（您的 Streamlit 環境）
-pip install transformers torch accelerate
+        st.caption("首次使用需下載模型（500MB-2GB），之後超快！")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
