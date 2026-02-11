@@ -1414,32 +1414,25 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 
-# Tab5 完美版：00637L + 全槓桿ETF
+# Tab5 最終修正版：00637L直接支援！
 with tabs[5]:
-    st.markdown("### 📈 台股利多利空（槓桿ETF全支援）")
+    st.markdown("### 📈 台股利多利空（槓桿全家桶）")
     
-    # 輸入框
-    col_input, col_tips = st.columns([1,2])
-    with col_input:
-        input_code = st.text_input("輸入代碼", "00637L")
-    with col_tips:
-        st.markdown("""
-        **槓桿ETF範例**：
-        `00637L` **滬深300正2** ✓
-        `00670L` 台股正2 ✓
-        `2330` 台積電 ✓
-        `006208` 台50 ✓
-        """)
+    # 輸入
+    input_code = st.text_input("輸入代碼", "00637L", 
+                              help="支援00637L、2330、0050等")
     
-    # 智慧解析（支援00637L直接用）
+    # ✅ 新驗證：直接取數字部分
     import re
-    if len(input_code) >= 4 and input_code[-4:].isdigit():
-        stock_id = input_code[-4:] if len(input_code)==4 else input_code  # 00637L→00637L, 2330→2330
-    else:
-        st.error("❌ 最後4碼須數字（如00637L）")
+    numbers = re.findall(r'\d+', input_code)
+    if not numbers or len(numbers[0]) not in [4,5,6]:
+        st.error("❌ 請輸入含4-6碼數字（如00637L→00637）")
         st.stop()
     
-    st.success(f"✅ 分析：**{stock_id}** （輸入：{input_code}）")
+    stock_id = numbers[0]  # 00637L → "00637"
+    display_name = input_code  # 顯示原輸入
+    
+    st.success(f"✅ 分析**{stock_id}** （{display_name}）")
     
     # RSI
     def rsi(close, n=14):
@@ -1450,12 +1443,15 @@ with tabs[5]:
     
     # 資料
     @st.cache_data(ttl=120)
-    def get_data(code):
+    def fetch(code):
         try:
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
-            df = dl.taiwan_stock_daily(code, 
-                start_date=(date.today()-timedelta(days=60)).strftime('%Y-%m-%d'))
+            # 試兩種：完整碼 + 純數字
+            for test_code in [input_code, code]:
+                df = dl.taiwan_stock_daily(test_code, 
+                    start_date=(date.today()-timedelta(days=60)).strftime('%Y-%m-%d'))
+                if len(df)>10: break
             
             if len(df)<10: return None
             
@@ -1470,6 +1466,7 @@ with tabs[5]:
             last = df.iloc[-1]
             return df, {
                 'code': code,
+                'display': display_name,
                 'price': last['close'],
                 'change': (last['close']-df['close'].iloc[-2])/df['close'].iloc[-2]*100,
                 'rsi': last['RSI'],
@@ -1479,58 +1476,51 @@ with tabs[5]:
         except:
             return None
     
-    # 顯示
-    data = get_data(stock_id)
+    # 結果
+    data = fetch(stock_id)
     if data:
         df, m = data
-        st.balloons()
+        st.success(f"✅ {m['display']} 分析完成")
         
-        # 面板（槓桿強調）
-        c1,c2,c3,c4 = st.columns(4)
+        # 面板
+        c1,c2,c3,c4=st.columns(4)
         c1.metric("現價", f"${m['price']:.1f}", f"{m['change']:+.2f}%")
-        c2.metric("RSI", f"{m['rsi']:.0f}", "超賣🟢" if m['rsi']<40 else "超買🔴")
-        c3.metric("均線", "多頭🟢" if m['ma_up'] else "空頭🔴")
-        c4.metric("量比", f"{m['vol']:.1f}x", "爆量📈" if m['vol']>1.5 else "")
+        c2.metric("RSI", f"{m['rsi']:.0f}")
+        c3.metric("均線", "🟢" if m['ma_up'] else "🔴")
+        c4.metric("量比", f"{m['vol']:.1f}x")
         
         # 圖
-        fig = px.line(df.tail(30), x='date', y=['close','MA8'],
-                     title=f"{input_code} 槓桿走勢")
+        fig=px.line(df.tail(30),x='date',y=['close','MA8'],title=m['display'])
         st.plotly_chart(fig)
         
-        # 槓桿評估
-        st.markdown("### ⚖️ **利多利空（槓桿版）**")
-        bull = []; bear = []
+        # 評估
+        st.markdown("### ⚖️ 利多利空")
+        bull=[];bear=[]
         
-        if m['rsi'] < 45: bull.append("🟢 RSI低，反彈槓桿效應")
-        if m['rsi'] > 60: bear.append("🔴 RSI高，槓桿回檔風險")
-        if m['ma_up']: bull.append("🟢 均線多頭，加碼時機")
-        else: bear.append("🔴 破線，槓桿止損")
+        if m['rsi']<45:bull.append("🟢 RSI低，反彈")
+        if m['rsi']>60:bear.append("🔴 RSI高，壓力")
+        if m['ma_up']:bull.append("🟢 站均線")
+        else:bear.append("🔴 破均線")
+        if m['vol']>1.3:bull.append(f"🟢 量{m['vol']:.1f}x")
         
-        if m['vol'] > 1.4: bull.append(f"🟢 量爆{m['vol']:.1f}x")
-        if m['change'] > 3: bull.append("🟢 強漲，槓桿獲利")
-        elif m['change'] < -3: bear.append("🔴 急殺，槓桿虧損")
-        
-        cb,cr = st.columns(2)
+        cb,cr=st.columns(2)
         with cb: 
-            st.markdown("#### 🟢 **追漲訊號**")
-            for b in bull: st.success(b)
+            st.markdown("**🟢利多**")
+            for b in bull:st.success(b)
         with cr:
-            st.markdown("#### 🔴 **止損訊號**")
-            for b in bear: st.warning(b)
+            st.markdown("**🔴利空**")
+            for b in bear:st.warning(b)
         
-        score = len(bull)-len(bear)
-        st.metric("槓桿分數", f"{score:+d}", "加碼" if score>1 else "減碼")
+        st.metric("分數",f"{len(bull)-len(bear):+d}")
         
-        st.caption(f"⚠️ {input_code} 高槓桿，高風險高報酬")
     else:
         st.error(f"❌ {stock_id} 無資料")
-        st.info("💡 00637L試00637L | 確認Token")
+        st.info("💡 00637L常用00637L | 試2330/0050")
 
-# 🎯 **00637L 專屬邏輯**
-# ✅ **直接用00637L**（FinMind支援完整碼）
-# ✅ **智慧顯示**：輸入00637L → 標題00637L
-# ✅ **槓桿優化**：漲跌閾值x1.5、量比1.4x
-# ✅ **滬深300特化**：RSI/均線參數調整
+# 🎉 **00637L 雙重策略**
+# 1. **輸入00637L** → 自動試00637L和00637
+# 2. **數字提取**：00637L → 00637（備案）
+# 3. **顯示原碼**：00637L 圖表標題
 
 
 
