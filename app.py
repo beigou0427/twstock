@@ -1414,42 +1414,125 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 
+# Tab5 FinMind 專用修復版
 with tabs[5]:
-    st.markdown("### 📈 個股利多利空")
+    st.markdown("### 📈 FinMind 利多利空分析")
     
-    code = st.text_input("代碼", "2330")
-    if code and code.isdigit() and len(code) in [4,6]:
+    # 輸入
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        code_input = st.text_input("輸入代碼", "2330", help="如2330、0050")
+    
+    # 提取純數字代碼 (00637L -> 00637)
+    import re
+    digits = re.findall(r'\d+', code_input)
+    if not digits:
+        st.error("❌ 請輸入代碼")
+        st.stop()
+    stock_id = digits[0]
+    
+    # 顯示狀態
+    status_area = st.empty()
+    status_area.info(f"⏳ 正在向 FinMind 請求 {stock_id} 資料...")
+    
+    # 核心資料函數
+    @st.cache_data(ttl=600)
+    def get_finmind_data(sid):
         try:
+            # 1. 初始化 (不重複 login，假設外部已設好 FINMIND_TOKEN)
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
-            df = dl.taiwan_stock_daily(code)
             
-            if not df.empty:
-                df = df.tail(20)
-                close = pd.to_numeric(df['close'])
-                rsi_val = 100 - 100 / (1 + (close.diff().clip(lower=0).ewm(span=14).mean() / 
-                                          -close.diff().clip(upper=0).ewm(span=14).mean())).iloc[-1]
+            # 2. 抓日 K 線 (最基本)
+            start_date = (date.today() - timedelta(days=90)).strftime('%Y-%m-%d')
+            df = dl.taiwan_stock_daily(stock_id=sid, start_date=start_date)
+            
+            if df.empty:
+                return None, "API 回傳空資料 (請確認代碼或 Token)"
                 
-                ma_bull = close.iloc[-1] > close.rolling(10).mean().iloc[-1]
-                
-                st.success(f"{code} RSI:{rsi_val:.0f} | 均線:{'🟢多頭' if ma_bull else '🔴空頭'}")
-                
-                if rsi_val < 40:
-                    st.success("🟢 **利多**：RSI超賣，反彈機會")
-                if rsi_val > 70:
-                    st.warning("🔴 **利空**：RSI超買，壓力區")
-                if ma_bull:
-                    st.success("🟢 **利多**：站上均線，多頭結構")
-                else:
-                    st.warning("🔴 **利空**：跌破均線，弱勢")
-                    
-            else:
-                st.error("無資料")
-        except:
-            st.error("Token/API錯誤")
-    else:
-        st.info("輸入4/6碼數字如2330、0050")
+            # 3. 抓籌碼 (三大法人)
+            try:
+                df_chip = dl.taiwan_stock_institutional_investors(stock_id=sid, start_date=start_date)
+            except:
+                df_chip = pd.DataFrame()
+            
+            return (df, df_chip), "OK"
+            
+        except Exception as e:
+            return None, f"連線錯誤: {str(e)}"
 
+    # 執行抓取
+    data_pack, msg = get_finmind_data(stock_id)
+    
+    if data_pack:
+        df, df_chip = data_pack
+        status_area.success(f"✅ {code_input} 資料載入成功！")
+        
+        # 資料處理
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date').tail(30).reset_index(drop=True)
+        df['close'] = pd.to_numeric(df['close'])
+        df['Trading_Volume'] = pd.to_numeric(df['Trading_Volume'])
+        
+        # 指標計算
+        latest_close = df['close'].iloc[-1]
+        prev_close = df['close'].iloc[-2]
+        change_pct = (latest_close - prev_close) / prev_close * 100
+        
+        # RSI
+        delta = df['close'].diff()
+        u = delta.clip(lower=0)
+        d = -delta.clip(upper=0)
+        rs = u.ewm(span=14).mean() / d.ewm(span=14).mean()
+        rsi = 100 - 100 / (1 + rs)
+        cur_rsi = rsi.iloc[-1]
+        
+        # 均線
+        ma10 = df['close'].rolling(10).mean().iloc[-1]
+        ma_bull = latest_close > ma10
+        
+        # 量能
+        vol_ratio = df['Trading_Volume'].iloc[-1] / df['Trading_Volume'].rolling(5).mean().iloc[-1]
+        
+        # 籌碼 (如果有)
+        chip_status = "無資料"
+        if not df_chip.empty:
+            last_chip = df_chip[df_chip['date'] == df_chip['date'].max()]
+            net_buy = last_chip['buy'].sum() - last_chip['sell'].sum()
+            chip_status = "🔴賣超" if net_buy < 0 else "🟢買超"
+            
+        # --- UI 呈現 ---
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("股價", f"{latest_close:.1f}", f"{change_pct:+.2f}%")
+        c2.metric("RSI (14)", f"{cur_rsi:.0f}", "過熱" if cur_rsi>70 else "超賣" if cur_rsi<30 else "中性")
+        c3.metric("法人籌碼", chip_status)
+        c4.metric("量比", f"{vol_ratio:.1f}x")
+        
+        # 圖表
+        fig = px.line(df, x='date', y='close', title=f"{stock_id} 走勢圖")
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # 利多利空分析
+        st.subheader("⚖️ 綜合分析")
+        col_bull, col_bear = st.columns(2)
+        
+        with col_bull:
+            st.markdown("#### 🟢 利多")
+            if cur_rsi < 40: st.success("RSI 低檔鈍化，反彈機會")
+            if ma_bull: st.success("股價站上 10日線")
+            if chip_status == "🟢買超": st.success("法人近期買超")
+            if vol_ratio > 1.2 and change_pct > 0: st.success("量增價漲，動能強")
+            
+        with col_bear:
+            st.markdown("#### 🔴 利空")
+            if cur_rsi > 70: st.warning("RSI 過熱，隨時拉回")
+            if not ma_bull: st.warning("股價跌破 10日線")
+            if chip_status == "🔴賣超": st.warning("法人調節賣出")
+            if vol_ratio > 1.5 and change_pct < 0: st.warning("爆量下跌，恐慌賣壓")
+            
+    else:
+        status_area.error(f"❌ 失敗: {msg}")
+        st.info("💡 建議：1. 檢查 Token 是否過期 2. 00637L 請輸入 00637")
 
 
 # --------------------------
