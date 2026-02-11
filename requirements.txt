@@ -1,43 +1,33 @@
-# ================================================
-# 貝伊果屋 twstock - 完整穩定依賴
-# ================================================
+# Core
+streamlit>=1.28.0
+pandas>=2.0.0
+numpy>=1.24.0
 
-# Core Framework
-streamlit>=1.28.0,<1.39.0
-
-# Data Processing
-pandas>=2.0.0,<2.3.0
-numpy>=1.24.0,<2.0.0
-pyarrow>=14.0.0
-
-# Taiwan Stock Data
+# FinMind (台灣股市)
 finmind>=1.9.4
 
-# Charts & Visualization
-plotly>=5.17.0,<6.0.0
+# LLM & NLP (Hugging Face)
+transformers>=4.35.0
+torch>=2.1.0
+accelerate>=0.24.0
+tokenizers>=0.15.0
+
+# Charts & Maps
+plotly>=5.17.0
 folium>=0.14.0
 streamlit-folium>=0.15.0
 
-# Finance Data
-yfinance>=0.2.40
-
-# RSS News
+# RSS & Web
 feedparser>=6.0.10
 requests>=2.31.0
 urllib3>=2.0.0
 
-# Math & Science
+# Data & Utils
+pyarrow>=14.0.0
 scipy>=1.11.0
-python-dateutil>=2.8.0
-pytz>=2023.3
-
-# Web Templates
 jinja2>=3.1.0
 branca>=0.6.0
 
-# ================================================
-# 注意事項：
-# - 無 streamlit-autorefresh（避免 removeChild 錯誤）
-# - streamlit <1.39.0（避開前端渲染 bug）
-# - 所有版本鎖定（穩定性優先）
-# ================================================
+# Optional (若用過)
+yfinance>=0.2.40
+wordcloud>=1.9.0
