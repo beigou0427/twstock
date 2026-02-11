@@ -1577,13 +1577,7 @@ with tabs[5]:
 
                 st.caption("💡 LLM 模型會理解上下文與諷刺，準確率比規則詞庫高 6%")
 
-## 🔥 **部署前準備**（重要！）
 
-**首次運行需要下載模型**（約 500MB-2GB）：
-
-```bash
-# 在終端執行（您的 Streamlit 環境）
-pip install transformers torch accelerate
 
 # --------------------------
 # Tab 6~14: 擴充預留位
