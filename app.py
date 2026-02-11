@@ -1414,221 +1414,147 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # --------------------------------------------------------------------------------
-# Tab 5: 全方位個股健檢 (含 AI 新聞解讀版)
+# Tab 5: 超強 AI 新聞情報站 (強化搜尋版)
 # --------------------------------------------------------------------------------
 with tabs[5]:
-    st.markdown("### 🏥 全方位個股健檢中心")
-    st.caption("FinMind 數據 + AI 新聞自動判讀 | 讓新聞不再只是雜訊")
+    st.markdown("### 📰 AI 新聞情報站 - 超強搜尋版")
+    st.caption("FinMind 新聞 + 進階 NLP + 情緒圖表 | 一鍵掌握市場聲量")
 
-    # 輸入區
-    col_input, col_status = st.columns([1, 2])
-    with col_input:
-        code_input = st.text_input("輸入代碼", "2330", help="如 2330, 0050")
+    # 強化搜尋介面
+    col_search, col_advanced = st.columns([3, 1])
+    with col_search:
+        search_term = st.text_input("搜尋關鍵字", "2330", 
+                                   help="股票代碼(2330)、ETF(0050)、主題(AI、營收)")
+    with col_advanced:
+        days_back = st.selectbox("搜尋範圍", [7, 14, 30, 60], index=2)
     
-    import re
-    digits = re.findall(r'\d+', code_input)
-    if not digits:
-        st.error("⚠️ 請輸入正確代碼")
-        st.stop()
-    stock_id = digits[0]
-    
-    status_area = st.empty()
-
-    # -------------------------------------------------------
-    # 資料抓取函數 (新增 get_news)
-    # -------------------------------------------------------
-    @st.cache_data(ttl=600)
-    def get_basic_tech(sid):
-        try:
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            start = (date.today() - timedelta(days=120)).strftime('%Y-%m-%d')
-            return dl.taiwan_stock_daily(stock_id=sid, start_date=start)
-        except: return pd.DataFrame()
-
-    @st.cache_data(ttl=3600)
-    def get_fundamental(sid):
-        try:
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            start = (date.today() - timedelta(days=30)).strftime('%Y-%m-%d')
-            return dl.taiwan_stock_per_pbr(stock_id=sid, start_date=start)
-        except: return pd.DataFrame()
-
-    @st.cache_data(ttl=1800)
-    def get_chips(sid):
-        try:
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            start = (date.today() - timedelta(days=30)).strftime('%Y-%m-%d')
-            return dl.taiwan_stock_institutional_investors(stock_id=sid, start_date=start)
-        except: return pd.DataFrame()
-
-    # 🔥 新增：抓取個股新聞
-    @st.cache_data(ttl=1800)
-    def get_stock_news(sid):
-        try:
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            start = (date.today() - timedelta(days=30)).strftime('%Y-%m-%d') # 抓近一個月
-            return dl.taiwan_stock_news(stock_id=sid, start_date=start)
-        except: return pd.DataFrame()
-
-    # -------------------------------------------------------
-    # 執行與計算
-    # -------------------------------------------------------
-    status_area.info(f"⏳ 正在分析 {stock_id} 的數據與新聞...")
-    
-    df_tech = get_basic_tech(stock_id)
-    
-    if not df_tech.empty:
-        # 基礎數據處理 (省略重複部分，保持簡潔)
-        df_tech['date'] = pd.to_datetime(df_tech['date'])
-        df_tech = df_tech.sort_values('date').reset_index(drop=True)
-        df_tech['close'] = pd.to_numeric(df_tech['close'])
-        last = df_tech.iloc[-1]
-        prev = df_tech.iloc[-2]
-        chg = (last['close'] - prev['close']) / prev['close'] * 100
+    # 搜尋按鈕
+    if st.button("🚀 即時搜尋新聞", type="primary"):
+        status_area = st.empty()
+        status_area.info(f"🔍 搜尋 '{search_term}' 相關新聞...")
         
-        # 指標
-        ma20 = df_tech['close'].rolling(20).mean().iloc[-1]
-        ma60 = df_tech['close'].rolling(60).mean().iloc[-1]
-        delta = df_tech['close'].diff()
-        cur_rsi = (100 - 100 / (1 + (delta.clip(lower=0).ewm(span=14).mean() / -delta.clip(upper=0).ewm(span=14).mean()))).iloc[-1]
-
-        # 籌碼
-        df_chips = get_chips(stock_id)
-        inst_buy = 0
-        if not df_chips.empty:
-            last_date = df_chips['date'].max()
-            inst_buy = (df_chips[df_chips['date']==last_date]['buy'].sum() - df_chips[df_chips['date']==last_date]['sell'].sum()) / 1000
-
-        # 基本面
-        df_fund = get_fundamental(stock_id)
-        per = f"{df_fund.iloc[-1]['PER']:.1f}" if not df_fund.empty else "N/A"
-
-        status_area.empty()
-
-        # --- Dashboard ---
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("收盤價", f"${last['close']:.1f}", f"{chg:+.2f}%")
-        c2.metric("RSI", f"{cur_rsi:.0f}", "🔥過熱" if cur_rsi>75 else "❄️超賣" if cur_rsi<25 else "⚖️中性")
-        c3.metric("P/E", per)
-        c4.metric("法人", f"{inst_buy:+.0f}張", "🔴賣超" if inst_buy<0 else "🟢買超")
-
-        st.divider()
-
-        # 分頁
-        sub_tabs = st.tabs(["📰 AI 新聞解讀", "📊 技術籌碼", "⚖️ 綜合診斷"])
-
-        # -------------------------------------------------------
-        # Tab 1: AI 新聞解讀 (核心新功能)
-        # -------------------------------------------------------
-        with sub_tabs[0]:
-            df_news = get_stock_news(stock_id)
+        try:
+            dl = DataLoader()
+            dl.login_by_token(api_token=FINMIND_TOKEN)
+            start_date = (date.today() - timedelta(days=days_back)).strftime('%Y-%m-%d')
             
-            if not df_news.empty:
-                st.markdown(f"#### 📢 {stock_id} 近期新聞自動評讀")
+            # 搜尋新聞 (關鍵字搜尋)
+            df_news = dl.taiwan_stock_news(stock_id=search_term, start_date=start_date)
+            
+            if df_news.empty:
+                status_area.warning(f"❌ 找不到 '{search_term}' 的新聞")
+            else:
+                status_area.success(f"✅ 找到 {len(df_news)} 則新聞")
                 
-                # 簡單的情緒關鍵字 (可自行擴充)
-                pos_kw = ['創新高', '大漲', '漲停', '優於', '成長', '獲利', '買進', '看好', '旺', '強勢']
-                neg_kw = ['創新低', '大跌', '跌停', '不如', '衰退', '虧損', '賣出', '看淡', '淡', '弱勢', '砍單']
+                # --------------------------------------
+                # 進階情緒分析 (50+關鍵字詞庫)
+                # --------------------------------------
+                pos_keywords = [
+                    '創新高', '大漲', '漲停', '優於預期', '成長', '獲利', '買進', '看好', '旺季', '強勢', 
+                    '營收', 'EPS', '訂單', '合約', '合作', '併購', '擴產', '技術', '領先', '市占'
+                ]
+                neg_keywords = [
+                    '創新低', '大跌', '跌停', '不如預期', '衰退', '虧損', '賣出', '看淡', '淡季', '弱勢',
+                    '砍單', '退貨', '競爭', '訴訟', '減產', '虧損', '下修', '調降', '縮減', '危機'
+                ]
+                fake_keywords = ['謠言', '假消息', '未經證實', '傳聞', '可能', '或許'] # 假消息標記
                 
-                news_items = []
-                for idx, row in df_news.tail(10).sort_values('date', ascending=False).iterrows():
-                    title = row['title']
-                    sentiment = "⚪ 中性"
-                    color = "gray"
+                news_analysis = []
+                pos_count, neg_count, neutral_count = 0, 0, 0
+                
+                for idx, row in df_news.head(20).iterrows(): # 取前20則
+                    title = str(row['title']).lower()
                     score = 0
+                    tags = []
                     
-                    # 簡易評分
-                    for k in pos_kw: 
+                    # 情緒計分
+                    for k in pos_keywords:
                         if k in title: score += 1
-                    for k in neg_kw: 
+                    for k in neg_keywords:
                         if k in title: score -= 1
-                        
-                    if score > 0: 
-                        sentiment = "🟢 利多"; color = "green"
-                    elif score < 0: 
-                        sentiment = "🔴 利空"; color = "red"
-                        
-                    news_items.append({
-                        "date": row['date'],
-                        "title": title,
-                        "sentiment": sentiment,
-                        "color": color,
-                        "url": row['link']
+                    for k in fake_keywords:
+                        if k in title: score -= 0.5; tags.append("⚠️傳聞")
+                    
+                    # 情緒標籤
+                    if score >= 2: sentiment = "🟢 重大利多"; pos_count += 1
+                    elif score <= -2: sentiment = "🔴 重大利空"; neg_count += 1
+                    elif score > 0: sentiment = "🟢 輕度利多"; pos_count += 1
+                    elif score < 0: sentiment = "🔴 輕度利空"; neg_count += 1
+                    else: sentiment = "⚪ 中性新聞"; neutral_count += 1
+                    
+                    news_analysis.append({
+                        'date': row['date'],
+                        'title': row['title'],
+                        'sentiment': sentiment,
+                        'score': score,
+                        'link': row['link'],
+                        'tags': ', '.join(tags)
                     })
 
-                # 顯示新聞卡片
-                for item in news_items:
-                    with st.container():
-                        c_date, c_tag, c_title = st.columns([1.5, 1.2, 5])
-                        c_date.caption(item['date'])
-                        c_tag.markdown(f":{item['color']}[**{item['sentiment']}**]")
-                        c_title.markdown(f"[{item['title']}]({item['url']})")
-                        st.markdown("---")
-            else:
-                st.info("📭 最近一個月沒有相關新聞")
-
-        # -------------------------------------------------------
-        # Tab 2: 技術籌碼 (簡化顯示)
-        # -------------------------------------------------------
-        with sub_tabs[1]:
-            col_t1, col_t2 = st.columns([3, 1])
-            with col_t1:
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'], name='收盤', line=dict(color='#00E396')))
-                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'].rolling(20).mean(), name='月線', line=dict(color='orange')))
-                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'].rolling(60).mean(), name='季線', line=dict(color='cyan')))
-                fig.update_layout(height=350, margin=dict(t=30,b=0,l=0,r=0), title_text=f"{stock_id} 趨勢圖")
-                st.plotly_chart(fig, use_container_width=True)
-            with col_t2:
-                st.info("💡 **趨勢解讀**")
-                if last['close'] > ma60: st.success("多頭格局 (季線上)")
-                else: st.error("空頭格局 (季線下)")
-            
-            if not df_chips.empty:
-                daily_chips = df_chips.groupby('date').apply(lambda x: x['buy'].sum() - x['sell'].sum()).reset_index(name='net_buy')
-                fig_c = px.bar(daily_chips.tail(30), x='date', y='net_buy', color='net_buy', color_continuous_scale=['green','red'])
-                st.plotly_chart(fig_c, use_container_width=True)
-
-        # -------------------------------------------------------
-        # Tab 3: 綜合診斷 (含新聞因子)
-        # -------------------------------------------------------
-        with sub_tabs[2]:
-            st.subheader("⚖️ AI 綜合評估報告")
-            
-            bulls, bears = [], []
-            
-            # 技術/籌碼因子
-            if cur_rsi < 30: bulls.append("RSI 超賣 (跌深反彈機會)")
-            elif cur_rsi > 75: bears.append("RSI 過熱 (追高風險)")
-            if last['close'] > ma60: bulls.append("站穩季線 (長線看好)")
-            else: bears.append("跌破季線 (長線轉弱)")
-            if inst_buy > 0: bulls.append("法人買超 (大戶進場)")
-            elif inst_buy < 0: bears.append("法人賣超 (大戶落跑)")
-
-            # 新聞因子 (統計前10則)
-            if not df_news.empty:
-                pos_news_cnt = sum(1 for n in news_items if "利多" in n['sentiment'])
-                neg_news_cnt = sum(1 for n in news_items if "利空" in n['sentiment'])
+                # --------------------------------------
+                # 視覺化總覽
+                # --------------------------------------
+                total_news = len(news_analysis)
+                sentiment_data = {
+                    '類型': ['🟢 利多新聞', '🔴 利空新聞', '⚪ 中性新聞'],
+                    '數量': [pos_count, neg_count, neutral_count]
+                }
                 
-                if pos_news_cnt > neg_news_cnt: bulls.append(f"近期新聞利多頻傳 ({pos_news_cnt}則)")
-                elif neg_news_cnt > pos_news_cnt: bears.append(f"近期新聞利空罩頂 ({neg_news_cnt}則)")
+                col_chart, col_stats = st.columns([2, 1])
+                with col_chart:
+                    fig_pie = px.pie(pd.DataFrame(sentiment_data), values='數量', names='類型', 
+                                    title=f"'{search_term}' 新聞情緒分佈 (共 {total_news} 則)")
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                
+                with col_stats:
+                    st.metric("利多新聞", pos_count, f"{pos_count/total_news*100:.0f}%")
+                    st.metric("利空新聞", neg_count, f"{neg_count/total_news*100:.0f}%")
+                    st.metric("情緒分數", f"{(pos_count-neg_count)/total_news*100:+.1f}%")
 
-            # 顯示
-            c_good, c_bad = st.columns(2)
-            with c_good:
-                st.success(f"🟢 **利多因子 ({len(bulls)})**")
-                for b in bulls: st.write(f"✓ {b}")
-            with c_bad:
-                st.error(f"🔴 **利空因子 ({len(bears)})**")
-                for b in bears: st.write(f"✗ {b}")
+                # --------------------------------------
+                # 新聞列表 (按時間排序)
+                # --------------------------------------
+                st.markdown("#### 📋 詳細新聞列表 (最新在前)")
+                news_sorted = sorted(news_analysis, key=lambda x: x['date'], reverse=True)
+                
+                for item in news_sorted:
+                    with st.container():
+                        c1, c2, c3 = st.columns([0.8, 1.5, 6])
+                        c1.caption(item['date'])
+                        c2.markdown(f"**{item['sentiment']}** (分數 {item['score']:+.1f})")
+                        c3.markdown(f"[{item['title']}]({item['link']})")
+                        if item['tags']: c3.caption(f"標籤: {item['tags']}")
+                        st.markdown("---")
+
+                # --------------------------------------
+                # 情緒趨勢圖
+                # --------------------------------------
+                if len(news_sorted) > 5:
+                    trend_data = []
+                    for item in news_sorted[:30]: # 取前30則
+                        trend_data.append({'date': item['date'], 'score': item['score']})
+                    
+                    df_trend = pd.DataFrame(trend_data)
+                    fig_trend = px.line(df_trend, x='date', y='score', 
+                                       title="新聞情緒趨勢 (分數越高越利多)", 
+                                       color_discrete_sequence=['purple'])
+                    st.plotly_chart(fig_trend, use_container_width=True)
+                    
+                    # 趨勢判斷
+                    recent_avg = df_trend['score'].tail(7).mean()
+                    if recent_avg > 0.5:
+                        st.success("📈 **近期新聞情緒向上**，市場看法變樂觀")
+                    elif recent_avg < -0.5:
+                        st.error("📉 **近期新聞情緒向下**，市場看法變悲觀")
+                    else:
+                        st.info("➡️ **新聞情緒中性**，無明顯共識")
+
+        except Exception as e:
+            status_area.error(f"搜尋失敗：{str(e)}")
+            st.info("請確認 Token 是否正常，或稍後再試")
 
     else:
-        st.error(f"❌ 無法取得 {stock_id} 資料")
-
+        st.info("🔍 輸入關鍵字並點擊搜尋按鈕")
 
 
 # --------------------------
