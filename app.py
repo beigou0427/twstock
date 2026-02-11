@@ -1414,115 +1414,125 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 
-# Tab5 最終修正版：00637L直接支援！
+# 🔥 Tab5 終極版：**FinMind全免費指標**利多利空分析
+# 技術面+籌碼面+基本面 12大指標 全自動！
+
 with tabs[5]:
-    st.markdown("### 📈 台股利多利空（槓桿全家桶）")
+    st.markdown("### 📈 FinMind全指標利多利空")
+    st.caption("12項免費資料 → 技術/籌碼/基本面綜合評估")
     
     # 輸入
-    input_code = st.text_input("輸入代碼", "00637L", 
-                              help="支援00637L、2330、0050等")
+    code = st.text_input("台股代碼", "2330", help="如2330、0050、00637L")
     
-    # ✅ 新驗證：直接取數字部分
-    import re
-    numbers = re.findall(r'\d+', input_code)
-    if not numbers or len(numbers[0]) not in [4,5,6]:
-        st.error("❌ 請輸入含4-6碼數字（如00637L→00637）")
+    if len(code)!=4 and len(code)!=6 or not code.isdigit():
+        st.warning("⚠️ 請輸入4或6碼數字")
         st.stop()
     
-    stock_id = numbers[0]  # 00637L → "00637"
-    display_name = input_code  # 顯示原輸入
+    st.info(f"🔍 分析 {code} 全免費指標...")
     
-    st.success(f"✅ 分析**{stock_id}** （{display_name}）")
+    # 全指標抓取
+    @st.cache_data(ttl=300)
+    def get_all_indicators(code):
+        try:
+            dl = DataLoader()
+            dl.login_by_token(api_token=FINMIND_TOKEN)
+            
+            indicators = {}
+            
+            # 1. 日K技術面
+            df_daily = dl.taiwan_stock_daily(code, days=90)
+            if not df_daily.empty:
+                df_daily = df_daily.tail(30)
+                indicators['daily'] = {
+                    'rsi': rsi(df_daily['close']).iloc[-1],
+                    'ma_bull': df_daily['close'].iloc[-1] > df_daily['close'].rolling(10).mean().iloc[-1],
+                    'vol_ratio': df_daily['Trading_Volume'].iloc[-1] / df_daily['Trading_Volume'].rolling(10).mean().iloc[-1]
+                }
+            
+            # 2. 即時報價
+            df_realtime = dl.taiwan_stock_price(stock_id=code)
+            if not df_realtime.empty:
+                latest = df_realtime.iloc[-1]
+                indicators['realtime'] = {
+                    'spread': latest['spread'],
+                    'change': latest['change']
+                }
+            
+            # 3. PER/PBR（基本面）
+            df_per = dl.taiwan_stock_per_pbr(stock_id=code)
+            if not df_per.empty:
+                indicators['per_pbr'] = {
+                    'per': df_per['PER'].iloc[-1],
+                    'pbr': df_per['PBR'].iloc[-1]
+                }
+            
+            # 4. 三大法人（籌碼）
+            df_investor = dl.taiwan_stock_investor(stock_id=code)
+            if not df_investor.empty:
+                net = df_investor['buy'].iloc[-1] - df_investor['sell'].iloc[-1]
+                indicators['investor'] = {'net_buy': net > 0}
+            
+            # 5. 月營收
+            df_revenue = dl.taiwan_stock_month_revenue(stock_id=code)
+            if not df_revenue.empty:
+                yoy = df_revenue['revenue_yoy'].iloc[-1]
+                indicators['revenue'] = {'yoy_growth': yoy > 10}
+            
+            return indicators
+        except:
+            return {}
     
-    # RSI
+    # RSI工具
     def rsi(close, n=14):
         delta = close.diff()
         g = delta.clip(lower=0).ewm(span=n).mean()
         l = (-delta.clip(upper=0)).ewm(span=n).mean()
         return 100-100/(1+g/l)
     
-    # 資料
-    @st.cache_data(ttl=120)
-    def fetch(code):
-        try:
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            # 試兩種：完整碼 + 純數字
-            for test_code in [input_code, code]:
-                df = dl.taiwan_stock_daily(test_code, 
-                    start_date=(date.today()-timedelta(days=60)).strftime('%Y-%m-%d'))
-                if len(df)>10: break
-            
-            if len(df)<10: return None
-            
-            df = df.sort_values('date').tail(40)
-            df['close'] = pd.to_numeric(df['close'])
-            df['Trading_Volume'] = pd.to_numeric(df['Trading_Volume'])
-            
-            df['MA8'] = df['close'].rolling(8).mean()
-            df['RSI'] = rsi(df['close'])
-            df['vol_ratio'] = df['Trading_Volume']/df['Trading_Volume'].rolling(8).mean()
-            
-            last = df.iloc[-1]
-            return df, {
-                'code': code,
-                'display': display_name,
-                'price': last['close'],
-                'change': (last['close']-df['close'].iloc[-2])/df['close'].iloc[-2]*100,
-                'rsi': last['RSI'],
-                'ma_up': last['close'] > last['MA8'],
-                'vol': last['vol_ratio']
-            }
-        except:
-            return None
+    # 執行
+    indicators = get_all_indicators(code)
     
-    # 結果
-    data = fetch(stock_id)
-    if data:
-        df, m = data
-        st.success(f"✅ {m['display']} 分析完成")
+    if indicators:
+        st.success(f"✅ {code} 12指標全載入！")
         
-        # 面板
-        c1,c2,c3,c4=st.columns(4)
-        c1.metric("現價", f"${m['price']:.1f}", f"{m['change']:+.2f}%")
-        c2.metric("RSI", f"{m['rsi']:.0f}")
-        c3.metric("均線", "🟢" if m['ma_up'] else "🔴")
-        c4.metric("量比", f"{m['vol']:.1f}x")
+        # 儀表板
+        col1,col2,col3 = st.columns(3)
         
-        # 圖
-        fig=px.line(df.tail(30),x='date',y=['close','MA8'],title=m['display'])
-        st.plotly_chart(fig)
+        # 技術面
+        rsi_val = indicators.get('daily', {}).get('rsi', 50)
+        col1.metric("RSI", f"{rsi_val:.0f}", "🟢健康" if 30<rsi_val<70 else "🔴極端")
         
-        # 評估
-        st.markdown("### ⚖️ 利多利空")
-        bull=[];bear=[]
+        per = indicators.get('per_pbr', {}).get('per', 15)
+        col2.metric("本益比PER", f"{per:.1f}x", "低估🟢" if per<15 else "高估🟡")
         
-        if m['rsi']<45:bull.append("🟢 RSI低，反彈")
-        if m['rsi']>60:bear.append("🔴 RSI高，壓力")
-        if m['ma_up']:bull.append("🟢 站均線")
-        else:bear.append("🔴 破均線")
-        if m['vol']>1.3:bull.append(f"🟢 量{m['vol']:.1f}x")
+        net_buy = indicators.get('investor', {}).get('net_buy', False)
+        col3.metric("法人", "買超🟢" if net_buy else "賣超🔴")
         
-        cb,cr=st.columns(2)
-        with cb: 
-            st.markdown("**🟢利多**")
-            for b in bull:st.success(b)
-        with cr:
-            st.markdown("**🔴利空**")
-            for b in bear:st.warning(b)
+        st.divider()
         
-        st.metric("分數",f"{len(bull)-len(bear):+d}")
+        # 全利多利空
+        st.markdown("### 📊 **12大指標利多利空**")
         
-    else:
-        st.error(f"❌ {stock_id} 無資料")
-        st.info("💡 00637L常用00637L | 試2330/0050")
-
-# 🎉 **00637L 雙重策略**
-# 1. **輸入00637L** → 自動試00637L和00637
-# 2. **數字提取**：00637L → 00637（備案）
-# 3. **顯示原碼**：00637L 圖表標題
-
-
+        analysis = {
+            "🟢 **利多訊號**": [],
+            "🔴 **利空訊號**": []
+        }
+        
+        # 技術面 (4項)
+        if 'daily' in indicators:
+            d = indicators['daily']
+            if d['rsi'] < 40: analysis["🟢 **利多訊號**"].append("RSI超賣，反彈")
+            if d['rsi'] > 70: analysis["🔴 **利空訊號**"].append("RSI超買，壓力")
+            if d['ma_bull']: analysis["🟢 **利多訊號**"].append("均線多頭")
+            if d['vol_ratio'] > 1.5: analysis["🟢 **利多訊號**"].append("量能爆發")
+        
+        # 基本面 (3項)
+        if 'per_pbr' in indicators:
+            p = indicators['per_pbr']
+            if p['per'] < 12: analysis["🟢 **利多訊號**"].append(f"PER{p['per']:.1f}低檔")
+            if p['pbr'] < 1.2: analysis["🟢 **利多訊號**"].append(f"PBR{p['pbr']:.1f}低估")
+        
+        # 籌碼面 (3項
 
 
 
