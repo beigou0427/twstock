@@ -1413,163 +1413,217 @@ with tabs[4]:
 # --------------------------
 # Tab 5
 # --------------------------
-# --------------------------------------------------------------------------------
-# Tab 5: 智慧相關性新聞搜尋 (終極精準版)
-# --------------------------------------------------------------------------------
 with tabs[5]:
-    st.markdown("### 🧠 智慧新聞情報站")
-    st.caption("關鍵字密度 + TF-IDF + 相關性過濾 | 只看真正重要的消息")
+    st.markdown("### 📰 全網新聞盡抓（國內外）→ 再分析")
+    st.caption("不做相關性過濾；先最大化蒐集，再做利多/利空/中性評分（僅供資訊整理，非投資建議）")
 
-    # 進階搜尋介面
-    col1, col2, col3 = st.columns([1.5, 1, 1.5])
-    with col1:
-        keyword = st.text_input("核心關鍵字", "2330", help="最想找的詞")
-    with col2:
-        days_range = st.selectbox("時間範圍", [3, 7, 14, 30], index=1)
-    with col3:
-        rel_threshold = st.slider("相關性門檻", 0.1, 0.8, 0.3, 0.1, help="分數越低抓越多，但品質下降")
+    import feedparser, urllib.parse
+    from datetime import date, timedelta
+    import pandas as pd
+    import numpy as np
 
-    if st.button("🎯 智慧精準搜尋", type="primary"):
-        status = st.empty()
-        status.info(f"🧠 智慧分析中...")
-        
-        # -------------------------------------------------------
-        # 多來源抓取 (保持穩定性)
-        # -------------------------------------------------------
-        def get_all_news_sources(kw, days):
-            import feedparser
-            import urllib.parse
-            encoded = urllib.parse.quote(kw)
-            
-            # RSS 來源列表 (已驗證)
-            sources = {
-                '🔥 FinMind': lambda: get_finmind_news(kw, days),
-                '📈 Yahoo': f"https://tw.stock.yahoo.com/rss2.0/search?q={encoded}&region=TW&lang=zh-TW",
-                '💼 經濟日報': f"https://money.udn.com/rss/search/{encoded}",
-                '🏢 工商時報': f"https://news.google.com/rss/search?q={encoded}+site:ctee.com.tw+when:{days}d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
-                '📰 自由財經': f"https://news.google.com/rss/search?q={encoded}+site:ec.ltn.com.tw+when:{days}d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
-                '🇹🇼 中央社': f"https://news.google.com/rss/search?q={encoded}+site:cna.com.tw+when:{days}d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
-                '💎 鉅亨網': f"https://news.google.com/rss/search?q={encoded}+site:anue.com.tw+when:{days}d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-            }
-            
-            all_news = []
-            for name, url_or_func in sources.items():
-                try:
-                    if callable(url_or_func):  # FinMind
-                        df = url_or_func()
-                    else:  # RSS
-                        feed = feedparser.parse(url_or_func)
-                        df = pd.DataFrame([{
-                            'source': name,
-                            'title': e.title,
-                            'date': getattr(e, 'published', '今日'),
-                            'link': e.link
-                        } for e in feed.entries[:8]])
-                    if not df.empty: all_news.append(df)
-                except: pass
-            
-            return pd.concat(all_news, ignore_index=True) if all_news else pd.DataFrame()
-        
-        # -------------------------------------------------------
-        # 智慧相關性評分 (TF-IDF + 關鍵字密度)
-        # -------------------------------------------------------
-        def calculate_relevance(title, keyword):
-            title_words = str(title).lower().split()
-            keyword_words = keyword.lower().split()
-            
-            # 1. 關鍵字密度 (出現次數 / 總字數)
-            density = sum(kw in title.lower() for kw in keyword_words) / max(len(title_words), 1)
-            
-            # 2. TF-IDF 簡化版 (關鍵詞權重)
-            tfidf_score = 0
-            high_value_words = ['營收', '訂單', '獲利', 'EPS', '合約', '合作', '擴產', '市占']
-            for word in title_words:
-                if word in keyword_words: tfidf_score += 1.0
-                elif word in high_value_words: tfidf_score += 0.5
-            
-            # 3. 新鮮度加權 (最近新聞重要性高)
-            freshness = 1.0  # 假設都是近期，可根據日期調整
-            
-            # 綜合分數
-            relevance = (density * 0.4 + tfidf_score/len(title_words) * 0.4 + freshness * 0.2)
-            return min(1.0, relevance)
+    kw = st.text_input("關鍵字/代碼", "TSMC 2330 台積電", help="可混合：公司名 + 代碼 + 主題，如：TSMC 2330 AI earnings")
+    days_range = st.selectbox("回溯天數", [3, 7, 14, 30], index=1)
+    max_per_source = st.slider("每來源最多抓取", 5, 50, 20, 5)
+    max_total = st.slider("總新聞上限（避免卡住）", 50, 600, 250, 50)
 
-        # -------------------------------------------------------
-        # 執行搜尋
-        # -------------------------------------------------------
-        df_raw = get_all_news_sources(keyword, days_range)
-        
-        if df_raw.empty:
-            status.error("❌ 找不到相關新聞")
-        else:
-            # 計算相關性與情緒
-            df_raw['relevance'] = df_raw['title'].apply(lambda t: calculate_relevance(t, keyword))
-            df_raw['score'] = 0
-            
-            # 情緒關鍵字
-            pos_kw = ['漲','成長','獲利','買','看好','旺','強','營收','訂單','合約','合作']
-            neg_kw = ['跌','衰退','虧損','賣','看淡','淡','弱','砍單','訴訟','減產']
-            
-            for idx, row in df_raw.iterrows():
-                title_lower = str(row['title']).lower()
-                score = sum(title_lower.count(k) for k in pos_kw) - sum(title_lower.count(k) for k in neg_kw)
-                df_raw.at[idx, 'score'] = score
-                df_raw.at[idx, 'sentiment'] = "🟢利多" if score>0 else "🔴利空" if score<0 else "⚪中性"
-            
-            # 相關性過濾
-            df_filtered = df_raw[df_raw['relevance'] >= rel_threshold].sort_values(['relevance', 'score'], ascending=False)
-            
-            status.success(f"✅ 篩選後 {len(df_filtered)} 高相關新聞 (門檻 {rel_threshold})")
+    # 你可以把這個打開做更大量抓取，但會更慢、也更容易被 RSS 來源限流
+    aggressive = st.checkbox("強力模式（更多站點/更多RSS）", value=True)
 
-            # -------------------------------------------------------
-            # 智慧視覺化
-            # -------------------------------------------------------
-            st.markdown("#### 🎯 相關性 vs 情緒矩陣")
-            
-            # 散點圖：相關性(X) vs 情緒分數(Y)，大小=新鮮度
-            fig_scatter = px.scatter(df_filtered, x='relevance', y='score', 
-                                    size='score', color='source', hover_name='title',
-                                    size_max=30, hover_data=['source'],
-                                    title=f"'{keyword}' 新聞智慧矩陣",
-                                    labels={'relevance': '相關性分數', 'score': '情緒分數'})
-            fig_scatter.add_hline(y=0, line_dash="dash", line_color="gray")
-            fig_scatter.add_vline(x=rel_threshold, line_dash="dash", line_color="orange")
-            st.plotly_chart(fig_scatter, use_container_width=True)
-            
-            # -------------------------------------------------------
-            # 高相關新聞 Top 15
-            # -------------------------------------------------------
-            st.markdown("#### 🔥 Top 高相關新聞 (按相關性排序)")
-            top_news = df_filtered.head(15)
-            
-            for _, row in top_news.iterrows():
-                with st.container():
-                    col1, col2, col3, col4 = st.columns([0.8, 1, 1, 6])
-                    col1.metric("相關性", f"{row['relevance']:.2f}")
-                    col2.markdown(f"**{row['sentiment']}**")
-                    col3.caption(row['source'])
-                    col4.markdown(f"[{row['title']}]({row['link']})")
-                    st.markdown("---")
+    def safe_parse_feed(url: str):
+        try:
+            f = feedparser.parse(url)
+            if getattr(f, "bozo", 0) == 1:
+                # bozo_exception 可用於 debug，但不要讓整個流程崩
+                pass
+            return f
+        except:
+            return None
 
-            # -------------------------------------------------------
-            # 來源品質報告
-            # -------------------------------------------------------
-            source_quality = df_filtered.groupby('source')['relevance'].agg(['mean', 'count']).round(3)
-            st.markdown("#### 📊 各來源品質排名")
-            st.dataframe(source_quality.sort_values('mean', ascending=False), use_container_width=True)
+    def rows_from_feed(feed, source_name: str):
+        rows = []
+        if not feed or not getattr(feed, "entries", None):
+            return rows
+        for e in feed.entries[:max_per_source]:
+            title = getattr(e, "title", "") or ""
+            link = getattr(e, "link", "") or ""
+            published = getattr(e, "published", "") or getattr(e, "updated", "") or ""
+            summary = getattr(e, "summary", "") or ""
+            rows.append({
+                "source": source_name,
+                "title": title.strip(),
+                "link": link.strip(),
+                "published": str(published)[:80],
+                "summary": str(summary)[:300],
+            })
+        return rows
 
-            # 智慧建議
-            high_rel_pos = len(top_news[(top_news['relevance']>0.7) & (top_news['score']>0)])
-            high_rel_neg = len(top_news[(top_news['relevance']>0.7) & (top_news['score']<0)])
-            
-            if high_rel_pos > high_rel_neg * 1.5:
-                st.balloons()
-                st.success("🎉 **高相關利多新聞明顯佔優**")
-            elif high_rel_neg > high_rel_pos * 1.5:
-                st.error("⚠️ **高相關利空新聞偏多**")
+    # ------------- 1) FinMind -------------
+    @st.cache_data(ttl=1800)
+    def fetch_finmind_news(stock_id_or_kw: str, days: int):
+        try:
+            dl = DataLoader()
+            dl.login_by_token(api_token=FINMIND_TOKEN)
+            start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+            df = dl.taiwan_stock_news(stock_id=stock_id_or_kw, start_date=start)
+            if df is None or df.empty:
+                return pd.DataFrame()
+            out = df.copy()
+            # FinMind欄位通常有 title/date/link/description（視版本）
+            keep = [c for c in ["title","date","link","description"] if c in out.columns]
+            out = out[keep].rename(columns={"date":"published","description":"summary"})
+            out["source"] = "FinMind"
+            out["published"] = out["published"].astype(str).str.slice(0, 80)
+            out["summary"] = out.get("summary", "").astype(str).str.slice(0, 300)
+            return out[["source","title","link","published","summary"]]
+        except:
+            return pd.DataFrame()
 
-    else:
-        st.info("🔍 輸入關鍵字並點擊搜尋")
+    # ------------- 2) RSS / Google News RSS 聚合 -------------
+    def google_news_rss(query: str, lang="zh-TW", region="TW", days=7):
+        q = urllib.parse.quote(query)
+        # when:7d 在 Google News RSS 中常見可用
+        return f"https://news.google.com/rss/search?q={q}+when:{days}d&hl={lang}&gl={region}&ceid={region}:{'zh-Hant' if region=='TW' else 'en'}"
+
+    def google_site_rss(query: str, site: str, lang="zh-TW", region="TW", days=7):
+        q = urllib.parse.quote(f"{query} site:{site}")
+        return f"https://news.google.com/rss/search?q={q}+when:{days}d&hl={lang}&gl={region}&ceid={region}:{'zh-Hant' if region=='TW' else 'en'}"
+
+    # 來源清單：台灣 + 國際（用 Google News RSS 對準特定網域；盡可能多抓）
+    # 你可再自行擴站點，只要是公開新聞站域名即可
+    site_targets_tw = [
+        ("Yahoo股市", "tw.stock.yahoo.com"),
+        ("經濟日報", "money.udn.com"),
+        ("工商時報", "ctee.com.tw"),
+        ("自由財經", "ec.ltn.com.tw"),
+        ("中央社", "cna.com.tw"),
+        ("鉅亨", "anue.com.tw"),
+    ]
+
+    site_targets_global = [
+        ("Reuters", "reuters.com"),
+        ("Bloomberg", "bloomberg.com"),
+        ("CNBC", "cnbc.com"),
+        ("WSJ", "wsj.com"),
+        ("FT", "ft.com"),
+        ("MarketWatch", "marketwatch.com"),
+        ("SeekingAlpha", "seekingalpha.com"),
+        ("Investing", "investing.com"),
+        ("Nikkei", "nikkei.com"),
+        ("TheVerge", "theverge.com"),
+    ]
+
+    @st.cache_data(ttl=1800)
+    def fetch_rss_worldwide(query: str, days: int, aggressive: bool):
+        rows = []
+
+        # (A) 台灣站點定向
+        for name, site in site_targets_tw:
+            url = google_site_rss(query, site=site, lang="zh-TW", region="TW", days=days)
+            rows += rows_from_feed(safe_parse_feed(url), f"GN:{name}")
+
+        # (B) 國際站點定向（英文）
+        for name, site in site_targets_global:
+            url = google_site_rss(query, site=site, lang="en-US", region="US", days=days)
+            rows += rows_from_feed(safe_parse_feed(url), f"GN:{name}")
+
+        # (C) 非定向全球（多拉一層）
+        if aggressive:
+            rows += rows_from_feed(safe_parse_feed(google_news_rss(query, lang="zh-TW", region="TW", days=days)), "GN:Global(zh)")
+            rows += rows_from_feed(safe_parse_feed(google_news_rss(query, lang="en-US", region="US", days=days)), "GN:Global(en)")
+            # 產業關鍵字擴增（不過濾，只擴搜）
+            for extra in ["earnings", "guidance", "forecast", "chip", "AI", "semiconductor", "export", "sanction"]:
+                rows += rows_from_feed(
+                    safe_parse_feed(google_news_rss(f"{query} {extra}", lang="en-US", region="US", days=days)),
+                    f"GN:Global({extra})"
+                )
+
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return df
+        # 去掉空標題/空連結
+        df = df[df["title"].astype(str).str.len() > 3]
+        df = df[df["link"].astype(str).str.startswith("http")]
+        return df
+
+    # ------------- 3) 情緒分析（不過濾，只評分） -------------
+    # 你可以把詞庫放到外部 json/py 檔管理
+    POS = [
+        "beat","beats","surge","record","strong","upgrade","upgraded","growth","profit","profits","buyback","dividend",
+        "創新高","大漲","上修","優於預期","成長","獲利","利多","合作","擴產","訂單","加碼","看好","突破","回升"
+    ]
+    NEG = [
+        "miss","misses","plunge","weak","downgrade","downgraded","cut","cuts","lawsuit","ban","sanction","recall",
+        "創新低","大跌","下修","不如預期","衰退","虧損","利空","砍單","訴訟","禁令","制裁","裁員","減產","回檔"
+    ]
+    UNCERTAIN = ["rumor","rumours","reportedly","could","may","可能","傳出","傳聞","未證實"]
+
+    def sentiment_score(text: str):
+        t = (text or "").lower()
+        score = 0.0
+        for w in POS:
+            if w.lower() in t: score += 1.0
+        for w in NEG:
+            if w.lower() in t: score -= 1.0
+        for w in UNCERTAIN:
+            if w.lower() in t: score -= 0.3
+        # 壓縮到 -1..1（避免爆掉）
+        return float(np.tanh(score / 3.0))
+
+    if st.button("開始蒐集並分析", type="primary"):
+        with st.spinner("蒐集中（國內外多來源）..."):
+            df_fm = fetch_finmind_news(kw.strip(), days_range)
+            df_rss = fetch_rss_worldwide(kw.strip(), days_range, aggressive)
+
+            df_all = pd.concat([df_fm, df_rss], ignore_index=True)
+            if df_all.empty:
+                st.error("抓不到新聞：可能是關鍵字太特殊、來源暫時無RSS、或網路環境限制。")
+                st.stop()
+
+            # 去重：同標題/同連結視為同一則
+            df_all["title_norm"] = df_all["title"].astype(str).str.lower().str.replace(r"\s+", " ", regex=True).str.strip()
+            df_all["link_norm"] = df_all["link"].astype(str).str.strip()
+            df_all = df_all.drop_duplicates(subset=["title_norm", "link_norm"])
+
+            # 限制總量避免卡住（不算「過濾」，是安全上限）
+            df_all = df_all.head(max_total).copy()
+
+            # 評分（title+summary）
+            df_all["sent_score"] = (df_all["title"].fillna("") + " " + df_all["summary"].fillna("")).apply(sentiment_score)
+            df_all["sentiment"] = pd.cut(
+                df_all["sent_score"],
+                bins=[-1.0, -0.2, 0.2, 1.0],
+                labels=["🔴 利空", "⚪ 中性", "🟢 利多"],
+                include_lowest=True
+            ).astype(str)
+
+        # KPI
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("總新聞數", len(df_all))
+        c2.metric("利多", int((df_all["sentiment"]=="🟢 利多").sum()))
+        c3.metric("利空", int((df_all["sentiment"]=="🔴 利空").sum()))
+        c4.metric("中性", int((df_all["sentiment"]=="⚪ 中性").sum()))
+
+        st.markdown("### 🧾 利多/利空列表（不給買賣建議）")
+        col_bull, col_bear = st.columns(2)
+
+        with col_bull:
+            st.markdown("#### 🟢 利多（依情緒分數排序）")
+            bull = df_all[df_all["sentiment"]=="🟢 利多"].sort_values("sent_score", ascending=False).head(25)
+            for _, r in bull.iterrows():
+                st.markdown(f"- [{r['title']}]({r['link']})  ({r['source']}, score={r['sent_score']:+.2f})")
+
+        with col_bear:
+            st.markdown("#### 🔴 利空（依情緒分數排序）")
+            bear = df_all[df_all["sentiment"]=="🔴 利空"].sort_values("sent_score", ascending=True).head(25)
+            for _, r in bear.iterrows():
+                st.markdown(f"- [{r['title']}]({r['link']})  ({r['source']}, score={r['sent_score']:+.2f})")
+
+        with st.expander("查看全部新聞（含中性）"):
+            show = df_all[["source","published","sentiment","sent_score","title","link"]].copy()
+            st.dataframe(show, use_container_width=True, hide_index=True)
+
+        st.caption("提醒：情緒評分是關鍵字規則模型，會有誤判；建議點進原文確認脈絡。")
 
 
 # --------------------------
