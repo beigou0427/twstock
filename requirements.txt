@@ -1,29 +1,43 @@
-# requirements.txt（完整版，包含所有您用過的套件）
+# ================================================
+# 貝伊果屋 twstock - 完整穩定依賴
+# ================================================
+
+# Core Framework
 streamlit>=1.28.0,<1.39.0
+
+# Data Processing
 pandas>=2.0.0,<2.3.0
-numpy>=1.24.0
+numpy>=1.24.0,<2.0.0
+pyarrow>=14.0.0
+
+# Taiwan Stock Data
 finmind>=1.9.4
-yfinance>=0.2.40
-plotly>=5.17.0
-streamlit-autorefresh==0.1.14  # 降版避bug
+
+# Charts & Visualization
+plotly>=5.17.0,<6.0.0
 folium>=0.14.0
 streamlit-folium>=0.15.0
+
+# Finance Data
+yfinance>=0.2.40
+
+# RSS News
 feedparser>=6.0.10
 requests>=2.31.0
-transformers>=4.35.0  # LLM
-torch>=2.1.0
+urllib3>=2.0.0
+
+# Math & Science
 scipy>=1.11.0
-python-dateutil
-pytz
+python-dateutil>=2.8.0
+pytz>=2023.3
+
+# Web Templates
 jinja2>=3.1.0
 branca>=0.6.0
-streamlit>=1.28.0,<1.39.0
-pandas>=2.0.0
-numpy>=1.24.0
-finmind>=1.9.4
-transformers>=4.35.0
-torch>=2.1.0
-accelerate>=0.24.0
-plotly>=5.17.0
-feedparser>=6.0.10
-requests>=2.31.0
+
+# ================================================
+# 注意事項：
+# - 無 streamlit-autorefresh（避免 removeChild 錯誤）
+# - streamlit <1.39.0（避開前端渲染 bug）
+# - 所有版本鎖定（穩定性優先）
+# ================================================
