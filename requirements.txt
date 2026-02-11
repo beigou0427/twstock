@@ -1,25 +1,33 @@
-streamlit>=1.38.0
+# Core
+streamlit>=1.28.0
 pandas>=2.0.0
-yfinance>=0.2.40
-FinMind>=1.2.0
-plotly>=5.22.0
-numpy>=1.26.0
-scipy>=1.13.0
-requests>=2.31.0
-tqdm>=4.66.0
-loguru>=0.7.0
-python-dateutil
-pytz>=2024.1  # 確認時區支援
-wordcloud>=1.9.3
+numpy>=1.24.0
+
+# FinMind (台灣股市)
+finmind>=1.9.4
+
+# LLM & NLP (Hugging Face)
+transformers>=4.35.0
+torch>=2.1.0
+accelerate>=0.24.0
+tokenizers>=0.15.0
+
+# Charts & Maps
+plotly>=5.17.0
+folium>=0.14.0
+streamlit-folium>=0.15.0
+
+# RSS & Web
 feedparser>=6.0.10
-beautifulsoup4>=4.12.0
-lxml>=5.0.0
-textblob>=0.17.1
+requests>=2.31.0
+urllib3>=2.0.0
 
-# === 新增：開盤實時更新 ===
-streamlit-autorefresh>=0.1.0  # 自動 rerun [web:28]
-holidays>=0.53  # 台灣假日檢查 [web:23]
+# Data & Utils
+pyarrow>=14.0.0
+scipy>=1.11.0
+jinja2>=3.1.0
+branca>=0.6.0
 
-# === 可選：地圖功能 ===
-# folium>=0.14.0
-# streamlit-folium>=0.15.0
+# Optional (若用過)
+yfinance>=0.2.40
+wordcloud>=1.9.0
