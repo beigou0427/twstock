@@ -1413,20 +1413,19 @@ with tabs[4]:
 # --------------------------
 # Tab 5
 # --------------------------
-
 # --------------------------------------------------------------------------------
-# Tab 5: 全方位個股健檢 (FinMind 深度整合 + 客觀分析版)
+# Tab 5: 全方位個股健檢 (新手友善教學版)
 # --------------------------------------------------------------------------------
 with tabs[5]:
-    st.markdown("### 🏥 全方位個股健檢中心")
-    st.caption("深度整合 FinMind 技術、籌碼、基本面數據 | 客觀事實陳述，非投資建議")
+    st.markdown("### 🏫 個股健檢與教學中心")
+    st.caption("FinMind 數據驅動 + 新手白話文解析 | 看得懂才敢買！")
 
     # 輸入區
     col_input, col_status = st.columns([1, 2])
     with col_input:
-        code_input = st.text_input("輸入代碼", "2330", help="支援股票(2330)、ETF(0050)、槓桿(00637L)")
+        code_input = st.text_input("輸入代碼", "2330", help="輸入股票或 ETF 代碼，如 2330, 0050")
     
-    # 提取純數字代碼 (00637L -> 00637)
+    # 提取純數字代碼
     import re
     digits = re.findall(r'\d+', code_input)
     if not digits:
@@ -1435,27 +1434,23 @@ with tabs[5]:
     stock_id = digits[0]
     display_name = code_input.upper()
     
-    # 狀態顯示
     status_area = st.empty()
 
     # -------------------------------------------------------
-    # 核心資料抓取函數 (分開抓取以避免單一失敗全崩)
+    # 核心資料抓取 (保持不變，穩定最重要)
     # -------------------------------------------------------
     @st.cache_data(ttl=600)
     def get_basic_tech(sid):
-        """抓取技術面: K線, 成交量 (最近120天)"""
         try:
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
-            start = (date.today() - timedelta(days=120)).strftime('%Y-%m-%d')
-            # 嘗試抓取代碼 (處理 00637L vs 00637 的問題)
+            start = (date.today() - timedelta(days=150)).strftime('%Y-%m-%d') # 抓多一點天數算均線
             df = dl.taiwan_stock_daily(stock_id=sid, start_date=start)
             return df
         except: return pd.DataFrame()
 
-    @st.cache_data(ttl=3600) # 基本面很久才變，快取久一點
+    @st.cache_data(ttl=3600)
     def get_fundamental(sid):
-        """抓取基本面: PER, PBR, 殖利率"""
         try:
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
@@ -1466,7 +1461,6 @@ with tabs[5]:
 
     @st.cache_data(ttl=1800)
     def get_chips(sid):
-        """抓取籌碼面: 三大法人買賣超"""
         try:
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
@@ -1477,7 +1471,6 @@ with tabs[5]:
 
     @st.cache_data(ttl=1800)
     def get_margin(sid):
-        """抓取融資融券"""
         try:
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
@@ -1489,9 +1482,8 @@ with tabs[5]:
     # -------------------------------------------------------
     # 執行資料抓取
     # -------------------------------------------------------
-    status_area.info(f"⏳ 正在分析 {display_name} ...")
+    status_area.info(f"⏳ 正在解讀 {display_name} 的數據...")
     
-    # 1. 技術面 (最重要，若無則中止)
     df_tech = get_basic_tech(stock_id)
     
     if not df_tech.empty:
@@ -1505,163 +1497,167 @@ with tabs[5]:
         prev = df_tech.iloc[-2]
         chg = (last['close'] - prev['close']) / prev['close'] * 100
         
-        # 技術指標計算
+        # 指標計算
         ma5 = df_tech['close'].rolling(5).mean().iloc[-1]
         ma20 = df_tech['close'].rolling(20).mean().iloc[-1]
         ma60 = df_tech['close'].rolling(60).mean().iloc[-1]
         
-        # RSI 計算
+        # RSI
         delta = df_tech['close'].diff()
         u = delta.clip(lower=0)
         d = -delta.clip(upper=0)
         rsi = 100 - 100 / (1 + (u.ewm(span=14).mean() / d.ewm(span=14).mean()))
         cur_rsi = rsi.iloc[-1]
 
-        # 2. 基本面 (PER/PBR)
+        # 基本面
         df_fund = get_fundamental(stock_id)
         per, pbr = "N/A", "N/A"
+        per_val = 0
         if not df_fund.empty:
             fund_last = df_fund.iloc[-1]
-            per = f"{fund_last.get('PER', 0):.1f}"
+            per_val = fund_last.get('PER', 0)
+            per = f"{per_val:.1f}"
             pbr = f"{fund_last.get('PBR', 0):.1f}"
 
-        # 3. 籌碼面 (法人)
+        # 籌碼面
         df_chips = get_chips(stock_id)
         inst_buy = 0
         if not df_chips.empty:
             last_date = df_chips['date'].max()
             today_chips = df_chips[df_chips['date'] == last_date]
-            # FinMind 單位通常是股，轉成張
             inst_buy = (today_chips['buy'].sum() - today_chips['sell'].sum()) / 1000 
             
-        # 4. 融資券
+        # 融資券
         df_margin = get_margin(stock_id)
         margin_status = "無變化"
         if not df_margin.empty:
             last_margin = df_margin.iloc[-1]
             try:
                 margin_diff = last_margin.get('MarginPurchaseTodayBalance', 0) - df_margin.iloc[-2].get('MarginPurchaseTodayBalance', 0)
-                margin_status = f"資{'增' if margin_diff>0 else '減'} {abs(margin_diff)//1000}張"
+                margin_status = f"{'增加' if margin_diff>0 else '減少'} {abs(margin_diff)//1000}張"
             except: pass
 
-        status_area.empty() # 清除載入訊息
+        status_area.empty()
 
-        # --- Dashboard 呈現 ---
+        # --- Dashboard 呈現 (加上新手教學) ---
         
-        # A. 核心數據列
+        # A. 核心數據
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("收盤價", f"${last['close']:.1f}", f"{chg:+.2f}%")
-        m2.metric("RSI (14)", f"{cur_rsi:.0f}", "🔥過熱" if cur_rsi>75 else "❄️超賣" if cur_rsi<25 else "⚖️中性")
-        m3.metric("本益比 P/E", per)
+        m2.metric("RSI (相對強弱)", f"{cur_rsi:.0f}", "🔥過熱" if cur_rsi>75 else "❄️超賣" if cur_rsi<25 else "⚖️中性")
+        m3.metric("本益比 (P/E)", per)
         m4.metric("法人動向", f"{inst_buy:+.0f}張", "🔴賣超" if inst_buy<0 else "🟢買超")
+
+        # 新手小百科 Expander
+        with st.expander("📚 看不懂上面數字？點我 30秒學會！"):
+            st.markdown("""
+            - **RSI (相對強弱指標)**: 
+                - **>70 (過熱)**: 大家都在搶買，股價可能太貴了，小心回檔。
+                - **<30 (超賣)**: 大家都在拋售，股價可能被低估，有反彈機會。
+            - **本益比 (P/E)**: 
+                - 買這檔股票幾年回本的概念。**越低通常越便宜** (但也要看成長性)。
+                - 一般 <15 算便宜，>25 算貴。
+            - **法人動向**: 
+                - 外資、投信這些「大戶」在買還是賣？跟著大戶走通常比較穩。
+            """)
 
         st.divider()
 
-        # B. 深度分析區 (Tab 分類)
-        sub_tabs = st.tabs(["📊 技術走勢", "💰 籌碼追蹤", "⚖️ 綜合因子列表"])
+        # B. 深度分析區
+        sub_tabs = st.tabs(["📊 技術分析 (看趨勢)", "💰 籌碼追蹤 (看大戶)", "⚖️ 綜合因子 (看結論)"])
         
-        with sub_tabs[0]: # 技術
+        with sub_tabs[0]: 
             col_t1, col_t2 = st.columns([3, 1])
             with col_t1:
-                # 繪製 K 線 + MA
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'], name='收盤', line=dict(color='#00E396')))
-                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'].rolling(20).mean(), name='月線', line=dict(color='orange', width=1)))
-                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'].rolling(60).mean(), name='季線', line=dict(color='cyan', width=1)))
-                fig.update_layout(height=350, margin=dict(l=0,r=0,t=30,b=0), title_text=f"{display_name} 技術走勢")
+                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'], name='收盤價', line=dict(color='#00E396', width=2)))
+                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'].rolling(20).mean(), name='月線 (短期成本)', line=dict(color='orange', width=1)))
+                fig.add_trace(go.Scatter(x=df_tech['date'], y=df_tech['close'].rolling(60).mean(), name='季線 (生命線)', line=dict(color='cyan', width=1)))
+                fig.update_layout(height=350, margin=dict(l=0,r=0,t=30,b=0), title_text=f"{display_name} 走勢圖")
                 st.plotly_chart(fig, use_container_width=True)
+            
             with col_t2:
-                st.markdown("**均線狀態**")
-                st.write(f"5日線: {'⬆️' if last['close']>ma5 else '⬇️'}")
-                st.write(f"20日線: {'⬆️' if last['close']>ma20 else '⬇️'}")
-                st.write(f"60日線: {'⬆️' if last['close']>ma60 else '⬇️'}")
+                st.info("💡 **趨勢怎麼看？**")
+                
+                # 白話文解釋均線
+                trend_status = "盤整中"
+                if last['close'] > ma20 and ma20 > ma60: trend_status = "強勢上漲 🔥"
+                elif last['close'] < ma20 and ma20 < ma60: trend_status = "弱勢下跌 🧊"
+                
+                st.write(f"目前趨勢：**{trend_status}**")
+                st.markdown("---")
+                st.caption(f"季線 (60日) 是生命線，股價在線上代表長期看好。目前：**{'線上 🟢' if last['close']>ma60 else '線下 🔴'}**")
 
-        with sub_tabs[1]: # 籌碼
+        with sub_tabs[1]:
             if not df_chips.empty:
-                st.markdown(f"#### 三大法人合計買賣超")
+                st.markdown(f"#### 大戶在做什麼？")
                 daily_chips = df_chips.groupby('date').apply(lambda x: x['buy'].sum() - x['sell'].sum()).reset_index(name='net_buy')
                 fig_chip = px.bar(daily_chips.tail(30), x='date', y='net_buy', color='net_buy', 
-                                  color_continuous_scale=['green', 'red'], title="法人近30日動向 (金額/股數)")
+                                  color_continuous_scale=['green', 'red'], title="近30日法人買賣超 (紅賣/綠買)")
                 st.plotly_chart(fig_chip, use_container_width=True)
+                
+                chip_msg = "大戶正在進場！" if inst_buy > 0 else "大戶正在落跑！"
+                st.success(f"💡 **解讀**: 今天{chip_msg} (合計 {inst_buy:+.0f} 張)")
             else:
-                st.info("暫無法人資料 (ETF 或資料未更新)")
-            st.caption(f"融資狀態: {margin_status}")
+                st.info("暫無法人資料")
 
         # -------------------------------------------------------
-        # Tab 3: 綜合因子列表 (核心: 客觀利多利空)
+        # Tab 3: 綜合因子 (白話文版)
         # -------------------------------------------------------
         with sub_tabs[2]: 
-            st.subheader("⚖️ 綜合因子分析報告")
-            st.caption("基於技術、籌碼、基本面數據的客觀事實陳述，非投資建議")
+            st.subheader("⚖️ AI 幫你做總結")
+            st.caption("我們客觀列出優缺點，讓你更好做決定！(非投資建議)")
             
             bull_factors = []
             bear_factors = []
-            neutral_factors = []
             
-            # --- 1. 技術面判斷 ---
-            # RSI
+            # 1. 技術面
             if cur_rsi < 30:
-                bull_factors.append(f"RSI ({cur_rsi:.0f}) 處於超賣區，短線乖離過大")
-            elif cur_rsi > 70:
-                bear_factors.append(f"RSI ({cur_rsi:.0f}) 處於超買區，短線過熱風險")
-            else:
-                neutral_factors.append(f"RSI ({cur_rsi:.0f}) 處於中性區間")
+                bull_factors.append("股價跌太兇了 (RSI超賣)，隨時可能反彈！")
+            elif cur_rsi > 75:
+                bear_factors.append("股價漲太多了 (RSI過熱)，小心回檔風險。")
                 
-            # 均線
-            if last['close'] > ma20 and ma20 > ma60:
-                bull_factors.append("均線呈現多頭排列 (價 > 月 > 季)")
-            elif last['close'] < ma20 and ma20 < ma60:
-                bear_factors.append("均線呈現空頭排列 (價 < 月 < 季)")
-            elif last['close'] > ma60:
-                bull_factors.append("股價站上季線 (生命線)")
+            if last['close'] > ma60:
+                bull_factors.append("股價在「生命線」(季線) 之上，長期趨勢健康。")
             else:
-                bear_factors.append("股價跌破季線 (生命線)")
+                bear_factors.append("股價跌破「生命線」(季線)，長期趨勢轉弱。")
             
-            # 漲跌幅
-            if chg > 3: bull_factors.append("今日長紅K棒，漲幅逾 3%")
-            elif chg < -3: bear_factors.append("今日長黑K棒，跌幅逾 3%")
-
-            # --- 2. 籌碼面判斷 ---
+            # 2. 籌碼面
             if inst_buy > 0:
-                bull_factors.append(f"三大法人合計買超 {inst_buy:.0f} 張")
+                bull_factors.append(f"大戶 (法人) 今天買進了 {inst_buy:.0f} 張，籌碼有人接。")
             elif inst_buy < 0:
-                bear_factors.append(f"三大法人合計賣超 {abs(inst_buy):.0f} 張")
+                bear_factors.append(f"大戶 (法人) 今天賣出了 {abs(inst_buy):.0f} 張，籌碼鬆動。")
             
-            if "資增" in margin_status:
-                neutral_factors.append(f"融資餘額增加 ({margin_status})")
-            elif "資減" in margin_status:
-                bull_factors.append(f"融資餘額減少，籌碼沉澱 ({margin_status})")
+            if "增加" in margin_status:
+                bear_factors.append(f"融資增加 (散戶變多)，籌碼比較凌亂。")
+            elif "減少" in margin_status:
+                bull_factors.append(f"融資減少 (散戶退場)，籌碼變得乾淨穩定。")
 
-            # --- 3. 基本面判斷 ---
-            try:
-                per_val = float(per)
-                if per_val < 12 and per_val > 0:
-                    bull_factors.append(f"本益比 ({per_val}x) 低於 12 倍")
-                elif per_val > 25:
-                    bear_factors.append(f"本益比 ({per_val}x) 高於 25 倍")
-            except: pass
+            # 3. 基本面
+            if per_val > 0 and per_val < 12:
+                bull_factors.append(f"本益比僅 {per_val:.1f} 倍，股價相對便宜。")
+            elif per_val > 30:
+                bear_factors.append(f"本益比高達 {per_val:.1f} 倍，股價可能太貴了。")
 
-            # --- 4. 顯示列表 ---
-            col_bull, col_bear = st.columns(2)
+            # 顯示結果
+            c_good, c_bad = st.columns(2)
             
-            with col_bull:
-                st.success(f"🟢 **正向因子 ({len(bull_factors)})**")
+            with c_good:
+                st.success(f"🟢 **好消息 ({len(bull_factors)})**")
                 if bull_factors:
                     for item in bull_factors: st.write(f"✓ {item}")
-                else: st.write("無明顯訊號")
+                else: st.write("暫時沒看到特別的亮點。")
             
-            with col_bear:
-                st.error(f"🔴 **負向因子 ({len(bear_factors)})**")
+            with c_bad:
+                st.error(f"🔴 **壞消息 ({len(bear_factors)})**")
                 if bear_factors:
                     for item in bear_factors: st.write(f"✗ {item}")
-                else: st.write("無明顯訊號")
-                
-            with st.expander("查看中性/觀望指標"):
-                for item in neutral_factors: st.write(f"• {item}")
+                else: st.write("目前看起來沒有明顯危險。")
 
     else:
-        status_area.error(f"❌ 找不到 {display_name} 資料")
-        st.info("常見原因：1. Token 過期  2. 代碼錯誤 (00637L請輸入00637L)  3. 今日呼叫次數超限")
+        st.error(f"❌ 找不到 {display_name} 資料")
+        st.info("💡 請確認代碼是否正確，或稍後再試。")
+
 
 
 # --------------------------
