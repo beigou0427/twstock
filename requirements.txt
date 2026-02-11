@@ -1,34 +1,39 @@
-# Core
-streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
+# === Streamlit Core ===
+streamlit>=1.28.0,<1.39.0
 streamlit-autorefresh==0.1.15
 
-# FinMind (台灣股市)
+# === Data & Finance ===
+pandas>=2.0.0,<2.3.0
+numpy>=1.24.0,<2.0.0
 finmind>=1.9.4
+yfinance>=0.2.40
+plotly>=5.17.0,<6.0.0
 
-# LLM & NLP (Hugging Face)
+# === LLM & NLP ===
 transformers>=4.35.0
 torch>=2.1.0
 accelerate>=0.24.0
 tokenizers>=0.15.0
 
-# Charts & Maps
-plotly>=5.17.0
+# === Charts & Maps ===
 folium>=0.14.0
 streamlit-folium>=0.15.0
+scipy>=1.11.0
 
-# RSS & Web
+# === RSS & Web Scraping ===
 feedparser>=6.0.10
 requests>=2.31.0
 urllib3>=2.0.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
 
-# Data & Utils
+# === Utilities ===
 pyarrow>=14.0.0
-scipy>=1.11.0
+python-dateutil>=2.8.0
+pytz>=2023.3
 jinja2>=3.1.0
 branca>=0.6.0
 
-# Optional (若用過)
-yfinance>=0.2.40
-wordcloud>=1.9.0
+# === Optional (新聞情緒進階) ===
+textblob>=0.17.1
+tqdm>=4.66.0
