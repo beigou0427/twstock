@@ -1412,12 +1412,12 @@ with tabs[4]:
 
 
 
-# 完整 Tab5 代碼（移除 sklearn 依賴，自行計算線性回歸預測）
+# 完整 Tab5 代碼（利多利空分析版，移除預測）
 # 直接替換整個 Tab5 區塊，保證無錯誤運行！
 
 with tabs[5]:  # Tab5: 單股追踪
-    st.markdown("### 📈 單股趨勢分析器")
-    st.caption("🔥 熱門個股即時走勢 + 成長預測 + 技術訊號（無需額外套件）")
+    st.markdown("### 📈 單股利多利空分析")
+    st.caption("🔥 熱門個股技術面 + 籌碼面 + 情緒面 全方位評估")
     
     # 側邊欄選股
     with st.sidebar:
@@ -1435,18 +1435,7 @@ with tabs[5]:  # Tab5: 單股追踪
             }[x]
         )
         days_back = st.slider("歷史天數", 30, 365, 180, help="選擇分析期間")
-    
-    # 自訂線性回歸函數（取代 sklearn）
-    def simple_linear_regression(x, y):
-        """簡單線性回歸：y = mx + b"""
-        n = len(x)
-        sum_x = np.sum(x)
-        sum_y = np.sum(y)
-        sum_xy = np.sum(x * y)
-        sum_x2 = np.sum(x * x)
-        m = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x ** 2)
-        b = (sum_y - m * sum_x) / n
-        return m, b
+        analysis_mode = st.radio("分析維度", ["技術面", "籌碼面", "情緒面"], horizontal=True)
     
     # RSI 計算函數
     def compute_rsi(prices, window=14):
@@ -1456,102 +1445,165 @@ with tabs[5]:  # Tab5: 單股追踪
         rs = gain / loss
         return 100 - (100 / (1 + rs))
     
-    # 資料抓取函數
+    # 資料抓取函數（擴充籌碼數據）
     @st.cache_data(ttl=300)
-    def get_stock_data(stock_id, days_back, token):
+    def get_stock_analysis(stock_id, days_back, token):
         dl = DataLoader()
         dl.login_by_token(api_token=token)
         start_date = (date.today() - timedelta(days=days_back)).strftime('%Y-%m-%d')
         try:
-            df = dl.taiwan_stock_daily(stock_id, start_date=start_date)
-            if df.empty:
+            # K線數據
+            df_price = dl.taiwan_stock_daily(stock_id, start_date=start_date)
+            if df_price.empty:
                 return pd.DataFrame(), None
-            df['date'] = pd.to_datetime(df['date'])
-            df = df.sort_values('date').tail(200).reset_index(drop=True)
-            df['MA20'] = df['close'].rolling(20).mean()
-            df['MA60'] = df['close'].rolling(60).mean()
-            df['RSI'] = compute_rsi(df['close'], 14)
-            latest_price = df['close'].iloc[-1]
-            change_pct = (latest_price - df['close'].iloc[-2]) / df['close'].iloc[-2] * 100 if len(df) > 1 else 0
-            return df, {
+            
+            df_price['date'] = pd.to_datetime(df_price['date'])
+            df_price = df_price.sort_values('date').tail(200).reset_index(drop=True)
+            df_price['MA20'] = df_price['close'].rolling(20).mean()
+            df_price['MA60'] = df_price['close'].rolling(60).mean()
+            df_price['RSI'] = compute_rsi(df_price['close'], 14)
+            
+            # 籌碼數據（三大法人）
+            df_investor = dl.taiwan_stock_investor(stock_id, start_date=start_date)
+            net_buy = df_investor['buy'].iloc[-1] - df_investor['sell'].iloc[-1] if not df_investor.empty else 0
+            
+            # 成交量變化
+            df_price['volume_ma'] = df_price['Trading_Volume'].rolling(10).mean()
+            vol_ratio = df_price['Trading_Volume'].iloc[-1] / df_price['volume_ma'].iloc[-1] if df_price['volume_ma'].iloc[-1] > 0 else 1
+            
+            latest_price = df_price['close'].iloc[-1]
+            change_pct = (latest_price - df_price['close'].iloc[-2]) / df_price['close'].iloc[-2] * 100 if len(df_price) > 1 else 0
+            
+            return df_price, {
                 'price': latest_price,
                 'change': change_pct,
-                'ma_trend': '多頭排列' if df['MA20'].iloc[-1] > df['MA60'].iloc[-1] else '空頭排列',
-                'rsi': df['RSI'].iloc[-1]
+                'rsi': df_price['RSI'].iloc[-1],
+                'ma_trend': df_price['MA20'].iloc[-1] > df_price['MA60'].iloc[-1],
+                'net_buy': net_buy / 1e6,  # 轉百萬單位
+                'vol_ratio': vol_ratio,
+                'spread_pct': (df_price['high'].iloc[-1] - df_price['low'].iloc[-1]) / df_price['close'].iloc[-1] * 100
             }
         except:
             return pd.DataFrame(), None
     
     # 執行分析
-    df_stock, metrics = get_stock_data(stock_id, days_back, FINMIND_TOKEN)
+    df_stock, metrics = get_stock_analysis(stock_id, days_back, FINMIND_TOKEN)
     
     if metrics:
+        # 即時狀態面板
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric(f"💰 {stock_id}", f"${metrics['price']:,.0f}", f"{metrics['change']:+.2f}%")
         with col2:
-            color = "🟢上漲" if metrics['change'] > 0 else "🔴下跌"
-            st.metric("今日表現", f"{color}")
-        with col3:
-            st.metric("均線趨勢", metrics['ma_trend'])
-        with col4:
             rsi_status = "🚨超買" if metrics['rsi'] > 70 else "💎超賣" if metrics['rsi'] < 30 else "⚖️正常"
             st.metric("RSI(14)", f"{metrics['rsi']:.0f}", rsi_status)
+        with col3:
+            trend = "🟢多頭" if metrics['ma_trend'] else "🔴空頭"
+            st.metric("均線排列", trend)
+        with col4:
+            st.metric("成交量", f"{metrics['vol_ratio']:.1f}x", "均量")
         
         st.divider()
         
-        # 成長預測（純 NumPy 計算）
-        if len(df_stock) > 30:
-            recent_prices = df_stock['close'].tail(30).values
-            x = np.arange(len(recent_prices))
-            m, b = simple_linear_regression(x, recent_prices)
-            
-            # 預測未來5天
-            future_x = np.arange(len(recent_prices), len(recent_prices) + 5)
-            pred_prices = m * future_x + b
-            
-            col_left, col_right = st.columns([3, 1])
-            with col_left:
-                st.markdown("### 📊 價格走勢圖")
-                fig = px.line(df_stock.tail(90), x='date', y=['close', 'MA20', 'MA60'],
-                              title=f"{stock_id} 技術面分析",
-                              labels={'value': '股價 (新台幣)'})
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col_right:
-                st.markdown("### 🔮 5天預測")
-                pred_df = pd.DataFrame({
-                    '日期': pd.date_range(start=df_stock['date'].iloc[-1] + timedelta(days=1), periods=5).strftime('%m/%d'),
-                    '預測價': pred_prices.round(0)
-                })
-                st.dataframe(pred_df, use_container_width=True, hide_index=True)
-                growth_pred = ((pred_prices[-1] - metrics['price']) / metrics['price'] * 100)
-                st.metric("預估漲幅", f"{growth_pred:+.1f}%")
+        # 走勢圖
+        st.markdown("### 📊 即時K線走勢")
+        fig = px.line(df_stock.tail(90), x='date', y=['close', 'MA20', 'MA60'],
+                      title=f"{stock_id} 技術趨勢圖",
+                      labels={'value': '股價 (新台幣)'})
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True)
         
-        # 技術訊號建議
-        st.markdown("### 🎯 智慧交易建議")
-        signals = []
+        st.divider()
+        
+        # 利多利空分析表格
+        st.markdown("### ⚖️ 利多利空評估表")
+        
+        analysis_data = {
+            "技術面": {
+                "利多": [],
+                "利空": []
+            },
+            "籌碼面": {
+                "利多": [],
+                "利空": []
+            },
+            "情緒面": {
+                "利多": [],
+                "利空": []
+            }
+        }
+        
+        # 技術面分析
         if metrics['rsi'] < 30:
-            signals.append("🟢 **RSI超賣**：低點進場機會")
+            analysis_data["技術面"]["利多"].append("RSI超賣，反彈機會")
         elif metrics['rsi'] > 70:
-            signals.append("🔴 **RSI超買**：高點獲利了結")
-        if metrics['ma_trend'] == '多頭排列' and metrics['change'] > 0:
-            signals.append("🚀 **多頭趨勢**：持續持有/加碼")
-        elif metrics['ma_trend'] == '空頭排列':
-            signals.append("⚠️ **空頭警示**：降低持倉")
+            analysis_data["技術面"]["利空"].append("RSI超買，壓力增大")
         
-        if not signals:
-            signals.append("⚖️ **中性盤整**：觀望為宜，等待突破訊號")
+        if metrics['ma_trend']:
+            analysis_data["技術面"]["利多"].append("MA20站上MA60，多頭排列")
+        else:
+            analysis_data["技術面"]["利空"].append("MA20跌破MA60，空頭訊號")
         
-        for signal in signals:
-            st.success(signal)
-            
-        st.caption("⚠️ **投資警示**：預測僅供技術分析參考，非買賣建議。")
-        st.caption("📊 資料來源：FinMind API | ✅ 無需額外套件")
+        if metrics['change'] > 2:
+            analysis_data["技術面"]["利多"].append("日漲幅>2%，動能強勁")
+        elif metrics['change'] < -2:
+            analysis_data["技術面"]["利空"].append("日跌幅>2%，恐慌拋售")
+        
+        if metrics['spread_pct'] > 5:
+            analysis_data["技術面"]["利空"].append("震盪劇烈，方向不明")
+        
+        # 籌碼面分析
+        if metrics['net_buy'] > 100:  # 外資買超>1億
+            analysis_data["籌碼面"]["利多"].append(f"三大法人買超{metrics['net_buy']:.0f}百萬")
+        elif metrics['net_buy'] < -100:
+            analysis_data["籌碼面"]["利空"].append(f"三大法人賣超{abs(metrics['net_buy']):.0f}百萬")
+        
+        if metrics['vol_ratio'] > 1.5:
+            analysis_data["籌碼面"]["利多"].append("成交量放大1.5倍，資金流入")
+        elif metrics['vol_ratio'] < 0.7:
+            analysis_data["籌碼面"]["利空"].append("成交量萎縮，動能減弱")
+        
+        # 情緒面分析（結合漲跌+量價）
+        if metrics['change'] > 0 and metrics['vol_ratio'] > 1:
+            analysis_data["情緒面"]["利多"].append("價漲量增，多頭情緒高漲")
+        elif metrics['change'] < 0 and metrics['vol_ratio'] > 1.5:
+            analysis_data["情緒面"]["利空"].append("價跌量增，恐慌性賣壓")
+        
+        # 綜合評分
+        bull_count = sum(len(d["利多"]) for d in analysis_data.values())
+        bear_count = sum(len(d["利空"]) for d in analysis_data.values())
+        score = (bull_count - bear_count) / (bull_count + bear_count) * 100 if (bull_count + bear_count) > 0 else 0
+        
+        # 顯示利多利空表格
+        for category, items in analysis_data.items():
+            with st.expander(f"📋 {category}", expanded=(category == analysis_mode)):
+                col_bull, col_bear = st.columns(2)
+                with col_bull:
+                    st.markdown("### 🟢 **利多因素**")
+                    for item in items["利多"]:
+                        st.success(f"✓ {item}")
+                with col_bear:
+                    st.markdown("### 🔴 **利空因素**")
+                    for item in items["利空"]:
+                        st.warning(f"✗ {item}")
+        
+        # 總評分
+        col_score1, col_score2 = st.columns([1, 3])
+        with col_score1:
+            st.metric("綜合評分", f"{score:+.0f}%")
+        with col_score2:
+            if score > 20:
+                st.success("**總評：利多大於利空，看多為宜**")
+            elif score < -20:
+                st.warning("**總評：利空大於利多，謹慎操作**")
+            else:
+                st.info("**總評：中性震盪，等待明確訊號**")
+        
+        st.caption("⚠️ **投資警示**：僅技術籌碼分析，非買賣建議")
+        st.caption("📊 資料來源：FinMind API三大法人 + K線 | ✅ 純原生套件")
     else:
-        st.error("❌ 無法取得資料，請確認股票代碼或 FinMind API Token")
-        st.info("💡 **快速檢查**：1️⃣ Token過期？2️⃣ 股票代碼？3️⃣ 網路？")
+        st.error("❌ 無法取得資料，請確認股票代碼或 FinMind Token")
+
 # --------------------------
 # Tab 6~14: 擴充預留位
 # --------------------------
