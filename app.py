@@ -1413,7 +1413,139 @@ with tabs[4]:
 # --------------------------
 # Tab 5~14: 擴充預留位
 # --------------------------
-with tabs[5]: st.info("🚧 擴充功能 2：大戶籌碼追蹤 (開發中)")
+
+with tabs[5]:  # Tab5: 單股追踪
+    st.markdown("### 📈 單股趨勢分析器")
+    st.caption("🔥 熱門個股即時走勢 + 成長預測 + 技術訊號")
+    
+    # 側邊欄選股
+    with st.sidebar:
+        st.markdown("## 🧠 選股設定")
+        stock_id = st.selectbox(
+            "選擇熱門個股",
+            options=["2330", "2317", "2454", "2303", "006208"],  # 台積電、鴻海、聯發科等
+            index=0,
+            format_func=lambda x: {
+                "2330": "台積電 (TSMC)",
+                "2317": "鴻海 (鴻海精密)",
+                "2454": "聯發科 (MediaTek)",
+                "2303": "聯電 (UMC)",
+                "006208": "富邦台50"
+            }[x]
+        )
+        days_back = st.slider("歷史天數", 30, 365, 180, help="選擇分析期間")
+    
+    # 資料抓取函數（新增到全域，與既有 getdata 共用風格）
+    @st.cache_data(ttl=300)  # 5分鐘快取
+    def get_stock_data(stock_id, days_back, token):
+        dl = DataLoader()
+        dl.login_by_token(api_token=token)
+        start_date = (date.today() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+        try:
+            df = dl.taiwan_stock_daily(stock_id, start_date=start_date)
+            if df.empty:
+                return pd.DataFrame(), None
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date').tail(200).reset_index(drop=True)  # 最近200天
+            df['MA20'] = df['close'].rolling(20).mean()
+            df['MA60'] = df['close'].rolling(60).mean()
+            df['RSI'] = compute_rsi(df['close'], 14)  # RSI函數見下方
+            latest_price = df['close'].iloc[-1]
+            change_pct = (latest_price - df['close'].iloc[-2]) / df['close'].iloc[-2] * 100 if len(df) > 1 else 0
+            return df, {
+                'price': latest_price,
+                'change': change_pct,
+                'ma_trend': '多頭排列' if df['MA20'].iloc[-1] > df['MA60'].iloc[-1] else '空頭排列',
+                'rsi': df['RSI'].iloc[-1]
+            }
+        except:
+            return pd.DataFrame(), None
+    
+    # RSI 計算函數（新增到全域）
+    def compute_rsi(prices, window=14):
+        delta = prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / loss
+        return 100 - (100 / (1 + rs))
+    
+    # 執行分析
+    df_stock, metrics = get_stock_data(stock_id, days_back, FINMIND_TOKEN)
+    
+    if metrics:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric(f"💰 {stock_id}", f"${metrics['price']:,.0f}", f"{metrics['change']:+.2f}%")
+        with col2:
+            color = "🟢上漲" if metrics['change'] > 0 else "🔴下跌"
+            st.metric("今日表現", f"{color}")
+        with col3:
+            st.metric("均線趨勢", metrics['ma_trend'])
+        with col4:
+            rsi_status = "🚨超買" if metrics['rsi'] > 70 else "💎超賣" if metrics['rsi'] < 30 else "⚖️正常"
+            st.metric("RSI(14)", f"{metrics['rsi']:.0f}", rsi_status)
+        
+        st.divider()
+        
+        # 成長預測（簡單線性回歸預測未來5天）
+        if len(df_stock) > 30:
+            from sklearn.linear_model import LinearRegression
+            import numpy as np
+            df_pred = df_stock.tail(30).copy()
+            X = np.arange(len(df_pred)).reshape(-1, 1)
+            y = df_pred['close'].values
+            model = LinearRegression().fit(X, y)
+            future_days = np.arange(len(df_pred), len(df_pred)+5).reshape(-1, 1)
+            pred_prices = model.predict(future_days)
+            
+            col_left, col_right = st.columns([3, 1])
+            with col_left:
+                st.markdown("### 📊 價格走勢圖")
+                fig = px.line(df_stock.tail(90), x='date', y=['close', 'MA20', 'MA60'],
+                              title=f"{stock_id} 技術面分析",
+                              labels={'value': '股價 (新台幣)'})
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col_right:
+                st.markdown("### 🔮 5天預測")
+                pred_df = pd.DataFrame({
+                    '日期': pd.date_range(start=df_stock['date'].iloc[-1] + timedelta(days=1), periods=5),
+                    '預測價': pred_prices
+                })
+                st.dataframe(pred_df.round(0), use_container_width=True, hide_index=True)
+                growth_pred = ((pred_prices[-1] - metrics['price']) / metrics['price'] * 100)
+                st.metric("預估漲幅", f"{growth_pred:+.1f}%")
+        
+        # 技術訊號建議
+        st.markdown("### 🎯 智慧交易建議")
+        signals = []
+        if metrics['rsi'] < 30:
+            signals.append("🟢 **RSI超賣**：低點進場機會")
+        elif metrics['rsi'] > 70:
+            signals.append("🔴 **RSI超買**：高點獲利了結")
+        if metrics['ma_trend'] == '多頭排列' and metrics['change'] > 0:
+            signals.append("🚀 **多頭趨勢**：持續持有/加碼")
+        elif metrics['ma_trend'] == '空頭排列':
+            signals.append("⚠️ **空頭警示**：降低持倉")
+        
+        if len(signals) == 0:
+            signals.append("⚖️ **中性盤整**：觀望為宜，等待突破訊號")
+        
+        for signal in signals:
+            st.success(signal)
+            
+        st.caption("⚠️ **投資警示**：預測僅供技術分析參考，非買賣建議。請自行評估風險。")
+        st.caption("📊 資料來源：FinMind API | 更新時間：即時")
+    else:
+        st.error("❌ 無法取得資料，請確認股票代碼或 FinMind API Token")
+        st.info("💡 建議檢查：1️⃣ Token是否過期 2️⃣ 股票代碼正確 3️⃣ 網路連線")
+
+# 🚀 使用說明（全繁體）：
+# 1. 複製以上完整代碼 → 插入到你的 app.py 第 tabs[5] 位置
+# 2. requirements.txt 新增一行：scikit-learn==1.5.0
+# 3. 重新部署 → 測試台積電2330（預設選項）
+# 4. Pro版升級：加這行鎖定 → if not st.session_state.ispro: st.warning("🔒 Pro專屬功能")
 with tabs[6]: st.info("🚧 擴充功能 3：自動下單串接 (開發中)")
 with tabs[7]: st.info("🚧 擴充功能 4：Line 推播 (開發中)")
 with tabs[8]: st.info("🚧 擴充功能 5：期貨價差監控 (開發中)")
