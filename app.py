@@ -13,6 +13,7 @@ from scipy.stats import norm
 import plotly.graph_objects as go
 import plotly.express as px
 import feedparser
+import time
 from collections import Counter
 # Add these imports at the top of your app.py (after existing imports)
 from wordcloud import WordCloud
@@ -1416,9 +1417,9 @@ with tabs[4]:
 # --------------------------
 with tabs[5]:
     st.markdown("### 📰 貝伊果屋新聞情報中心")
-    st.caption("FinMind + Yahoo 財經 | AI 智慧分析 | 下載進度可視化")
+    st.caption("FinMind + Yahoo | AI 智慧分析 | 進度條完美版")
 
-    # === 搜尋介面 ===
+    # 搜尋介面
     col_s1, col_s2, col_s3 = st.columns([1.5, 1, 1])
     with col_s1:
         search_kw = st.text_input("🔍 關鍵字", "2330", key="news_search_kw")
@@ -1429,20 +1430,18 @@ with tabs[5]:
             st.cache_data.clear()
             st.rerun()
 
-    # === 分析模式選擇 ===
     analysis_mode = st.radio("選擇分析模式", ["📊 情緒儀表板", "❓ AI 智能問答"], horizontal=True)
 
     if st.button("🚀 開始分析", type="primary", key="news_analyze_btn"):
         
-        # 1. 顯示下載進度條 (模擬 UX)
-        progress_bar = st.progress(0, text="準備啟動 AI 引擎...")
+        # 進度條
+        progress_bar = st.progress(0)
         status_text = st.empty()
+
+        # 1. 抓新聞
+        status_text.info("📡 搜集新聞資料...")
+        progress_bar.progress(20)
         
-        # 抓取新聞
-        status_text.info("📡 正在全網搜索新聞資料...")
-        progress_bar.progress(10, text="正在連線 FinMind 資料庫...")
-        
-        # 定義抓取函數
         @st.cache_data(ttl=1800)
         def fetch_news_data(_kw, _days):
             news_list = []
@@ -1453,29 +1452,39 @@ with tabs[5]:
                 df = dl.taiwan_stock_news(stock_id=_kw, start_date=start)
                 if not df.empty:
                     for _, row in df.head(40).iterrows():
-                        news_list.append({'title': row.get('title', ''), 'source': '🔥 FinMind', 'link': row.get('link', '#'), 'date': str(row.get('date', ''))[:10]})
+                        news_list.append({
+                            'title': row.get('title', ''),
+                            'source': '🔥 FinMind',
+                            'link': row.get('link', '#'),
+                            'date': str(row.get('date', ''))[:10]
+                        })
             except: pass
             
             try:
-                import feedparser, urllib.parse
+                import feedparser
+                import urllib.parse
                 encoded = urllib.parse.quote(_kw)
                 rss_url = f"https://tw.stock.yahoo.com/rss2.0/search?q={encoded}&region=TW"
                 feed = feedparser.parse(rss_url)
                 for entry in feed.entries[:20]:
-                    news_list.append({'title': entry.title, 'source': '📈 Yahoo', 'link': getattr(entry, 'link', '#'), 'date': getattr(entry, 'published', '今日')[:10]})
+                    news_list.append({
+                        'title': entry.title,
+                        'source': '📈 Yahoo',
+                        'link': getattr(entry, 'link', '#'),
+                        'date': getattr(entry, 'published', '今日')[:10]
+                    })
             except: pass
             return pd.DataFrame(news_list)
 
         df_news = fetch_news_data(search_kw, search_days)
-        progress_bar.progress(30, text="新聞資料蒐集完成！")
-        
+        progress_bar.progress(40)
+
         if df_news.empty:
-            status_text.warning("⚠️ 暫無相關新聞")
-            progress_bar.empty()
+            st.warning("⚠️ 暫無相關新聞")
         else:
-            status_text.success(f"✅ 成功蒐集 **{len(df_news)}** 則新聞，準備載入 AI 模型...")
+            st.success(f"✅ 蒐集 **{len(df_news)}** 則新聞")
             
-            # 2. 載入模型 (帶進度提示)
+            # 2. 載入 AI 模型
             from transformers import pipeline
             
             @st.cache_resource
@@ -1486,20 +1495,25 @@ with tabs[5]:
                     return pipeline("question-answering", model="distilbert-base-uncased-distilled-squad")
                 return None
 
-            # 模擬模型載入進度 (因實際載入是 blocking，只能用文字提示)
-            progress_bar.progress(50, text="⏳ 正在下載/載入 AI 模型 (首次需 1-2 分鐘)...")
-            
-            # 實際載入
+            status_text.info("⏳ 載入 AI 模型中 (首次 30-60秒)...")
+            progress_bar.progress(60)
+
             if analysis_mode == "📊 情緒儀表板":
                 pipe = get_ai_pipeline("sentiment")
-                progress_bar.progress(70, text="模型載入完成！正在分析情緒...")
+                progress_bar.progress(70)
                 
+                status_text.info("🔍 分析新聞情緒...")
                 results = []
                 total = len(df_news)
+                
                 for i, (_, row) in enumerate(df_news.iterrows()):
                     try:
                         res = pipe(row['title'][:512])[0]
-                        label_map = {'5 stars': '🟢強利多', '4 stars': '🟢利多', '1 star': '🔴強利空', '2 stars': '🔴利空', '3 stars': '⚪中性'}
+                        label_map = {
+                            '5 stars': '🟢強利多', '4 stars': '🟢利多',
+                            '1 star': '🔴強利空', '2 stars': '🔴利空',
+                            '3 stars': '⚪中性'
+                        }
                         results.append({
                             'title': row['title'],
                             'sentiment': label_map.get(res['label'], '⚪中性'),
@@ -1507,33 +1521,46 @@ with tabs[5]:
                             'source': row['source'],
                             'link': row['link']
                         })
-                    except: pass
-                    # 更新分析進度
-                    curr_prog = 70 + int((i / total) * 30)
-                    progress_bar.progress(min(curr_prog, 99), text=f"正在分析第 {i+1}/{total} 則新聞...")
+                    except:
+                        results.append({
+                            'title': row['title'], 'sentiment': '⚪中性', 'score': 0.5,
+                            'source': row['source'], 'link': row['link']
+                        })
+                    
+                    # 動態更新進度
+                    curr_prog = 70 + int((i+1) / total * 25)
+                    progress_bar.progress(curr_prog)
                 
-                progress_bar.progress(100, text="✅ 分析完成！")
-                time.sleep(0.5)
+                progress_bar.progress(100)
+                status_text.success("✅ 分析完成！")
+                
+                # 清除進度條
                 progress_bar.empty()
                 status_text.empty()
-                
+
+                # === 結果展示 ===
                 df_res = pd.DataFrame(results)
                 
-                # === 顯示結果 ===
+                # KPI
                 kpi_cols = st.columns(5)
                 sent_types = ['🟢強利多', '🟢利多', '🔴強利空', '🔴利空', '⚪中性']
                 for i, stype in enumerate(sent_types):
                     count = len(df_res[df_res['sentiment'] == stype])
                     kpi_cols[i].metric(stype, count)
-                
-                fig = px.pie(df_res, names='sentiment', title=f"{search_kw} 情緒分佈", 
-                           color='sentiment', 
-                           color_discrete_map={'🟢強利多':'limegreen', '🟢利多':'green', '🔴強利空':'darkred', '🔴利空':'red', '⚪中性':'gray'})
+
+                # 圓餅圖
+                fig = px.pie(df_res, names='sentiment', title=f"{search_kw} 情緒分佈",
+                           color='sentiment',
+                           color_discrete_map={
+                               '🟢強利多':'limegreen', '🟢利多':'green',
+                               '🔴強利空':'darkred', '🔴利空':'red', '⚪中性':'gray'
+                           })
                 st.plotly_chart(fig, use_container_width=True)
-                
+
+                # 重點新聞
                 st.markdown("### 📋 重點新聞")
                 for _, row in df_res.head(10).iterrows():
-                    color = "green" if "利多" in row['sentiment'] else "red" if "利空" in row['sentiment'] else "gray"
+                    color = "limegreen" if "強利多" in row['sentiment'] else "green" if "利多" in row['sentiment'] else "darkred" if "強利空" in row['sentiment'] else "red" if "利空" in row['sentiment'] else "gray"
                     st.markdown(f"""
                     <div style="padding:10px; border-left:4px solid {color}; background:rgba(128,128,128,0.1); margin-bottom:5px;">
                         <b style="color:{color}">{row['sentiment']} ({row['score']:.0%})</b><br>
@@ -1542,10 +1569,8 @@ with tabs[5]:
                     </div>""", unsafe_allow_html=True)
 
             elif analysis_mode == "❓ AI 智能問答":
-                progress_bar.progress(60, text="載入 Q&A 模型中...")
                 pipe = get_ai_pipeline("qa")
-                progress_bar.progress(100, text="✅ 模型就緒！")
-                time.sleep(0.5)
+                progress_bar.progress(100)
                 progress_bar.empty()
                 status_text.empty()
 
@@ -1555,14 +1580,14 @@ with tabs[5]:
                 
                 if question:
                     try:
-                        with st.spinner("AI 思考中..."):
-                            qa_res = pipe(question=question, context=context[:1000])
-                            st.success(f"**回答**：{qa_res['answer']}")
-                            st.caption(f"信心度：{qa_res['score']:.1%}")
+                        qa_res = pipe(question=question, context=context[:1000])
+                        st.success(f"**回答**：{qa_res['answer']}")
+                        st.caption(f"信心度：{qa_res['score']:.1%}")
                     except Exception as e:
-                        st.error("無法回答，請簡化問題")
+                        st.error(f"無法回答：{str(e)}")
 
-    st.caption("💡 首次使用需下載 AI 模型 (約 500MB)，請耐心等待進度條跑完")
+    st.caption("💡 首次載入 AI 模型需 30-60秒，進度條會顯示狀態")
+
 
 # --------------------------
 # Tab 6~14: 擴充預留位
