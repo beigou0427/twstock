@@ -1584,7 +1584,7 @@ with tabs[5]:
                 context = ' '.join(df_news['title'].tolist())
                 question = st.text_input("問問題", "這些新聞對股票是利多還是利空？")
                 if question:
-                    qa_res = llm_pipe(question, context=context[:512])  # 截斷長度
+                    qa_res = llm_pipe({'question': question, 'context': context[:512]})
                     st.success(f"**回答**：{qa_res['answer']}")
                     st.caption(f"信心：{qa_res['score']:.1%}")
 
