@@ -105,7 +105,7 @@ for key, value in init_state.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-FINMIND_TOKEN = st.secrets.get("finmind_token", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0wNSAxODo1ODo1MiIsInVzZXJfaWQiOiJiYWdlbDA0MjciLCJpcCI6IjEuMTcyLjEwOC42OSIsImV4cCI6MTc3MDg5MzkzMn0.cojhPC-1LBEFWqG-eakETyteDdeHt5Cqx-hJ9OIK9k0")
+FINMIND_TOKEN = st.secrets.get("finmind_token", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0xMSAyMDo1MToyMSIsInVzZXJfaWQiOiJiYWdlbDA0MjciLCJpcCI6IjEuMTcyLjk4LjE5NiIsImV4cCI6MTc3MTQxOTA4MX0.kJf9xG4ISRUtF8VR9s3Kr_q5HWvydmej_-kBhti6ZK0")
 
 # =========================
 # 2. 核心函數庫
