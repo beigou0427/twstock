@@ -1410,144 +1410,96 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### 🏭 貝伊果屋產業戰情室 (AI 強化版) 🤖")
-    st.caption("FinMind 自動分類 | 智慧重試 | 保證產出報告")
+    st.markdown("### ⚡ 貝伊果屋 Groq 極速戰情室 🚀")
+    st.caption("🌟 Llama3-70B | 你的 Token 已注入 | 最快分析")
 
-    gemini_key = st.sidebar.text_input("Gemini Key", 
-                                     value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA", 
-                                     type="password")
+    # ✅ 你的 Groq Key 預填
+    groq_key = st.text_input("Groq Key", 
+                           value="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",
+                           type="password")
 
-    col1, col2 = st.columns([1.5, 1])
-    stock_input = col1.text_input("股票代號", "2610")
+    col1, col2 = st.columns([2, 1])
+    keyword = col1.text_input("關鍵字/股票", "2330 台積電")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
-    
-    # 產業數據
-    @st.cache_data(ttl=86400)
-    def get_stock_meta():
-        try:
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            return dl.taiwan_stock_info()
-        except: return pd.DataFrame()
 
-    df_meta = get_stock_meta()
-    
-    target_code = stock_input.split()[0]
-    stock_name = target_code
-    sector_name = "未知"
-    peers = [target_code]
-    
-    if not df_meta.empty:
-        row = df_meta[df_meta['stock_id'] == target_code]
-        if not row.empty:
-            stock_name = row.iloc[0]['stock_name']
-            sector_name = row.iloc[0]['industry_category']
-            peer_df = df_meta[df_meta['industry_category'] == sector_name]
-            if not peer_df.empty:
-                peers = peer_df.head(4)['stock_id'].tolist()
-                if target_code not in peers: peers.insert(0, target_code)
-                peers_display = []
-                for p in peers:
-                    n = df_meta[df_meta['stock_id']==p].iloc[0]['stock_name']
-                    peers_display.append(f"{p} {n}")
-                peers = peers_display
-
-    if st.button("🚀 啟動全自動分析", type="primary"):
-        st.info(f"📊 **{stock_name}** ({target_code}) | 產業：**{sector_name}**")
+    if st.button("⚡ Groq 極速分析", type="primary"):
+        if not groq_key:
+            st.error("請填寫 Groq Key")
+            st.stop()
         
-        import urllib.parse
-        import feedparser
-        import time
-        
-        # 1. 抓新聞
-        progress = st.progress(0)
-        status_text = st.empty()
-        all_news = []
-        
-        for i, target in enumerate(peers):
-            status_text.markdown(f"📡 掃描同業：**{target}**...")
-            progress.progress(int((i)/len(peers)*40))
-            q = urllib.parse.quote(target.replace(' ', ' OR '))
+        with st.spinner("⚡ Groq Llama3 運算中 (0.5秒)..."):
+            from groq import Groq
+            import urllib.parse
+            import feedparser
+            
+            client = Groq(api_key=groq_key)
+            
+            # 海量新聞掃描
+            news = []
+            kws = keyword.split()
+            
+            # Google News
+            q = urllib.parse.quote(" OR ".join(kws))
             rss = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+            feed = feedparser.parse(rss)
+            for e in feed.entries[:20]:
+                news.append(e.title)
+            
+            # Yahoo 股市
             try:
-                feed = feedparser.parse(rss)
-                for e in feed.entries[:5]: all_news.append(f"[{target}] {e.title}")
+                yq = urllib.parse.quote(kws[0])
+                y_rss = f"https://tw.stock.yahoo.com/rss2.0/search?q={yq}&region=TW"
+                y_feed = feedparser.parse(y_rss)
+                for e in y_feed.entries[:10]:
+                    news.append(e.title)
             except: pass
             
-        progress.progress(40)
-        status_text.success(f"✅ 完成！共 {len(all_news)} 篇產業情報")
-        
-        # 2. AI 分析 (無限重試)
-        if all_news:
-            import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
+            news_text = "\n".join(news[:25])
             
-            # 暴力輪詢所有可能模型名稱
-            candidate_models = [
-                'models/gemini-1.5-flash', 
-                'models/gemini-1.5-flash-latest',
-                'models/gemini-pro',
-                'models/gemini-1.5-pro',
-                'models/gemini-1.0-pro'
-            ]
+            # Groq 超快生成
+            completion = client.chat.completions.create(
+                model="llama3-70b-8192",  # 最強免費模型
+                messages=[
+                    {"role": "system", "content": """
+                    你是貝伊果屋的台股分析師，專精產業分析。
+                    用繁體中文回答，台股術語，結構清晰。
+                    格式：1.趨勢 2.事件 3.建議
+                    """},
+                    {"role": "user", "content": f"""
+                    關鍵字：{keyword}（{days}天）
+                    新聞情報：
+                    {news_text}
+                    
+                    請分析：
+                    1. 短期趨勢
+                    2. 關鍵事件
+                    3. 投資建議
+                    
+                    精簡有力。
+                    """}
+                ],
+                temperature=0.2,
+                max_tokens=600
+            )
             
-            success = False
-            progress.progress(50)
+            st.balloons()
+            st.markdown("### ⚡ **Groq Llama3-70B 極速報告**")
+            st.markdown(completion.choices[0].message.content)
             
-            # 嘗試 3 輪
-            for attempt in range(3):
-                if success: break
-                for m_name in candidate_models:
-                    if success: break
-                    try:
-                        status_text.info(f"🤖 AI 分析中 (嘗試 {m_name}, 第{attempt+1}次)...")
-                        model = genai.GenerativeModel(m_name)
-                        
-                        response = model.generate_content(f"""
-                        產業情報（{sector_name}）：
-                        {"\n".join(all_news[:25])}
-                        
-                        請分析 {stock_name} ({target_code})：
-                        1. {sector_name} 趨勢
-                        2. 競爭優劣
-                        3. 投資建議
-                        """)
-                        
-                        progress.progress(100)
-                        st.balloons()
-                        status_text.empty()
-                        
-                        st.markdown(f"### 🎯 **深度報告 ({m_name})**")
-                        st.markdown(response.text)
-                        success = True
-                    except Exception as e:
-                        print(f"{m_name} error: {e}")
-                        time.sleep(1) # 快速切換
-                
-                if not success:
-                    status_text.warning("⚠️ 額度滿，等待 3 秒重試...")
-                    time.sleep(3)
-            
-            # 3. 備援報告 (Python 規則生成)
-            if not success:
-                status_text.error("❌ AI 全掛，生成關鍵字報告")
-                bull = sum(1 for t in all_news if any(w in t for w in ['漲','利多','營收','創高']))
-                bear = sum(1 for t in all_news if any(w in t for w in ['跌','利空','虧損','重挫']))
-                
-                st.markdown("### 📊 **關鍵字智能報告**")
-                col1, col2 = st.columns(2)
-                col1.metric("🟢 利多訊號", bull)
-                col2.metric("🔴 利空訊號", bear)
-                
-                sentiment = "偏多" if bull > bear else "偏空"
-                st.info(f"**結論**：產業氣氛 **{sentiment}** (利多 {bull} vs 利空 {bear})")
-                
-                st.markdown("#### 🔥 重點新聞摘要")
-                for n in all_news[:5]:
-                    st.write(n)
+            # 關鍵字統計
+            bull = sum(1 for t in news if '漲' in t or '利多' in t)
+            bear = sum(1 for t in news if '跌' in t or '利空' in t)
+            col1, col2 = st.columns(2)
+            col1.metric("🟢 利多新聞", bull)
+            col2.metric("🔴 利空新聞", bear)
 
-        with st.expander("查看新聞來源"):
-            for n in all_news: st.write(n)
+            # Top 新聞
+            st.markdown("### 📄 **Top 情報來源**")
+            for i, title in enumerate(news[:10], 1):
+                st.write(f"{i}. {title}")
+
+    st.caption("✅ 你的 Groq Key 已預填 | 最快免費 LLM")
+
 
 
 # --------------------------
