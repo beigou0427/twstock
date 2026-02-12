@@ -1411,9 +1411,8 @@ with tabs[4]:
 # --------------------------
 with tabs[5]:
     st.markdown("### 🏭 貝伊果屋產業 LLM 戰情室 🤖")
-    st.caption("Gemini Pro 解讀 | 同業比較 | 供應鏈分析")
+    st.caption("智慧模型切換 | 自動重試 | 永不崩潰")
 
-    # Sidebar Token
     gemini_key = st.sidebar.text_input("Gemini Key", 
                                      value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA", 
                                      type="password")
@@ -1422,7 +1421,6 @@ with tabs[5]:
     stock_input = col1.text_input("股票代號", "2330")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    # 產業數據
     SECTOR_MAP = {
         '2330': {'name': '台積電', 'sector': '半導體', 'peers': ['2303 聯電', '5347 世界', '2330 台積電'], 'up': ['矽晶圓', 'IP'], 'down': ['IC設計', '封測']},
         '2317': {'name': '鴻海', 'sector': '電子代工', 'peers': ['2317 鴻海', '4938 和碩', '3231 緯創'], 'up': ['零組件'], 'down': ['品牌商']},
@@ -1433,8 +1431,8 @@ with tabs[5]:
     code = stock_input.split()[0]
     info = SECTOR_MAP.get(code, {'name': code, 'sector': '未知', 'peers': [stock_input], 'up': [], 'down': []})
 
-    if st.button("🚀 啟動產業 LLM 分析", type="primary"):
-        st.info(f"📊 **{info['name']}** ({info['sector']}) | 同業：{', '.join(info['peers'])}")
+    if st.button("🚀 啟動分析", type="primary"):
+        st.info(f"📊 **{info['name']}** ({info['sector']})")
         
         progress = st.progress(0)
         all_news = []
@@ -1442,7 +1440,7 @@ with tabs[5]:
         # 1. 搜集情報
         targets = info['peers']
         for i, target in enumerate(targets):
-            progress.progress(int((i + 1) / len(targets) * 50))
+            progress.progress(int((i + 1) / len(targets) * 40))
             q = target.replace(' ', ' OR ')
             try:
                 import urllib.parse
@@ -1450,74 +1448,79 @@ with tabs[5]:
                 enc_q = urllib.parse.quote(q)
                 rss = f"https://news.google.com/rss/search?q={enc_q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
                 feed = feedparser.parse(rss)
-                for entry in feed.entries[:6]: # 每個抓6篇
+                for entry in feed.entries[:5]: 
                     all_news.append(f"[{target}] {entry.title}")
             except: pass
             
-        progress.progress(60)
-        
         if not all_news:
             st.warning("無相關新聞")
         else:
-            news_context = "\n".join(all_news[:25]) # 取前25篇給 LLM
+            news_context = "\n".join(all_news[:20])
             
-            # 2. LLM 分析
+            # 2. LLM 智慧重試機制
             if gemini_key:
-                try:
-                    import google.generativeai as genai
-                    genai.configure(api_key=gemini_key)
-                    
-                    # 自動選模型
-                    models = ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']
-                    model = None
-                    for m in models:
-                        try:
-                            model = genai.GenerativeModel(m)
-                            break
-                        except: continue
-                    
-                    if model:
+                import google.generativeai as genai
+                import time
+                genai.configure(api_key=gemini_key)
+                
+                # 模型優先順序
+                models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
+                success = False
+                
+                progress.progress(50)
+                
+                for m_name in models:
+                    if success: break
+                    try:
+                        st.caption(f"🔄 嘗試模型：{m_name}...")
+                        model = genai.GenerativeModel(m_name)
+                        
                         prompt = f"""
                         產業情報（{info['sector']}）：
                         {news_context}
                         
-                        請以專業分析師角度，輸出以下報告（繁體中文）：
-                        1. **產業趨勢**：目前是上升/下降週期？關鍵驅動因素？
-                        2. **龍頭表現**：{info['name']} 與同業相比，優勢/劣勢？
-                        3. **供應鏈影響**：上下游是否有缺料/漲價/庫存問題？
-                        4. **投資建議**：積極買進/區間操作/保守觀望？為什麼？
+                        請分析：
+                        1. 趨勢：上升/下降？
+                        2. {info['name']} 優劣勢？
+                        3. 建議：買/賣？
                         
-                        格式：Markdown，條列式，數據佐證。
+                        精簡條列。
                         """
                         
-                        st.spinner(f"🤖 {model.model_name.split('/')[-1]} 深度分析中...")
                         response = model.generate_content(prompt)
                         progress.progress(100)
                         
                         st.balloons()
-                        st.markdown("### 🎯 **產業深度報告**")
+                        st.markdown(f"### 🎯 **深度報告 ({m_name})**")
                         st.markdown(response.text)
-                    else:
-                        raise Exception("無可用模型")
+                        success = True
                         
-                except Exception as e:
-                    st.error(f"LLM 錯誤：{e}")
-                    st.info("轉為關鍵字分析模式...")
+                    except Exception as e:
+                        if "429" in str(e):
+                            st.warning(f"⚠️ {m_name} 額度滿，切換中...")
+                            time.sleep(2) # 避讓
+                        else:
+                            st.error(f"{m_name} 錯誤：{e}")
+                
+                if not success:
+                    st.error("❌ 所有 LLM 皆忙碌，轉為關鍵字報告")
                     # 降級：關鍵字分析
                     bull = sum(1 for t in all_news if '漲' in t or '利多' in t)
                     bear = sum(1 for t in all_news if '跌' in t or '利空' in t)
-                    st.metric("🟢 利多", bull)
-                    st.metric("🔴 利空", bear)
+                    st.markdown("### 📊 **關鍵字趨勢**")
+                    c1, c2 = st.columns(2)
+                    c1.metric("🟢 利多", bull)
+                    c2.metric("🔴 利空", bear)
+
             else:
-                st.warning("請輸入 Gemini Key 以啟用深度分析")
+                st.info("填寫 Token 啟用深度分析")
                 
-            # 3. 新聞列表
-            st.markdown("### 📰 **情報來源**")
-            with st.expander("查看 25 篇產業新聞"):
+            # 新聞列表
+            with st.expander("查看新聞來源"):
                 for n in all_news:
                     st.write(n)
 
-    st.caption("✅ Gemini 深度解讀 | 產業週期分析 | 自動備援")
+    st.caption("✅ 自動模型輪詢 | 429 避讓機制")
 
 
 # --------------------------
