@@ -1411,40 +1411,40 @@ with tabs[4]:
 # --------------------------
 
 with tabs[5]:
-    st.markdown("### 🌍 貝伊果屋全球情報 🚀")
-    st.caption("8大國際財經源 | 一鍵全掃描")
+    st.markdown("### 🌍 貝伊果屋 • 全球財經情報總站 🚀")
+    st.caption("20+ 權威來源 | 台美中港日韓 | 即時全掃描")
 
-    SOURCE_LIST = [
-        '🇹🇼 FinMind', '🇹🇼 Yahoo股市', '🌎 Reuters財經', 
-        '🇺🇸 CNBC國際', '🇺🇸 WSJ市場', '🇨🇳 華爾街見聞',
-        '🇬🇧 BBC商業', '📈 Bloomberg'
-    ]
-
-    col1, col2, col3 = st.columns([1.5, 1.2, 1])
-    keyword = col1.text_input("關鍵字", "2330 台積電")
+    # 搜尋
+    col1, col2 = st.columns([2, 1])
+    keyword = col1.text_input("關鍵字", "2330 台積電 Nvidia")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
-    
-    if st.button("✅ 全選國際源", key="all"):
-        st.session_state.sources = SOURCE_LIST
+
+    # 快速全選
+    if st.button("✅ 全選20+來源", key="all20"):
+        st.session_state.sources = list(ALL_SOURCES.keys())
         st.rerun()
-    
-    sources = st.multiselect("新聞源", SOURCE_LIST, 
-                           default=['🇹🇼 FinMind', '🇹🇼 Yahoo股市'])
 
-    if st.button("🌐 全球掃描", type="primary"):
+    # 來源選擇（分組）
+    sources = st.multiselect(
+        "📰 新聞來源", list(ALL_SOURCES.keys()),
+        default=['🇹🇼 FinMind', '🇹🇼 Yahoo股市', '🌎 Reuters', '🇺🇸 CNBC'],
+        key="global_sources"
+    )
+
+    if st.button("🌐 全球情報全掃描", type="primary"):
         progress = st.progress(0)
-        news_list = []
+        global_news = []
 
-        # FinMind 台股
+        # 1. 🇹🇼 FinMind（台股核心）
         if '🇹🇼 FinMind' in sources:
-            progress.progress(25)
+            progress.progress(5)
             try:
                 dl = DataLoader()
                 dl.login_by_token(api_token=FINMIND_TOKEN)
-                start = (date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
-                df = dl.taiwan_stock_news(stock_id=keyword.split()[0], start_date=start)
-                for _, row in df.head(20).iterrows():
-                    news_list.append({
+                start_date = (date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
+                df = dl.taiwan_stock_news(stock_id=keyword.split()[0], start_date=start_date)
+                for _, row in df.head(25).iterrows():
+                    global_news.append({
                         'title': row['title'],
                         'source': '🇹🇼 FinMind',
                         'date': str(row['date'])[:10],
@@ -1452,83 +1452,100 @@ with tabs[5]:
                     })
             except: pass
 
-        # RSS 來源
-        RSS_SOURCES = {
-            '🇹🇼 Yahoo股市': 'https://tw.stock.yahoo.com/rss2.0/index',
-            '🌎 Reuters財經': 'https://www.reuters.com/arc/outboundfeeds/news-rss/',
-            '🇺🇸 CNBC國際': 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
-            '🇺🇸 WSJ市場': 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
-            '🇨🇳 華爾街見聞': 'https://wallstreetcn.com/rss/all',
-            '🇬🇧 BBC商業': 'https://feeds.bbci.co.uk/news/business/rss.xml',
-            '📈 Bloomberg': 'https://feeds.bloomberg.com/markets/news.rss'
-        }
-
-        for src, url in RSS_SOURCES.items():
-            if src in sources:
-                progress.progress(25 + list(RSS_SOURCES.keys()).index(src) * 10)
+        # 2. 20+ RSS 來源
+        for i, (src_name, rss_url) in enumerate(ALL_SOURCES.items()):
+            if src_name in sources:
+                prog_val = 5 + (i / len(ALL_SOURCES)) * 90
+                progress.progress(prog_val)
                 try:
                     import feedparser
-                    feed = feedparser.parse(url)
-                    for entry in feed.entries[:5]:
+                    feed = feedparser.parse(rss_url)
+                    for entry in feed.entries[:6]:
                         title = entry.title
                         if any(kw in title.upper() for kw in keyword.split()):
-                            news_list.append({
+                            global_news.append({
                                 'title': title,
-                                'source': src,
+                                'source': src_name,
                                 'date': getattr(entry, 'published', '今日')[:10],
                                 'link': getattr(entry, 'link', '#')
                             })
-                except: pass
+                except Exception as e:
+                    pass
 
-        df_news = pd.DataFrame(news_list).drop_duplicates(subset='title')
+        df_intel = pd.DataFrame(global_news).drop_duplicates(subset='title')
         progress.empty()
 
-        if df_news.empty:
-            st.warning("🔍 暫無情報")
-        else:
-            st.success(f"✅ **全球 {len(df_news)}** 篇 | {len(df_news['source'].unique())} 來源")
+        st.success(f"✅ **全球情報 {len(df_intel)}** 篇 | **{len(df_intel['source'].unique())}** 來源")
 
-            # 分析引擎
-            BULL = ['漲','up','rise','buy','growth','利多']
-            BEAR = ['跌','down','fall','sell','loss','利空']
+        if not df_intel.empty:
+            # 全球語意引擎
+            BULL_GLOBAL = ['漲','up','rise','buy','growth','bull','profit','利多','營收']
+            BEAR_GLOBAL = ['跌','down','fall','sell','loss','bear','利空','虧損']
             
-            df_news['bull'] = df_news['title'].str.upper().apply(lambda t: sum(t.count(w) for w in BULL))
-            df_news['bear'] = df_news['title'].str.upper().apply(lambda t: sum(t.count(w) for w in BEAR))
-            df_news['score'] = df_news['bull'] - df_news['bear']
+            df_intel['bull_score'] = df_intel['title'].str.upper().apply(lambda t: sum(t.count(w) for w in BULL_GLOBAL))
+            df_intel['bear_score'] = df_intel['title'].str.upper().apply(lambda t: sum(t.count(w) for w in BEAR_GLOBAL))
+            df_intel['net_score'] = df_intel['bull_score'] - df_intel['bear_score']
             
-            # KPI
-            c1, c2, c3 = st.columns(3)
-            c1.metric("🟢 利多分數", df_news['bull'].sum())
-            c2.metric("🔴 利空分數", df_news['bear'].sum())
-            c3.metric("淨勝分", df_news['score'].sum())
+            # 情報 KPI
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("🟢 利多強度", df_intel['bull_score'].sum())
+            c2.metric("🔴 利空強度", df_intel['bear_score'].sum())
+            c3.metric("總情報分", df_intel['net_score'].sum())
+            c4.metric("台灣情報", len(df_intel[df_intel['source'].str.contains('台|FinMind')]))
 
-            # 情緒餅圖
-            df_news['sentiment'] = df_news['score'].apply(lambda x: '🟢 多頭' if x > 0 else '🔴 空頭' if x < 0 else '⚪ 中性')
-            fig = px.pie(df_news, names='sentiment', title=f"{keyword} 全球情緒")
+            # 全球情緒
+            df_intel['sentiment'] = df_intel['net_score'].apply(lambda s: '🟢 強多' if s >= 2 else '🟢 多頭' if s > 0 else '🔴 空頭' if s < 0 else '⚪ 中性')
+            fig = px.pie(df_intel, names='sentiment', title=f"{keyword} • 全球情緒地圖")
             st.plotly_chart(fig, use_container_width=True)
 
             # 總結
-            winrate = len(df_news[df_news['score'] > 0]) / len(df_news)
-            color = "🟢" if winrate > 0.5 else "🔴" if winrate < 0.4 else "🟡"
-            st.markdown(f"### 🎯 **{color} 全球評級：多頭勝率 {winrate:.0%}**")
+            bull_rate = len(df_intel[df_intel['net_score'] > 0]) / len(df_intel)
+            st.markdown(f"### 🎯 **全球總評：多頭佔比 {bull_rate:.0%}**")
 
-            # Top 情報
-            st.markdown("### 🔥 **Top 情報排序**")
-            top_intel = df_news.nlargest(12, 'score')
-            for _, row in top_intel.iterrows():
-                score_color = "limegreen" if row['score'] > 0 else "darkred"
+            # Top 20 情報
+            st.markdown("### 🔥 **Top 20 全球情報**")
+            top_intel = df_intel.nlargest(20, 'net_score')
+            for _, intel in top_intel.iterrows():
+                score_color = "limegreen" if intel['net_score'] > 1 else "green" if intel['net_score'] > 0 else "darkred" if intel['net_score'] < 0 else "gray"
                 st.markdown(f"""
-                <div style="padding:8px; border-left:4px solid {score_color}; margin:2px; background:#f8f9fa;">
-                    <b style="color:{score_color}">+{row['score']:.0f}</b> **{row['source']}**<br>
-                    <small>{row['title']}</small>
+                <div style="padding:8px; margin:2px 0; border-left:4px solid {score_color}; background:#f8f9fa;">
+                    <b style="color:{score_color}">分數 {intel['net_score']:+.0f}</b> **{intel['source']}**<br>
+                    <small style="color:gray">{intel['title']}</small>
                 </div>""", unsafe_allow_html=True)
 
-            # 來源統計
-            st.markdown("### 📊 **情報來源**")
-            src_stats = df_news.groupby('source').size().sort_values(ascending=False)
-            st.bar_chart(src_stats)
+            # 情報來源圖
+            st.markdown("### 📊 **情報來源分佈**")
+            source_chart = df_intel['source'].value_counts().head(12)
+            st.bar_chart(source_chart)
 
-    st.caption("✅ 零縮排錯誤 | 7國財經源 | 複製即推")
+# ✅ 全域來源字典（放在 with tabs[5]: 內）
+ALL_SOURCES = {
+    '🇹🇼 Yahoo股市': 'https://tw.stock.yahoo.com/rss2.0/index',
+    '🇹🇼 工商時報': 'https://ctee.com.tw/rss/all.xml',
+    '🇹🇼 自由財經': 'https://news.ltn.com.tw/rss/finance',
+    '🇹🇼 聯合財經': 'https://udn.com/rss/Financial/1001/7238',
+    '🇹🇼 經濟日報': 'https://money.udn.com/rss/feed/1001/7237',
+    '🇹🇼 Up Media': 'https://www.upmedia.mg/rss.php',
+    '🇹🇼 The News Lens': 'https://www.thenewslens.com/rss',
+    
+    '🌎 Reuters財經': 'https://www.reuters.com/arc/outboundfeeds/news-rss/',
+    '🇺🇸 CNBC國際': 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
+    '🇺🇸 WSJ市場': 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
+    '📈 Bloomberg': 'https://feeds.bloomberg.com/markets/news.rss',
+    '🇬🇧 BBC商業': 'https://feeds.bbci.co.uk/news/business/rss.xml',
+    '🇺🇸 Seeking Alpha': 'https://seekingalpha.com/api/sa/combined/%s.rss',
+    
+    '🇨🇳 華爾街見聞': 'https://wallstreetcn.com/rss/all',
+    '🇭🇰 香港01財經': 'https://www.hk01.com/rss/channel/2',
+    '🇯🇵 日經亞洲': 'https://asia.nikkei.com/rss/',
+    '🇰🇷 韓亞經濟': 'https://www.mk.co.kr/rss/economy/',
+    
+    '💹 Investing.com': 'https://tw.investing.com/rss/news.rss',
+    '📊 TradingView': 'https://www.tradingview.com/feed/',
+    '🏦 金管會 RSS': 'https://www.fsc.gov.tw/rss'
+}
+
+    st.caption("✅ 20+ 全球權威源 | 複製即用")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
