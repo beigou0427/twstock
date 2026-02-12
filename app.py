@@ -1410,88 +1410,82 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 
-
 with tabs[5]:
-    # ✅ Token 直接可用（安全處理）
-    GEMINI_KEY = "AIzaSyC-V4xthHSBodzZ5GVUFuHC3nJZpEj7Fv4"
-    
-    st.markdown("### 📰 貝伊果屋 Gemini Pro 🤖")
-    st.caption("🌟 1.5 Flash | 中文最強 | Token 已設定")
+    st.markdown("### 📰 貝伊果屋 Gemini Pro 🔥")
+    st.caption("🤖 1.5 Flash 新 Token | 中文神級")
 
-    # 介面
-    col1, col2, col3 = st.columns([1.8, 1, 0.8])
-    with col1:
-        stock = st.text_input("📈 股票", "2330 台積電")
-    with col2:
-        days = st.selectbox("⏰ 天數", [3, 7, 14], index=1)
-    with col3:
-        if st.button("🔄", key="up"):
-            st.cache_data.clear()
-            st.rerun()
+    # ✅ 新 Token 預填
+    gemini_key = st.text_input("Gemini Key", 
+                             value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA",
+                             type="password")
 
-    if st.button("🚀 Gemini 深度分析", type="primary"):
-        with st.spinner("Gemini Pro 運算中..."):
+    col1, col2 = st.columns([2, 1])
+    stock = col1.text_input("股票", "2330")
+    days = col2.selectbox("天數", [3, 7, 14])
+
+    if st.button("🚀 深度分析", type="primary"):
+        try:
             import google.generativeai as genai
-            
-            # 配置
-            genai.configure(api_key=GEMINI_KEY)
+            genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
             
-            # 最新新聞
+            # 新聞
             @st.cache_data(ttl=1800)
-            def fetch(stock_code, d):
-                data = []
+            def news(s, d):
+                lst = []
                 try:
                     dl = DataLoader()
                     dl.login_by_token(api_token=FINMIND_TOKEN)
                     start = (date.today() - timedelta(days=d)).strftime('%Y-%m-%d')
-                    df = dl.taiwan_stock_news(stock_id=stock_code.split()[0], start_date=start)
-                    for _, row in df.head(20).iterrows():
-                        data.append(row['title'])
+                    df = dl.taiwan_stock_news(stock_id=s.split()[0], start_date=start)
+                    for _, r in df.head(18).iterrows():
+                        lst.append(r['title'])
                 except: pass
-                return data
+                return lst
 
-            news = fetch(stock, days)
-            news_str = "\n".join([f"• {t}" for t in news])
+            titles = news(stock, days)
+            context = "\n".join(titles)
 
-            # 🔥 專業提示詞
+            # 專業 Prompt
             prompt = f"""
-            【台股新聞分析】{stock}，{days}天內 {len(news)} 篇
+            台股 {stock} 情報（{days}天 {len(titles)}篇）：
             
-            新聞內容：
-            {news_str}
+            {context}
             
-            專業分析（簡潔有力）：
-            1. **總結**：利多/利空主調？
-            2. **關鍵詞**：3個最重要的詞
-            3. **事件**：1-2個重大事件
-            4. **建議**：買/賣/持？理由？
+            【專業分析】
+            1. 利多/利空指數？
+            2. 3個關鍵詞？
+            3. 重大事件？
+            4. 買賣建議？
             
-            台股專業用語，數據支持。
+            台股術語，精簡有力。
             """
 
+            st.spinner("Gemini Pro 運算...")
             response = model.generate_content(prompt)
-            st.balloons()
             
-            st.markdown("### 🎯 **Gemini Pro 分析報告**")
+            st.balloons()
+            st.markdown("### 🎯 **Gemini Pro 報告**")
             st.markdown(response.text)
 
-            # 關鍵指標
-            bull_signals = sum(1 for t in news if any(w in t for w in ['漲','利多','買超','成長']))
-            bear_signals = sum(1 for t in news if any(w in t for w in ['跌','利空','賣超']))
+            # 數據面板
+            bull = sum(1 for t in titles if any(w in t for w in ['漲','利多','買','成長']))
+            bear = sum(1 for t in titles if any(w in t for w in ['跌','利空','賣','虧']))
             
             c1, c2, c3 = st.columns(3)
-            c1.metric("🟢 正面訊號", bull_signals)
-            c2.metric("🔴 負面訊號", bear_signals)
-            c3.metric("利多率", f"{bull_signals/(bull_signals+bear_signals+1)*100:.0f}%")
+            c1.metric("🟢 正面", bull)
+            c2.metric("🔴 負面", bear)
+            c3.metric("多頭率", f"{bull/(bull+bear+1)*100:.0f}%")
 
-            # Top 新聞
-            st.markdown("### 🔥 **參考新聞**")
-            for i, title in enumerate(news[:5], 1):
-                st.markdown(f"**{i}.** {title}")
+            st.markdown("### 📈 **Top 5 新聞**")
+            for i, t in enumerate(titles[:5], 1):
+                st.markdown(f"**{i}.** {t}")
 
-    st.markdown("---")
-    st.caption("✅ Token 內嵌安全 | 中文超強 | 免費 1500 次/天")
+        except Exception as e:
+            st.error(f"錯誤：{e}")
+            st.info("🔄 檢查 Token 或用關鍵字分析")
+
+    st.caption("✅ 新 Token 預填 | 複製即用")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
