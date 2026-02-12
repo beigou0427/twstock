@@ -1410,136 +1410,114 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### 🌍 貝伊果屋全球情報 (爆量版) 🚀")
-    st.caption("Google + Yahoo + Bing | 保證海量情報")
+    st.markdown("### 🏭 貝伊果屋產業戰情室 🚀")
+    st.caption("個股情報 | 同業比較 | 供應鏈分析")
 
-    col1, col2 = st.columns([2, 1])
-    keyword = col1.text_input("關鍵字", "2330 台積電") 
-    days = col2.selectbox("天數", [3, 7, 30], index=1)
+    col1, col2 = st.columns([1.5, 1])
+    # 支援輸入 "2330" 或 "2330 台積電"
+    stock_input = col1.text_input("股票代號", "2330")
+    days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    if st.button("🌐 全球掃描", type="primary"):
+    # 產業數據庫 (模擬)
+    SECTOR_MAP = {
+        '2330': {'name': '台積電', 'sector': '半導體', 'peers': ['2303 聯電', '5347 世界', '2330 台積電'], 'up': ['矽晶圓', 'IP'], 'down': ['IC設計', '封測']},
+        '2317': {'name': '鴻海', 'sector': '電子代工', 'peers': ['2317 鴻海', '4938 和碩', '3231 緯創'], 'up': ['零組件'], 'down': ['品牌商']},
+        '2454': {'name': '聯發科', 'sector': 'IC設計', 'peers': ['2454 聯發科', '3034 聯詠', '2379 瑞昱'], 'up': ['晶圓代工'], 'down': ['系統廠']},
+        '2603': {'name': '長榮', 'sector': '航運', 'peers': ['2603 長榮', '2609 陽明', '2615 萬海'], 'up': ['造船'], 'down': ['貨代']}
+    }
+    
+    # 簡單代號提取
+    stock_code = stock_input.split()[0]
+    stock_info = SECTOR_MAP.get(stock_code, {'name': stock_code, 'sector': '未知', 'peers': [stock_input], 'up': [], 'down': []})
+
+    if st.button("🏭 產業深度分析", type="primary"):
+        st.info(f"📊 **{stock_info['name']}** ({stock_info['sector']}) | 同業：{', '.join(stock_info['peers'])}")
+        
         progress = st.progress(0)
-        news_data = []
+        all_news = []
         
-        # 關鍵字處理
-        kws = [k.strip() for k in keyword.replace(' ', ',').split(',') if k.strip()]
-        or_query = " OR ".join(kws)  # Google/Bing 支援 OR
+        # 1. 掃描本股 + 同業
+        targets = stock_info['peers']
+        total_targets = len(targets)
         
-        # 1. Google News (最強，移除時間限制)
-        progress.progress(10)
-        try:
-            import urllib.parse
-            q = urllib.parse.quote(or_query)
-            # 移除 when:Xd，改抓更多
-            google_rss = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        for i, target in enumerate(targets):
+            progress.progress((i / total_targets) * 80)
             
-            import feedparser
-            feed = feedparser.parse(google_rss)
-            for entry in feed.entries[:20]: # 抓 20 篇
-                news_data.append({
-                    'title': entry.title,
-                    'source': '🔍 Google新聞',
-                    'link': entry.link,
-                    'date': getattr(entry, 'published', '今日')[:10]
-                })
-        except: pass
-
-        # 2. Bing News (備援)
-        progress.progress(30)
-        try:
-            bing_rss = f"https://www.bing.com/news/search?q={q}&format=rss"
-            feed = feedparser.parse(bing_rss)
-            for entry in feed.entries[:15]:
-                news_data.append({
-                    'title': entry.title,
-                    'source': '🟦 Bing新聞',
-                    'link': entry.link,
-                    'date': getattr(entry, 'published', '今日')[:10]
-                })
-        except: pass
-
-        # 3. Yahoo 股市 (精準，只用第一個關鍵字)
-        progress.progress(50)
-        try:
-            y_q = urllib.parse.quote(kws[0]) 
-            yahoo_rss = f"https://tw.stock.yahoo.com/rss2.0/search?q={y_q}&region=TW"
-            feed = feedparser.parse(yahoo_rss)
-            for entry in feed.entries[:15]:
-                news_data.append({
-                    'title': entry.title,
-                    'source': '🇹🇼 Yahoo股市',
-                    'link': entry.link,
-                    'date': getattr(entry, 'published', '今日')[:10]
-                })
-        except: pass
-
-        # 4. 國際 RSS (寬鬆匹配)
-        RSS_SOURCES = {
-            '🌎 Reuters': 'https://www.reuters.com/arc/outboundfeeds/news-rss/',
-            '🇺🇸 CNBC': 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
-            '📈 Bloomberg': 'https://feeds.bloomberg.com/markets/news.rss',
-            '🇹🇼 工商時報': 'https://ctee.com.tw/rss/all.xml',
-            '🇹🇼 自由財經': 'https://news.ltn.com.tw/rss/finance',
-            '🇹🇼 經濟日報': 'https://money.udn.com/rss/feed/1001/7237'
-        }
-
-        total = len(RSS_SOURCES)
-        for i, (src, url) in enumerate(RSS_SOURCES.items()):
-            progress.progress(60 + int((i+1)/total * 40))
+            # 關鍵字：代號 OR 名稱
+            code = target.split()[0]
+            name = target.split()[1] if len(target.split()) > 1 else code
+            q = f"{code} OR {name}"
+            
             try:
-                feed = feedparser.parse(url)
+                import urllib.parse
+                import feedparser
+                
+                # Google News (最強)
+                enc_q = urllib.parse.quote(q)
+                rss = f"https://news.google.com/rss/search?q={enc_q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+                feed = feedparser.parse(rss)
+                
                 for entry in feed.entries[:10]:
-                    t = entry.title
-                    # 極寬鬆：任一關鍵字出現在標題
-                    if any(k.upper() in t.upper() for k in kws):
-                        news_data.append({
-                            'title': t,
-                            'source': src,
-                            'link': getattr(entry, 'link', '#'),
-                            'date': getattr(entry, 'published', '今日')[:10]
-                        })
+                    all_news.append({
+                        'title': entry.title,
+                        'target': target, # 標記是哪檔股票
+                        'link': entry.link,
+                        'date': getattr(entry, 'published', '今日')[:10]
+                    })
             except: pass
 
-        df = pd.DataFrame(news_data).drop_duplicates('title')
+        df = pd.DataFrame(all_news).drop_duplicates('title')
         progress.empty()
-
+        
         if df.empty:
-            st.error("❌ 依然找不到！建議：只輸入股票代號 (如 2330)")
+            st.warning("無相關新聞")
         else:
-            st.success(f"✅ **海量情報 {len(df)}** 篇 | 關鍵字：{or_query}")
-
-            # 智能分析
-            BULL = ['漲','up','rise','buy','growth','bull','利多','營收','創高','爆發']
-            BEAR = ['跌','down','fall','sell','loss','bear','利空','虧損','重挫','砍單']
+            # 2. 智能評分
+            BULL = ['漲','up','成長','營收','創高','利多','買超','訂單']
+            BEAR = ['跌','down','衰退','虧損','重挫','利空','賣超','砍單']
             
-            df['bull'] = df['title'].str.upper().apply(lambda x: sum(x.count(w) for w in BULL))
-            df['bear'] = df['title'].str.upper().apply(lambda x: sum(x.count(w) for w in BEAR))
-            df['score'] = df['bull'] - df['bear']
+            df['score'] = df['title'].apply(lambda t: sum(t.count(w) for w in BULL) - sum(t.count(w) for w in BEAR))
             
-            # KPI
-            c1, c2, c3 = st.columns(3)
-            c1.metric("🟢 利多", df['bull'].sum())
-            c2.metric("🔴 利空", df['bear'].sum())
-            c3.metric("總分", df['score'].sum())
-
-            # 情緒圖
-            df['sentiment'] = df['score'].apply(lambda s: '🟢 多頭' if s > 0 else '🔴 空頭' if s < 0 else '⚪ 中性')
-            fig = px.pie(df, names='sentiment', title=f"全球情緒分佈")
+            # 3. 產業比較儀表板
+            st.markdown("### 📊 **同業戰力分析**")
+            
+            # 計算每檔股票的總分
+            peer_scores = df.groupby('target')['score'].sum().sort_values(ascending=False)
+            
+            cols = st.columns(len(peer_scores))
+            for i, (peer, score) in enumerate(peer_scores.items()):
+                color = "🟢" if score > 0 else "🔴" if score < 0 else "⚪"
+                cols[i].metric(f"{peer}", f"{score:+d}", delta_color="normal")
+            
+            # 4. 產業情緒圖
+            fig = px.bar(peer_scores, x=peer_scores.index, y=peer_scores.values, 
+                       title=f"{stock_info['sector']} 產業情緒排行",
+                       color=peer_scores.values,
+                       color_continuous_scale=['red', 'gray', 'green'])
             st.plotly_chart(fig, use_container_width=True)
+            
+            # 5. 上下游關係
+            if stock_info['up'] or stock_info['down']:
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**⬆️ 上游：** {', '.join(stock_info['up'])}")
+                with c2:
+                    st.markdown(f"**⬇️ 下游：** {', '.join(stock_info['down'])}")
+            
+            # 6. 本股重點新聞
+            st.markdown(f"### 🔥 **{stock_info['name']} 重點情報**")
+            my_news = df[df['target'].str.contains(stock_code)].nlargest(5, 'score')
+            for _, r in my_news.iterrows():
+                c = "limegreen" if r['score'] > 0 else "darkred" if r['score'] < 0 else "gray"
+                st.markdown(f"**<span style='color:{c}'>{r['score']:+d}</span>** [{r['title']}]({r['link']})", unsafe_allow_html=True)
 
-            # Top 情報
-            st.markdown("### 🔥 **重點情報 (按分數排序)**")
-            top = df.nlargest(20, 'score')
-            for _, r in top.iterrows():
-                color = "limegreen" if r['score'] > 0 else "darkred" if r['score'] < 0 else "gray"
-                st.markdown(f"""
-                <div style="padding:8px; border-left:4px solid {color}; margin:2px; background:#f8f9fa;">
-                    <b style="color:{color}">{r['score']:+d}</b> | **{r['source']}**<br>
-                    <a href="{r['link']}" target="_blank" style="text-decoration:none; color:black;">{r['title']}</a>
-                </div>""", unsafe_allow_html=True)
+            # 7. 同業重點新聞
+            st.markdown(f"### ⚔️ **同業動態**")
+            peer_news = df[~df['target'].str.contains(stock_code)].nlargest(5, 'score')
+            for _, r in peer_news.iterrows():
+                st.markdown(f"**{r['target']}** | [{r['title']}]({r['link']})")
 
-    st.caption("✅ Google/Bing/Yahoo 三大引擎 | 自動 OR 搜尋")
-
+    st.caption("✅ 自動同業比較 | 產業鏈分析 | 情緒排行")
 
 
 # --------------------------
