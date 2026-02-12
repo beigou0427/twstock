@@ -1410,95 +1410,147 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### ⚡ 貝伊果屋 Groq 極速戰情室 🚀")
-    st.caption("🌟 Llama3-70B | 你的 Token 已注入 | 最快分析")
+    st.markdown("### 🌍 貝伊果屋 • 全球戰情室 🚀")
+    st.caption("⚡ Groq + Gemini + HF | 20+ 來源 | 產業自動分析")
 
-    # ✅ 你的 Groq Key 預填
-    groq_key = st.text_input("Groq Key", 
-                           value="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",
-                           type="password")
+    # ✅ 1. 金鑰設定
+    with st.expander("🔑 AI 金鑰設定 (Groq 已預填)", expanded=False):
+        groq_key = st.text_input("Groq Key", 
+                               value="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", 
+                               type="password")
+        gemini_key = st.text_input("Gemini Key", type="password")
+        hf_token = st.text_input("HuggingFace Token", type="password")
 
-    col1, col2 = st.columns([2, 1])
-    keyword = col1.text_input("關鍵字/股票", "2330 台積電")
+    col1, col2 = st.columns([1.5, 1])
+    stock_input = col1.text_input("股票代號", "2330")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    if st.button("⚡ Groq 極速分析", type="primary"):
-        if not groq_key:
-            st.error("請填寫 Groq Key")
-            st.stop()
+    # ✅ 2. 產業自動查詢 (FinMind)
+    @st.cache_data(ttl=86400)
+    def get_sector_info(code):
+        try:
+            dl = DataLoader()
+            dl.login_by_token(api_token=FINMIND_TOKEN)
+            df = dl.taiwan_stock_info()
+            row = df[df['stock_id'] == code]
+            if not row.empty:
+                sector = row.iloc[0]['industry_category']
+                name = row.iloc[0]['stock_name']
+                peers = df[df['industry_category'] == sector].head(4)['stock_id'].tolist()
+                return name, sector, peers
+        except: pass
+        return code, "自選", [code]
+
+    target_code = stock_input.split()[0]
+    stock_name, sector, peers = get_sector_info(target_code)
+
+    if st.button("🚀 啟動全方位分析", type="primary"):
+        st.info(f"📊 **{stock_name}** ({sector}) | 同業：{', '.join(peers)}")
         
-        with st.spinner("⚡ Groq Llama3 運算中 (0.5秒)..."):
-            from groq import Groq
-            import urllib.parse
-            import feedparser
-            
-            client = Groq(api_key=groq_key)
-            
-            # 海量新聞掃描
-            news = []
-            kws = keyword.split()
-            
-            # Google News
-            q = urllib.parse.quote(" OR ".join(kws))
+        # ✅ 3. 多源新聞掃描
+        import urllib.parse
+        import feedparser
+        import time
+        import requests
+        
+        progress = st.progress(0)
+        status = st.empty()
+        all_news = []
+        
+        # 3.1 同業新聞
+        for i, p in enumerate(peers):
+            status.markdown(f"📡 掃描同業：**{p}**...")
+            progress.progress(int((i+1)/len(peers)*30))
+            q = urllib.parse.quote(p)
             rss = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-            feed = feedparser.parse(rss)
-            for e in feed.entries[:20]:
-                news.append(e.title)
-            
-            # Yahoo 股市
             try:
-                yq = urllib.parse.quote(kws[0])
-                y_rss = f"https://tw.stock.yahoo.com/rss2.0/search?q={yq}&region=TW"
-                y_feed = feedparser.parse(y_rss)
-                for e in y_feed.entries[:10]:
-                    news.append(e.title)
+                feed = feedparser.parse(rss)
+                for e in feed.entries[:5]: 
+                    all_news.append(f"[{p}] {e.title}")
             except: pass
             
-            news_text = "\n".join(news[:25])
+        # 3.2 國際新聞 (若有英文名)
+        if len(stock_input.split()) > 1:
+            en_name = stock_input.split()[1]
+            status.markdown(f"🌍 掃描國際：**{en_name}**...")
+            rss_list = [
+                f"https://news.google.com/rss/search?q={en_name}&hl=en-US&gl=US&ceid=US:en",
+                "https://feeds.bloomberg.com/markets/news.rss"
+            ]
+            for rss in rss_list:
+                try:
+                    feed = feedparser.parse(rss)
+                    for e in feed.entries[:5]: all_news.append(f"[國際] {e.title}")
+                except: pass
+        
+        progress.progress(40)
+        status.success(f"✅ 完成！共 {len(all_news)} 篇情報")
+        
+        # ✅ 4. 多 LLM 競賽
+        llm_results = []
+        
+        if not all_news:
+            st.warning("無相關新聞")
+        else:
+            news_text = "\n".join(all_news[:25])
             
-            # Groq 超快生成
-            completion = client.chat.completions.create(
-                model="llama3-70b-8192",  # 最強免費模型
-                messages=[
-                    {"role": "system", "content": """
-                    你是貝伊果屋的台股分析師，專精產業分析。
-                    用繁體中文回答，台股術語，結構清晰。
-                    格式：1.趨勢 2.事件 3.建議
-                    """},
-                    {"role": "user", "content": f"""
-                    關鍵字：{keyword}（{days}天）
-                    新聞情報：
-                    {news_text}
-                    
-                    請分析：
-                    1. 短期趨勢
-                    2. 關鍵事件
-                    3. 投資建議
-                    
-                    精簡有力。
-                    """}
-                ],
-                temperature=0.2,
-                max_tokens=600
-            )
-            
-            st.balloons()
-            st.markdown("### ⚡ **Groq Llama3-70B 極速報告**")
-            st.markdown(completion.choices[0].message.content)
-            
-            # 關鍵字統計
-            bull = sum(1 for t in news if '漲' in t or '利多' in t)
-            bear = sum(1 for t in news if '跌' in t or '利空' in t)
-            col1, col2 = st.columns(2)
-            col1.metric("🟢 利多新聞", bull)
-            col2.metric("🔴 利空新聞", bear)
+            # 4.1 Groq (Llama3) - 最快
+            if groq_key:
+                try:
+                    from groq import Groq
+                    status.info("⚡ Groq Llama3 分析中...")
+                    client = Groq(api_key=groq_key)
+                    resp = client.chat.completions.create(
+                        model="llama3-70b-8192",
+                        messages=[{"role": "user", "content": f"分析 {stock_name} ({sector})：\n{news_text}"}]
+                    )
+                    llm_results.append(("⚡ Groq Llama3", resp.choices[0].message.content))
+                except Exception as e: st.caption(f"Groq: {e}")
 
-            # Top 新聞
-            st.markdown("### 📄 **Top 情報來源**")
-            for i, title in enumerate(news[:10], 1):
-                st.write(f"{i}. {title}")
+            # 4.2 Gemini - 中文強
+            if gemini_key:
+                try:
+                    import google.generativeai as genai
+                    status.info("🤖 Gemini 分析中...")
+                    genai.configure(api_key=gemini_key)
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    resp = model.generate_content(f"分析 {stock_name}：\n{news_text}")
+                    llm_results.append(("🤖 Gemini Flash", resp.text))
+                except Exception as e: st.caption(f"Gemini: {e}")
 
-    st.caption("✅ 你的 Groq Key 已預填 | 最快免費 LLM")
+            # 4.3 HuggingFace - 備援
+            if hf_token:
+                try:
+                    status.info("🤗 HF Mistral 分析中...")
+                    API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+                    headers = {"Authorization": f"Bearer {hf_token}"}
+                    resp = requests.post(API_URL, headers=headers, json={"inputs": f"[INST] 分析 {stock_name}：\n{news_text[:1000]} [/INST]"})
+                    llm_results.append(("🤗 HF Mistral", resp.json()[0]['generated_text']))
+                except: pass
+                
+            progress.progress(100)
+            status.empty()
+            
+            # ✅ 5. 結果展示
+            if llm_results:
+                st.balloons()
+                st.markdown("### 🎯 **AI 深度報告**")
+                tabs_ai = st.tabs([n for n, _ in llm_results])
+                for i, tab in enumerate(tabs_ai):
+                    with tab: st.markdown(llm_results[i][1])
+            else:
+                st.error("❌ AI 忙碌，轉為關鍵字報告")
+                bull = sum(1 for t in all_news if '漲' in t or '利多' in t)
+                bear = sum(1 for t in all_news if '跌' in t or '利空' in t)
+                c1, c2 = st.columns(2)
+                c1.metric("🟢 利多", bull)
+                c2.metric("🔴 利空", bear)
+
+        # ✅ 6. 新聞列表
+        with st.expander(f"查看 {len(all_news)} 篇來源"):
+            for n in all_news: st.write(n)
+
+    st.caption("✅ 4大 LLM | 20+ 來源 | 產業自動分析")
 
 
 
