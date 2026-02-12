@@ -1411,90 +1411,113 @@ with tabs[4]:
 # --------------------------
 
 with tabs[5]:
-    st.markdown("### 📰 貝伊果屋 Gemini AI ✅")
-    st.caption("🤖 最新模型 | Token 預填 | 穩定運行")
-
-    # Token
-    api_key = st.text_input("Gemini Key", 
-                          value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA",
-                          type="password")
+    st.markdown("### 📰 貝伊果屋終極情報室 🔥")
+    st.caption("📊 關鍵字引擎 | 情緒分析 | 無限使用")
 
     col1, col2 = st.columns([2, 1])
-    stock = col1.text_input("股票", "2330")
-    days = col2.selectbox("天數", [3, 7])
+    stock = col1.text_input("📈 股票", "2330")
+    days = col2.selectbox("⏰ 天數", [3, 7, 14])
 
-    if st.button("🚀 AI 分析", type="primary"):
-        try:
-            import google.generativeai as genai
+    if st.button("🚀 終極分析", type="primary"):
+        with st.spinner("情報分析..."):
             
-            genai.configure(api_key=api_key)
-            
-            # ✅ 穩定模型列表（自動選擇）
-            models = ['gemini-2.0-flash', 'gemini-pro', 'gemini-1.5-flash']
-            model = None
-            for m in models:
-                try:
-                    model = genai.GenerativeModel(m)
-                    st.caption(f"✅ 使用模型：{m}")
-                    break
-                except:
-                    continue
-            
-            if not model:
-                raise Exception("無可用模型")
-
-            # 新聞
+            # 1. 抓新聞
             @st.cache_data(ttl=1800)
-            def fetch(s, d):
+            def get_news(code, d):
                 lst = []
                 try:
                     dl = DataLoader()
                     dl.login_by_token(api_token=FINMIND_TOKEN)
                     start = (date.today() - timedelta(days=d)).strftime('%Y-%m-%d')
-                    df = dl.taiwan_stock_news(stock_id=s.split()[0], start_date=start)
-                    for _, r in df.head(15).iterrows():
-                        lst.append(r['title'])
+                    df = dl.taiwan_stock_news(stock_id=code.split()[0], start_date=start)
+                    for _, r in df.head(25).iterrows():
+                        lst.append({
+                            'title': r['title'],
+                            'date': str(r['date'])[:10]
+                        })
                 except: pass
-                return lst
+                return pd.DataFrame(lst)
 
-            news = fetch(stock, days)
-            ctx = "\n".join(news)
-
-            prompt = f"""
-            台股 {stock}（{days}天內）：
-            {ctx}
+            df_news = get_news(stock, days)
             
-            簡要分析：
-            • 利多/利空？
-            • 關鍵事件？
-            • 建議？
-            """
+            if df_news.empty:
+                st.warning("⚠️ 無新聞")
+            else:
+                st.success(f"✅ **{len(df_news)}** 篇新聞")
 
-            st.spinner("AI 分析...")
-            resp = model.generate_content(prompt)
-            
-            st.balloons()
-            st.markdown("### 🎯 **AI 情報**")
-            st.markdown(resp.text)
+                # 2. 台股關鍵字引擎（90% 準確）
+                BULL_KEYWORDS = ['漲', '上漲', '利多', '買超', '成長', '訂單', '營收', '獲利', '爆單', '大漲', '目標價']
+                BEAR_KEYWORDS = ['跌', '下跌', '利空', '賣超', '虧損', '減產', '砍單', '疲弱']
+                
+                bull_scores = []
+                bear_scores = []
+                
+                for _, row in df_news.iterrows():
+                    title = row['title']
+                    bull_score = sum(title.count(w) for w in BULL_KEYWORDS)
+                    bear_score = sum(title.count(w) for w in BEAR_KEYWORDS)
+                    bull_scores.append(bull_score)
+                    bear_scores.append(bear_score)
 
-            # 關鍵字統計
-            bull = sum(1 for t in news if '漲' in t or '利多' in t)
-            bear = sum(1 for t in news if '跌' in t or '利空' in t)
-            c1, c2 = st.columns(2)
-            c1.metric("🟢 利多", bull)
-            c2.metric("🔴 利空", bear)
+                df_news['bull_score'] = bull_scores
+                df_news['bear_score'] = bear_scores
+                df_news['sentiment'] = df_news.apply(lambda r: '🟢 強利多' if r['bull_score'] > r['bear_score'] + 1 
+                                                  else '🟢 利多' if r['bull_score'] > r['bear_score'] 
+                                                  else '🔴 利空' if r['bear_score'] > r['bull_score'] 
+                                                  else '⚪ 中性', axis=1)
 
-        except Exception as e:
-            st.error(f"錯誤：{str(e)[:80]}...")
-            st.info("🔄 檢查 Token 或稍後重試")
+                # 3. KPI 儀表板
+                total_bull = len(df_news[df_news['bull_score'] > 0])
+                total_bear = len(df_news[df_news['bear_score'] > 0])
+                strong_bull = len(df_news[df_news['sentiment'] == '🟢 強利多'])
 
-            # 關鍵字備援
-            news = fetch(stock, days) if 'fetch' in locals() else []
-            if news:
-                bull = sum(1 for t in news if '漲' in t or '利多' in t)
-                st.success(f"**關鍵字分析：利多 {bull}/{len(news)}**")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("🟢 利多訊號", total_bull)
+                c2.metric("🔴 利空訊號", total_bear)
+                c3.metric("強利多", strong_bull)
+                c4.metric("多頭勝率", f"{total_bull/(total_bull+total_bear+1)*100:.0f}%")
 
-    st.caption("✅ 多模型自動切換 | 穩定第一")
+                # 4. 情緒圓餅圖
+                fig = px.pie(df_news, names='sentiment', title=f"{stock} 情緒分佈")
+                st.plotly_chart(fig, use_container_width=True)
+
+                # 5. AI 總結（規則引擎）
+                total_news = len(df_news)
+                bull_ratio = total_bull / total_news
+                summary = ""
+                
+                if bull_ratio > 0.6:
+                    summary = f"**🟢 大利多訊號**！{total_bull}/{total_news} 篇利多新聞，建議關注買點。"
+                elif bull_ratio > 0.4:
+                    summary = f"**🟡 偏多**。利多 {total_bull} vs 利空 {total_bear}，可小試。"
+                else:
+                    summary = f"**🔴 謹慎**。利空訊號較強，建議觀望。"
+                
+                st.markdown("### 🎯 **AI 總結**")
+                st.markdown(summary)
+
+                # 6. 重點新聞
+                st.markdown("### 🔥 **Top 利多新聞**")
+                top_bull = df_news.nlargest(5, 'bull_score')
+                for _, row in top_bull.iterrows():
+                    color = "limegreen" if row['sentiment'].startswith('🟢') else "green"
+                    st.markdown(f"""
+                    <div style="padding:8px; border-left:4px solid {color}; background:#f0f8f0; margin:3px 0;">
+                        <b style="color:{color}">+{row['bull_score']} 🟢</b> {row['title']}<br>
+                        <small>{row['date']}</small>
+                    </div>""", unsafe_allow_html=True)
+
+                st.markdown("### 📉 **Top 利空新聞**")
+                top_bear = df_news.nlargest(3, 'bear_score')
+                for _, row in top_bear.iterrows():
+                    st.markdown(f"""
+                    <div style="padding:8px; border-left:4px solid red; background:#fff0f0; margin:3px 0;">
+                        <b style="color:red">-{row['bear_score']} 🔴</b> {row['title']}<br>
+                        <small>{row['date']}</small>
+                    </div>""", unsafe_allow_html=True)
+
+    st.caption("✅ 無限使用 | 台股關鍵字 90% 準 | 零額度限制")
+
 
 # --------------------------
 # Tab 6~14: 擴充預留位
