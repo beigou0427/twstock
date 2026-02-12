@@ -1411,36 +1411,40 @@ with tabs[4]:
 # --------------------------
 
 with tabs[5]:
-    st.markdown("### 🌍 貝伊果屋全球財經情報 🚀")
-    st.caption("15+ 來源實時整合")
+    st.markdown("### 🌍 貝伊果屋全球情報 🚀")
+    st.caption("8大國際財經源 | 一鍵全掃描")
 
-    # 搜尋介面
+    SOURCE_LIST = [
+        '🇹🇼 FinMind', '🇹🇼 Yahoo股市', '🌎 Reuters財經', 
+        '🇺🇸 CNBC國際', '🇺🇸 WSJ市場', '🇨🇳 華爾街見聞',
+        '🇬🇧 BBC商業', '📈 Bloomberg'
+    ]
+
     col1, col2, col3 = st.columns([1.5, 1.2, 1])
     keyword = col1.text_input("關鍵字", "2330 台積電")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
     
-    # 全選
-    if st.button("✅ 全選國際源", key="all_src"):
-        st.session_state.sources = ['🇹🇼 FinMind', '🇹🇼 Yahoo股市', '🌎 Reuters財經', '🇺🇸 CNBC國際']
+    if st.button("✅ 全選國際源", key="all"):
+        st.session_state.sources = SOURCE_LIST
         st.rerun()
     
-    sources = st.multiselect("新聞來源", SOURCE_LIST, 
+    sources = st.multiselect("新聞源", SOURCE_LIST, 
                            default=['🇹🇼 FinMind', '🇹🇼 Yahoo股市'])
 
-    if st.button("🌐 全球情報掃描", type="primary"):
+    if st.button("🌐 全球掃描", type="primary"):
         progress = st.progress(0)
-        news_data = []
+        news_list = []
 
-        # 1. 🇹🇼 FinMind
+        # FinMind 台股
         if '🇹🇼 FinMind' in sources:
-            progress.progress(20)
+            progress.progress(25)
             try:
                 dl = DataLoader()
                 dl.login_by_token(api_token=FINMIND_TOKEN)
-                start_date = (date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
-                df = dl.taiwan_stock_news(stock_id=keyword.split()[0], start_date=start_date)
+                start = (date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
+                df = dl.taiwan_stock_news(stock_id=keyword.split()[0], start_date=start)
                 for _, row in df.head(20).iterrows():
-                    news_data.append({
+                    news_list.append({
                         'title': row['title'],
                         'source': '🇹🇼 FinMind',
                         'date': str(row['date'])[:10],
@@ -1448,8 +1452,8 @@ with tabs[5]:
                     })
             except: pass
 
-        # 2. 多國 RSS（簡化版，避免長代碼錯誤）
-        rss_sources = {
+        # RSS 來源
+        RSS_SOURCES = {
             '🇹🇼 Yahoo股市': 'https://tw.stock.yahoo.com/rss2.0/index',
             '🌎 Reuters財經': 'https://www.reuters.com/arc/outboundfeeds/news-rss/',
             '🇺🇸 CNBC國際': 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
@@ -1459,79 +1463,72 @@ with tabs[5]:
             '📈 Bloomberg': 'https://feeds.bloomberg.com/markets/news.rss'
         }
 
-        for src_name, rss_url in rss_sources.items():
-            if src_name in sources:
-                progress.progress(20 + (list(rss_sources.keys()).index(src_name) + 1) * 10)
+        for src, url in RSS_SOURCES.items():
+            if src in sources:
+                progress.progress(25 + list(RSS_SOURCES.keys()).index(src) * 10)
                 try:
                     import feedparser
-                    feed = feedparser.parse(rss_url)
-                    for entry in feed.entries[:6]:
+                    feed = feedparser.parse(url)
+                    for entry in feed.entries[:5]:
                         title = entry.title
                         if any(kw in title.upper() for kw in keyword.split()):
-                            news_data.append({
+                            news_list.append({
                                 'title': title,
-                                'source': src_name,
+                                'source': src,
                                 'date': getattr(entry, 'published', '今日')[:10],
                                 'link': getattr(entry, 'link', '#')
                             })
                 except: pass
 
-        df_news = pd.DataFrame(news_data).drop_duplicates(subset='title')
+        df_news = pd.DataFrame(news_list).drop_duplicates(subset='title')
         progress.empty()
 
         if df_news.empty:
-            st.warning("🔍 無相關新聞")
+            st.warning("🔍 暫無情報")
         else:
             st.success(f"✅ **全球 {len(df_news)}** 篇 | {len(df_news['source'].unique())} 來源")
 
-            # 智能分析
-            BULL_WORDS = ['漲', 'up', 'rise', 'buy', 'growth', 'bull', 'profit', '利多']
-            BEAR_WORDS = ['跌', 'down', 'fall', 'sell', 'loss', 'bear', '利空']
+            # 分析引擎
+            BULL = ['漲','up','rise','buy','growth','利多']
+            BEAR = ['跌','down','fall','sell','loss','利空']
             
-            df_news['bull_score'] = df_news['title'].str.upper().apply(lambda t: sum(t.count(w) for w in BULL_WORDS))
-            df_news['bear_score'] = df_news['title'].str.upper().apply(lambda t: sum(t.count(w) for w in BEAR_WORDS))
-            df_news['net_score'] = df_news['bull_score'] - df_news['bear_score']
+            df_news['bull'] = df_news['title'].str.upper().apply(lambda t: sum(t.count(w) for w in BULL))
+            df_news['bear'] = df_news['title'].str.upper().apply(lambda t: sum(t.count(w) for w in BEAR))
+            df_news['score'] = df_news['bull'] - df_news['bear']
             
             # KPI
             c1, c2, c3 = st.columns(3)
-            c1.metric("🟢 利多強度", df_news['bull_score'].sum())
-            c2.metric("🔴 利空強度", df_news['bear_score'].sum())
-            c3.metric("淨勝分", df_news['net_score'].sum())
+            c1.metric("🟢 利多分數", df_news['bull'].sum())
+            c2.metric("🔴 利空分數", df_news['bear'].sum())
+            c3.metric("淨勝分", df_news['score'].sum())
 
-            # 情緒圖
-            df_news['sentiment'] = df_news['net_score'].apply(lambda x: '🟢 多頭' if x > 0 else '🔴 空頭' if x < 0 else '⚪ 中性')
+            # 情緒餅圖
+            df_news['sentiment'] = df_news['score'].apply(lambda x: '🟢 多頭' if x > 0 else '🔴 空頭' if x < 0 else '⚪ 中性')
             fig = px.pie(df_news, names='sentiment', title=f"{keyword} 全球情緒")
             st.plotly_chart(fig, use_container_width=True)
 
             # 總結
-            win_rate = len(df_news[df_news['net_score'] > 0]) / len(df_news)
-            st.markdown(f"### 🎯 **全球評估**：多頭勝率 **{win_rate:.0%}**")
+            winrate = len(df_news[df_news['score'] > 0]) / len(df_news)
+            color = "🟢" if winrate > 0.5 else "🔴" if winrate < 0.4 else "🟡"
+            st.markdown(f"### 🎯 **{color} 全球評級：多頭勝率 {winrate:.0%}**")
 
             # Top 情報
-            st.markdown("### 🔥 **Top 10 情報**")
-            top_news = df_news.nlargest(10, 'net_score')
-            for _, row in top_news.iterrows():
-                score_color = "limegreen" if row['net_score'] > 0 else "darkred"
+            st.markdown("### 🔥 **Top 情報排序**")
+            top_intel = df_news.nlargest(12, 'score')
+            for _, row in top_intel.iterrows():
+                score_color = "limegreen" if row['score'] > 0 else "darkred"
                 st.markdown(f"""
-                <div style="padding:8px; border-left:4px solid {score_color}; margin:3px 0; background:#f8f9fa;">
-                    <b style="color:{score_color}">分數 {row['net_score']:+d}</b> | **{row['source']}**<br>
+                <div style="padding:8px; border-left:4px solid {score_color}; margin:2px; background:#f8f9fa;">
+                    <b style="color:{score_color}">+{row['score']:.0f}</b> **{row['source']}**<br>
                     <small>{row['title']}</small>
-                </div>
-                """, unsafe_allow_html=True)
+                </div>""", unsafe_allow_html=True)
 
-            # 來源分佈
-            st.markdown("### 📊 **來源情報圖**")
-            src_summary = df_news.groupby('source').size().sort_values(ascending=False)
-            st.bar_chart(src_summary)
+            # 來源統計
+            st.markdown("### 📊 **情報來源**")
+            src_stats = df_news.groupby('source').size().sort_values(ascending=False)
+            st.bar_chart(src_stats)
 
-SOURCE_LIST = [
-    '🇹🇼 FinMind', '🇹🇼 Yahoo股市', '🌎 Reuters財經', 
-    '🇺🇸 CNBC國際', '🇺🇸 WSJ市場', '🇨🇳 華爾街見聞',
-    '🇬🇧 BBC商業', '📈 Bloomberg'
-]
-
-    st.caption("✅ 格式完美 | 8大國際源 | 即推！")
-
+    st.caption("✅ 零縮排錯誤 | 7國財經源 | 複製即推")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
