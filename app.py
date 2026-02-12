@@ -1411,81 +1411,90 @@ with tabs[4]:
 # --------------------------
 
 with tabs[5]:
-    st.markdown("### 📰 貝伊果屋 Gemini Pro 🔥")
-    st.caption("🤖 1.5 Flash 新 Token | 中文神級")
+    st.markdown("### 📰 貝伊果屋 Gemini AI ✅")
+    st.caption("🤖 最新模型 | Token 預填 | 穩定運行")
 
-    # ✅ 新 Token 預填
-    gemini_key = st.text_input("Gemini Key", 
-                             value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA",
-                             type="password")
+    # Token
+    api_key = st.text_input("Gemini Key", 
+                          value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA",
+                          type="password")
 
     col1, col2 = st.columns([2, 1])
     stock = col1.text_input("股票", "2330")
-    days = col2.selectbox("天數", [3, 7, 14])
+    days = col2.selectbox("天數", [3, 7])
 
-    if st.button("🚀 深度分析", type="primary"):
+    if st.button("🚀 AI 分析", type="primary"):
         try:
             import google.generativeai as genai
-            genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
             
+            genai.configure(api_key=api_key)
+            
+            # ✅ 穩定模型列表（自動選擇）
+            models = ['gemini-2.0-flash', 'gemini-pro', 'gemini-1.5-flash']
+            model = None
+            for m in models:
+                try:
+                    model = genai.GenerativeModel(m)
+                    st.caption(f"✅ 使用模型：{m}")
+                    break
+                except:
+                    continue
+            
+            if not model:
+                raise Exception("無可用模型")
+
             # 新聞
             @st.cache_data(ttl=1800)
-            def news(s, d):
+            def fetch(s, d):
                 lst = []
                 try:
                     dl = DataLoader()
                     dl.login_by_token(api_token=FINMIND_TOKEN)
                     start = (date.today() - timedelta(days=d)).strftime('%Y-%m-%d')
                     df = dl.taiwan_stock_news(stock_id=s.split()[0], start_date=start)
-                    for _, r in df.head(18).iterrows():
+                    for _, r in df.head(15).iterrows():
                         lst.append(r['title'])
                 except: pass
                 return lst
 
-            titles = news(stock, days)
-            context = "\n".join(titles)
+            news = fetch(stock, days)
+            ctx = "\n".join(news)
 
-            # 專業 Prompt
             prompt = f"""
-            台股 {stock} 情報（{days}天 {len(titles)}篇）：
+            台股 {stock}（{days}天內）：
+            {ctx}
             
-            {context}
-            
-            【專業分析】
-            1. 利多/利空指數？
-            2. 3個關鍵詞？
-            3. 重大事件？
-            4. 買賣建議？
-            
-            台股術語，精簡有力。
+            簡要分析：
+            • 利多/利空？
+            • 關鍵事件？
+            • 建議？
             """
 
-            st.spinner("Gemini Pro 運算...")
-            response = model.generate_content(prompt)
+            st.spinner("AI 分析...")
+            resp = model.generate_content(prompt)
             
             st.balloons()
-            st.markdown("### 🎯 **Gemini Pro 報告**")
-            st.markdown(response.text)
+            st.markdown("### 🎯 **AI 情報**")
+            st.markdown(resp.text)
 
-            # 數據面板
-            bull = sum(1 for t in titles if any(w in t for w in ['漲','利多','買','成長']))
-            bear = sum(1 for t in titles if any(w in t for w in ['跌','利空','賣','虧']))
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("🟢 正面", bull)
-            c2.metric("🔴 負面", bear)
-            c3.metric("多頭率", f"{bull/(bull+bear+1)*100:.0f}%")
-
-            st.markdown("### 📈 **Top 5 新聞**")
-            for i, t in enumerate(titles[:5], 1):
-                st.markdown(f"**{i}.** {t}")
+            # 關鍵字統計
+            bull = sum(1 for t in news if '漲' in t or '利多' in t)
+            bear = sum(1 for t in news if '跌' in t or '利空' in t)
+            c1, c2 = st.columns(2)
+            c1.metric("🟢 利多", bull)
+            c2.metric("🔴 利空", bear)
 
         except Exception as e:
-            st.error(f"錯誤：{e}")
-            st.info("🔄 檢查 Token 或用關鍵字分析")
+            st.error(f"錯誤：{str(e)[:80]}...")
+            st.info("🔄 檢查 Token 或稍後重試")
 
-    st.caption("✅ 新 Token 預填 | 複製即用")
+            # 關鍵字備援
+            news = fetch(stock, days) if 'fetch' in locals() else []
+            if news:
+                bull = sum(1 for t in news if '漲' in t or '利多' in t)
+                st.success(f"**關鍵字分析：利多 {bull}/{len(news)}**")
+
+    st.caption("✅ 多模型自動切換 | 穩定第一")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
