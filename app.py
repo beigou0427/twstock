@@ -1410,14 +1410,19 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### 🏭 貝伊果屋產業戰情室 🚀")
-    st.caption("個股情報 | 同業比較 | 供應鏈分析")
+    st.markdown("### 🏭 貝伊果屋產業 LLM 戰情室 🤖")
+    st.caption("Gemini Pro 解讀 | 同業比較 | 供應鏈分析")
+
+    # Sidebar Token
+    gemini_key = st.sidebar.text_input("Gemini Key", 
+                                     value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA", 
+                                     type="password")
 
     col1, col2 = st.columns([1.5, 1])
     stock_input = col1.text_input("股票代號", "2330")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    # 產業數據庫
+    # 產業數據
     SECTOR_MAP = {
         '2330': {'name': '台積電', 'sector': '半導體', 'peers': ['2303 聯電', '5347 世界', '2330 台積電'], 'up': ['矽晶圓', 'IP'], 'down': ['IC設計', '封測']},
         '2317': {'name': '鴻海', 'sector': '電子代工', 'peers': ['2317 鴻海', '4938 和碩', '3231 緯創'], 'up': ['零組件'], 'down': ['品牌商']},
@@ -1428,91 +1433,91 @@ with tabs[5]:
     code = stock_input.split()[0]
     info = SECTOR_MAP.get(code, {'name': code, 'sector': '未知', 'peers': [stock_input], 'up': [], 'down': []})
 
-    if st.button("🏭 產業深度分析", type="primary"):
+    if st.button("🚀 啟動產業 LLM 分析", type="primary"):
         st.info(f"📊 **{info['name']}** ({info['sector']}) | 同業：{', '.join(info['peers'])}")
         
         progress = st.progress(0)
         all_news = []
         
+        # 1. 搜集情報
         targets = info['peers']
-        total = len(targets)
-        
         for i, target in enumerate(targets):
-            # ✅ 修復：強制限制在 0-100 之間
-            prog_val = int(((i + 1) / total) * 80)
-            progress.progress(min(prog_val, 100))
-            
+            progress.progress(int((i + 1) / len(targets) * 50))
             q = target.replace(' ', ' OR ')
             try:
                 import urllib.parse
                 import feedparser
-                
-                # Google News
                 enc_q = urllib.parse.quote(q)
                 rss = f"https://news.google.com/rss/search?q={enc_q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
                 feed = feedparser.parse(rss)
-                
-                for entry in feed.entries[:8]:
-                    all_news.append({
-                        'title': entry.title,
-                        'target': target,
-                        'link': entry.link,
-                        'date': getattr(entry, 'published', '今日')[:10]
-                    })
+                for entry in feed.entries[:6]: # 每個抓6篇
+                    all_news.append(f"[{target}] {entry.title}")
             except: pass
-
-        progress.progress(100) # 完成
+            
+        progress.progress(60)
         
-        df = pd.DataFrame(all_news).drop_duplicates('title')
-        progress.empty()
-        
-        if df.empty:
+        if not all_news:
             st.warning("無相關新聞")
         else:
-            # 智能評分
-            BULL = ['漲','up','成長','營收','創高','利多','買超','訂單','爆發']
-            BEAR = ['跌','down','衰退','虧損','重挫','利空','賣超','砍單','疲弱']
+            news_context = "\n".join(all_news[:25]) # 取前25篇給 LLM
             
-            df['score'] = df['title'].apply(lambda t: sum(t.count(w) for w in BULL) - sum(t.count(w) for w in BEAR))
-            
-            # 同業戰力儀表板
-            st.markdown("### 📊 **同業戰力分析**")
-            scores = df.groupby('target')['score'].sum().sort_values(ascending=False)
-            
-            cols = st.columns(len(scores))
-            for idx, (peer, score) in enumerate(scores.items()):
-                cols[idx].metric(peer, f"{score:+d}")
-            
-            # 產業情緒圖
-            fig = px.bar(scores, x=scores.index, y=scores.values, 
-                       title=f"{info['sector']} 產業情緒排行",
-                       color=scores.values,
-                       color_continuous_scale=['red', 'gray', 'green'])
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # 上下游
-            if info['up'] or info['down']:
-                c1, c2 = st.columns(2)
-                with c1: st.success(f"**⬆️ 上游：** {', '.join(info['up'])}")
-                with c2: st.info(f"**⬇️ 下游：** {', '.join(info['down'])}")
-            
-            # 本股情報
-            st.markdown(f"### 🔥 **{info['name']} 重點情報**")
-            my_news = df[df['target'].str.contains(code)].nlargest(5, 'score')
-            if my_news.empty:
-                st.caption("無相關新聞")
+            # 2. LLM 分析
+            if gemini_key:
+                try:
+                    import google.generativeai as genai
+                    genai.configure(api_key=gemini_key)
+                    
+                    # 自動選模型
+                    models = ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']
+                    model = None
+                    for m in models:
+                        try:
+                            model = genai.GenerativeModel(m)
+                            break
+                        except: continue
+                    
+                    if model:
+                        prompt = f"""
+                        產業情報（{info['sector']}）：
+                        {news_context}
+                        
+                        請以專業分析師角度，輸出以下報告（繁體中文）：
+                        1. **產業趨勢**：目前是上升/下降週期？關鍵驅動因素？
+                        2. **龍頭表現**：{info['name']} 與同業相比，優勢/劣勢？
+                        3. **供應鏈影響**：上下游是否有缺料/漲價/庫存問題？
+                        4. **投資建議**：積極買進/區間操作/保守觀望？為什麼？
+                        
+                        格式：Markdown，條列式，數據佐證。
+                        """
+                        
+                        st.spinner(f"🤖 {model.model_name.split('/')[-1]} 深度分析中...")
+                        response = model.generate_content(prompt)
+                        progress.progress(100)
+                        
+                        st.balloons()
+                        st.markdown("### 🎯 **產業深度報告**")
+                        st.markdown(response.text)
+                    else:
+                        raise Exception("無可用模型")
+                        
+                except Exception as e:
+                    st.error(f"LLM 錯誤：{e}")
+                    st.info("轉為關鍵字分析模式...")
+                    # 降級：關鍵字分析
+                    bull = sum(1 for t in all_news if '漲' in t or '利多' in t)
+                    bear = sum(1 for t in all_news if '跌' in t or '利空' in t)
+                    st.metric("🟢 利多", bull)
+                    st.metric("🔴 利空", bear)
             else:
-                for _, r in my_news.iterrows():
-                    c = "limegreen" if r['score'] > 0 else "darkred" if r['score'] < 0 else "gray"
-                    st.markdown(f"**<span style='color:{c}'>{r['score']:+d}</span>** [{r['title']}]({r['link']})", unsafe_allow_html=True)
+                st.warning("請輸入 Gemini Key 以啟用深度分析")
+                
+            # 3. 新聞列表
+            st.markdown("### 📰 **情報來源**")
+            with st.expander("查看 25 篇產業新聞"):
+                for n in all_news:
+                    st.write(n)
 
-            # 同業動態
-            st.markdown(f"### ⚔️ **同業動態**")
-            peer_news = df[~df['target'].str.contains(code)].nlargest(5, 'score')
-            for _, r in peer_news.iterrows():
-                st.markdown(f"**{r['target']}** | [{r['title']}]({r['link']})")
-
-    st.caption("✅ 產業鏈全開 | 同業橫向對比 | 零錯誤")
+    st.caption("✅ Gemini 深度解讀 | 產業週期分析 | 自動備援")
 
 
 # --------------------------
