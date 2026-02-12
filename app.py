@@ -393,13 +393,6 @@ def parse_pct(x) -> float:
 
 # ========= Tab 0 =========
 with tabs[0]:
-    if not st.session_state.get("etf_done", False):
-        st.markdown("### 🚨 新手入門")
-        st.info("ETF = 股票籃子｜定投 = 每月買（長期才有意義）")
-        if st.button("開始", use_container_width=True):
-            st.session_state.etf_done = True
-            st.rerun()
-        st.stop()
 
     st.markdown("## 🐢 ETF 定投")
 
