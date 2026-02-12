@@ -1411,7 +1411,7 @@ with tabs[4]:
 # --------------------------
 with tabs[5]:
     st.markdown("### 🏭 貝伊果屋產業 LLM 戰情室 🤖")
-    st.caption("自動抓取可用模型 | 智慧重試 | 永不崩潰")
+    st.caption("動態新聞掃描 | 智慧重試 | 永不崩潰")
 
     gemini_key = st.sidebar.text_input("Gemini Key", 
                                      value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA", 
@@ -1434,22 +1434,35 @@ with tabs[5]:
     if st.button("🚀 啟動分析", type="primary"):
         st.info(f"📊 **{info['name']}** ({info['sector']})")
         
-        # ✅ 補齊 import
         import urllib.parse
         import feedparser
         import time
         
-        # 1. 抓新聞
+        # 1. 抓新聞（動態顯示）
         progress = st.progress(0)
+        status_text = st.empty() # 動態文字框
         all_news = []
+        
         for i, target in enumerate(info['peers']):
-            progress.progress(int((i+1)/len(info['peers'])*40))
+            # 動態顯示
+            status_text.markdown(f"📡 正在掃描：**{target}**...")
+            progress.progress(int((i)/len(info['peers'])*40))
+            
             q = urllib.parse.quote(target.replace(' ', ' OR '))
             rss = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
             try:
                 feed = feedparser.parse(rss)
-                for e in feed.entries[:5]: all_news.append(f"[{target}] {e.title}")
+                for e in feed.entries[:5]: 
+                    title = e.title
+                    all_news.append(f"[{target}] {title}")
+                    # 即時顯示抓到的標題
+                    status_text.caption(f"📄 獲取：{title[:20]}...")
+                    time.sleep(0.1) # 視覺效果
             except: pass
+            
+        progress.progress(40)
+        status_text.success(f"✅ 掃描完成！共 {len(all_news)} 篇情報")
+        time.sleep(1)
             
         if not all_news:
             st.warning("無相關新聞")
@@ -1457,17 +1470,16 @@ with tabs[5]:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
             
-            # 自動獲取可用模型
             available_models = []
             try:
+                status_text.info("🤖 正在檢測可用 AI 模型...")
                 for m in genai.list_models():
                     if 'generateContent' in m.supported_generation_methods:
                         available_models.append(m.name)
             except:
                 available_models = ['models/gemini-pro', 'models/gemini-1.5-flash']
 
-            # 優先順序
-            priority = ['models/gemini-1.5-flash', 'models/gemini-pro', 'models/gemini-1.0-pro']
+            priority = ['models/gemini-1.5-flash', 'models/gemini-pro']
             models_to_try = [m for m in priority if m in available_models] + \
                             [m for m in available_models if m not in priority]
             
@@ -1477,7 +1489,7 @@ with tabs[5]:
             for m_name in models_to_try:
                 if success: break
                 try:
-                    st.caption(f"🔄 嘗試：{m_name}...")
+                    status_text.markdown(f"🔄 AI 思考中 ({m_name})...")
                     model = genai.GenerativeModel(m_name)
                     
                     response = model.generate_content(f"""
@@ -1492,24 +1504,27 @@ with tabs[5]:
                     
                     progress.progress(100)
                     st.balloons()
+                    status_text.empty() # 清空狀態
+                    
                     st.markdown(f"### 🎯 **深度報告 ({m_name})**")
                     st.markdown(response.text)
                     success = True
                     
                 except Exception as e:
                     if "429" in str(e):
-                        st.warning(f"⚠️ {m_name} 額度滿")
+                        status_text.warning(f"⚠️ {m_name} 額度滿，切換中...")
                         time.sleep(1)
                     else:
-                        st.caption(f"❌ {m_name} 失敗")
+                        status_text.error(f"❌ {m_name} 失敗")
 
             if not success:
                 st.error("❌ LLM 全掛，顯示關鍵字分析")
                 bull = sum(1 for t in all_news if '漲' in t)
                 st.metric("利多新聞數", bull)
 
-        with st.expander("新聞來源"):
+        with st.expander(f"查看 {len(all_news)} 篇新聞來源"):
             for n in all_news: st.write(n)
+
 
 
 # --------------------------
