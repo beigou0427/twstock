@@ -5,7 +5,7 @@ numpy>=1.24.0
 streamlit-autorefresh==1.0.1
 holidays>=0.50
 google-generativeai==0.8.5
-
+groq==0.4.1
 # FinMind (台灣股市)
 finmind>=1.9.4
 
