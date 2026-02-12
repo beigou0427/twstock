@@ -1409,54 +1409,42 @@ with tabs[4]:
 # --------------------------
 # Tab 5
 # --------------------------
-
 with tabs[5]:
-    st.markdown("### 🌍 貝伊果屋全球財經情報 🚀")
-    st.caption("20+ 國際權威源 | 一鍵全掃描")
+    st.markdown("### 🌍 貝伊果屋全球財經 🚀")
+    st.caption("10+ 國際源 | 穩定運行")
 
-    # 搜尋
-    col1, col2 = st.columns([2, 1])
-    keyword = col1.text_input("關鍵字", "2330 台積電")
-    days = col2.selectbox("天數", [3, 7, 14], index=1)
-
-    # 快速全選
-    if st.button("✅ 全選20+源", key="select_all"):
-        st.session_state.sources = SOURCE_NAMES
-        st.rerun()
-
-    # 來源選擇
-    sources = st.multiselect("新聞源", SOURCE_NAMES, 
-                           default=['🇹🇼 FinMind', '🇹🇼 Yahoo股市'])
+    # 介面
+    keyword = st.text_input("關鍵字", "2330")
+    days = st.selectbox("天數", [3, 7])
+    
+    sources = st.multiselect("來源", [
+        '🇹🇼 FinMind', '🇹🇼 Yahoo', '🌎 Reuters', 
+        '🇺🇸 CNBC', '🇺🇸 WSJ', '📈 Bloomberg'
+    ], default=['🇹🇼 FinMind', '🇹🇼 Yahoo'])
 
     if st.button("🌐 全球掃描", type="primary"):
-        progress = st.progress(0)
-        intel = []
+        news_all = []
 
         # FinMind
-        progress.progress(15)
         try:
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
-            start = (date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
-            df = dl.taiwan_stock_news(stock_id=keyword.split()[0], start_date=start)
-            for _, row in df.head(20).iterrows():
-                intel.append({
+            start_date = (date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
+            df_fin = dl.taiwan_stock_news(stock_id=keyword.split()[0], start_date=start_date)
+            for _, row in df_fin.head(20).iterrows():
+                news_all.append({
                     'title': row['title'],
                     'source': '🇹🇼 FinMind',
-                    'date': str(row['date'])[:10],
-                    'link': row['link']
+                    'date': str(row['date'])[:10]
                 })
         except: pass
 
-        # RSS 掃描
-        RSS_DATA = {
-            '🇹🇼 Yahoo股市': 'https://tw.stock.yahoo.com/rss2.0/index',
+        # RSS 來源（簡化穩定版）
+        RSS_FEEDS = {
+            '🇹🇼 Yahoo': 'https://tw.stock.yahoo.com/rss2.0/index',
             '🌎 Reuters': 'https://www.reuters.com/arc/outboundfeeds/news-rss/',
-            '🇺🇸 CNBC': 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
-            '🇺🇸 WSJ': 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
-            '📈 Bloomberg': 'https://feeds.bloomberg.com/markets/news.rss',
-            '🇨🇳 華爾街見聞': 'https://wallstreetcn.com/rss/all',
-            '🇬🇧 BBC': 'https://feeds.bbci.co.uk/news/business/rss
+            '🇺🇸 CNBC
+
 
 # --------------------------
 # Tab 6~14: 擴充預留位
