@@ -1410,8 +1410,8 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### 🌍 貝伊果屋全球財經情報 🚀")
-    st.caption("20+ 權威源 | 全球即時掃描")
+    st.markdown("### 🌍 貝伊果屋全球情報 (純 RSS 版) 🚀")
+    st.caption("20+ 國際權威源 | 跳過 FinMind | 極速掃描")
 
     SOURCE_NAMES = [
         '🇹🇼 Yahoo股市', '🌎 Reuters財經', '🇺🇸 CNBC國際', '🇺🇸 WSJ市場',
@@ -1424,28 +1424,18 @@ with tabs[5]:
     keyword = col1.text_input("關鍵字", "2330 台積電")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    if st.button("✅ 全選所有來源", key="all_src"):
-        st.session_state.sources = SOURCE_NAMES
+    if st.button("✅ 全選來源", key="all_rss"):
+        st.session_state.rss_sources = SOURCE_NAMES
         st.rerun()
 
     sources = st.multiselect("新聞源", SOURCE_NAMES, 
-                           default=['🇹🇼 Yahoo股市', '🌎 Reuters財經'])
+                           default=['🇹🇼 Yahoo股市', '🌎 Reuters財經'],
+                           key="rss_sources")
 
     if st.button("🌐 全球掃描", type="primary"):
         progress = st.progress(0)
         news_data = []
-
-        # FinMind 優先
-        progress.progress(10)
-        try:
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            start = (date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
-            df = dl.taiwan_stock_news(stock_id=keyword.split()[0], start_date=start)
-            for _, r in df.head(20).iterrows():
-                news_data.append({'title': r['title'], 'source': '🇹🇼 FinMind', 'link': r['link']})
-        except: pass
-
+        
         # 完整 RSS 列表
         RSS_MAP = {
             '🇹🇼 Yahoo股市': 'https://tw.stock.yahoo.com/rss2.0/index',
@@ -1465,20 +1455,22 @@ with tabs[5]:
             '🇰🇷 韓亞經濟': 'https://www.mk.co.kr/rss/economy/'
         }
 
-        total_src = len(sources)
+        total = len(sources)
         for i, src in enumerate(sources):
             if src in RSS_MAP:
-                progress.progress(10 + int((i+1)/total_src * 90))
+                progress.progress(int((i+1)/total * 100))
                 try:
                     import feedparser
                     feed = feedparser.parse(RSS_MAP[src])
-                    for entry in feed.entries[:6]:
+                    for entry in feed.entries[:8]:  # 每個來源抓 8 篇
                         t = entry.title
-                        if any(k in t.upper() for k in keyword.split()):
+                        # 關鍵字過濾 (多關鍵字支援)
+                        if any(k.upper() in t.upper() for k in keyword.split()):
                             news_data.append({
                                 'title': t, 
                                 'source': src, 
-                                'link': getattr(entry, 'link', '#')
+                                'link': getattr(entry, 'link', '#'),
+                                'date': getattr(entry, 'published', '今日')[:10]
                             })
                 except: pass
 
@@ -1486,13 +1478,13 @@ with tabs[5]:
         progress.empty()
 
         if df.empty:
-            st.warning("🔍 無相關新聞")
+            st.warning("🔍 無相關新聞 (試試增加關鍵字)")
         else:
             st.success(f"✅ **全球 {len(df)}** 篇 | {len(df['source'].unique())} 來源")
 
             # 智能分析
-            BULL = ['漲','up','rise','buy','growth','bull','profit','利多']
-            BEAR = ['跌','down','fall','sell','loss','bear','利空']
+            BULL = ['漲','up','rise','buy','growth','bull','profit','利多','營收']
+            BEAR = ['跌','down','fall','sell','loss','bear','利空','虧損']
             
             df['bull'] = df['title'].str.upper().apply(lambda x: sum(x.count(w) for w in BULL))
             df['bear'] = df['title'].str.upper().apply(lambda x: sum(x.count(w) for w in BEAR))
@@ -1517,14 +1509,14 @@ with tabs[5]:
                 st.markdown(f"""
                 <div style="padding:8px; border-left:4px solid {color}; margin:2px; background:#f8f9fa;">
                     <b style="color:{color}">{r['score']:+d}</b> | **{r['source']}**<br>
-                    <small>{r['title']}</small>
+                    <a href="{r['link']}" target="_blank" style="text-decoration:none; color:black;">{r['title']}</a>
                 </div>""", unsafe_allow_html=True)
 
             # 來源統計
             st.markdown("### 📊 **來源分佈**")
             st.bar_chart(df['source'].value_counts())
 
-    st.caption("✅ 20+ 來源 | 零錯誤 | 複製即用")
+    st.caption("✅ 純 RSS 模式 | 20+ 來源 | 極速掃描")
 
 
 # --------------------------
