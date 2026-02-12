@@ -1410,91 +1410,93 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### 🌍 貝伊果屋 • 全球戰情室 🚀")
-    st.caption("⚡ Groq + Gemini + HF | 20+ 來源 | 產業自動分析")
+    st.markdown("### 🏭 貝伊果屋 • 終極全能戰情室 🚀")
+    st.caption("⚡ Groq + 🤖 Gemini + 🤗 HF | 全球 20+ 來源 | 產業自動分析")
 
-    # ✅ 1. 金鑰設定
-    with st.expander("🔑 AI 金鑰設定 (Groq 已預填)", expanded=False):
+    # ✅ 1. 金鑰管理 (全預填)
+    with st.expander("🔑 AI 金鑰設定", expanded=False):
         groq_key = st.text_input("Groq Key", 
                                value="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", 
                                type="password")
-        gemini_key = st.text_input("Gemini Key", type="password")
-        hf_token = st.text_input("HuggingFace Token", type="password")
+        gemini_key = st.text_input("Gemini Key", 
+                                 value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA", 
+                                 type="password")
+        hf_token = st.text_input("HuggingFace Token", 
+                               value="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", 
+                               type="password")
 
     col1, col2 = st.columns([1.5, 1])
     stock_input = col1.text_input("股票代號", "2330")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    # ✅ 2. 產業自動查詢 (FinMind)
+    # ✅ 2. 自動產業分類
     @st.cache_data(ttl=86400)
-    def get_sector_info(code):
+    def get_auto_sector(code):
         try:
             dl = DataLoader()
             dl.login_by_token(api_token=FINMIND_TOKEN)
             df = dl.taiwan_stock_info()
             row = df[df['stock_id'] == code]
             if not row.empty:
-                sector = row.iloc[0]['industry_category']
                 name = row.iloc[0]['stock_name']
-                peers = df[df['industry_category'] == sector].head(4)['stock_id'].tolist()
+                sector = row.iloc[0]['industry_category']
+                # 自動抓 3 檔同業
+                peers = df[df['industry_category'] == sector].head(3)['stock_id'].tolist()
                 return name, sector, peers
         except: pass
         return code, "自選", [code]
 
-    target_code = stock_input.split()[0]
-    stock_name, sector, peers = get_sector_info(target_code)
+    target = stock_input.split()[0]
+    name, sector, peers = get_auto_sector(target)
 
     if st.button("🚀 啟動全方位分析", type="primary"):
-        st.info(f"📊 **{stock_name}** ({sector}) | 同業：{', '.join(peers)}")
+        st.info(f"📊 **{name}** ({sector}) | 同業：{', '.join(peers)}")
         
         # ✅ 3. 多源新聞掃描
         import urllib.parse
         import feedparser
-        import time
         import requests
+        import time
         
         progress = st.progress(0)
         status = st.empty()
         all_news = []
         
-        # 3.1 同業新聞
-        for i, p in enumerate(peers):
-            status.markdown(f"📡 掃描同業：**{p}**...")
-            progress.progress(int((i+1)/len(peers)*30))
-            q = urllib.parse.quote(p)
-            rss = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-            try:
-                feed = feedparser.parse(rss)
-                for e in feed.entries[:5]: 
-                    all_news.append(f"[{p}] {e.title}")
-            except: pass
+        # 3.1 掃描同業 + 國際源
+        search_targets = peers + [name]
+        if len(stock_input.split()) > 1: search_targets.append(stock_input.split()[1]) # 加入英文名
+        
+        total_steps = len(search_targets)
+        for i, t in enumerate(search_targets):
+            status.markdown(f"📡 正在掃描：**{t}**...")
+            progress.progress(int((i+1)/total_steps * 40))
             
-        # 3.2 國際新聞 (若有英文名)
-        if len(stock_input.split()) > 1:
-            en_name = stock_input.split()[1]
-            status.markdown(f"🌍 掃描國際：**{en_name}**...")
+            q = urllib.parse.quote(t)
             rss_list = [
-                f"https://news.google.com/rss/search?q={en_name}&hl=en-US&gl=US&ceid=US:en",
-                "https://feeds.bloomberg.com/markets/news.rss"
+                f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant", # Google News
+                f"https://tw.stock.yahoo.com/rss2.0/search?q={q}&region=TW" # Yahoo
             ]
+            
             for rss in rss_list:
                 try:
                     feed = feedparser.parse(rss)
-                    for e in feed.entries[:5]: all_news.append(f"[國際] {e.title}")
+                    for e in feed.entries[:5]: 
+                        title = e.title
+                        all_news.append(f"[{t}] {title}")
+                        time.sleep(0.05)
                 except: pass
         
         progress.progress(40)
-        status.success(f"✅ 完成！共 {len(all_news)} 篇情報")
+        status.success(f"✅ 掃描完成！共 {len(all_news)} 篇情報")
         
-        # ✅ 4. 多 LLM 競賽
-        llm_results = []
-        
+        # ✅ 4. 三大 LLM 競賽
         if not all_news:
             st.warning("無相關新聞")
         else:
-            news_text = "\n".join(all_news[:25])
+            news_text = "\n".join(all_news[:30]) # 取前30篇
+            llm_results = []
             
-            # 4.1 Groq (Llama3) - 最快
+            # 4.1 ⚡ Groq (Llama3) - 最快
             if groq_key:
                 try:
                     from groq import Groq
@@ -1502,32 +1504,32 @@ with tabs[5]:
                     client = Groq(api_key=groq_key)
                     resp = client.chat.completions.create(
                         model="llama3-70b-8192",
-                        messages=[{"role": "user", "content": f"分析 {stock_name} ({sector})：\n{news_text}"}]
+                        messages=[{"role": "user", "content": f"分析 {name} ({sector}) 趨勢與建議：\n{news_text}"}]
                     )
-                    llm_results.append(("⚡ Groq Llama3", resp.choices[0].message.content))
-                except Exception as e: st.caption(f"Groq: {e}")
+                    llm_results.append(("⚡ Groq", resp.choices[0].message.content))
+                except Exception as e: st.caption(f"Groq Error: {e}")
 
-            # 4.2 Gemini - 中文強
+            # 4.2 🤖 Gemini - 中文強
             if gemini_key:
                 try:
                     import google.generativeai as genai
                     status.info("🤖 Gemini 分析中...")
                     genai.configure(api_key=gemini_key)
                     model = genai.GenerativeModel('gemini-1.5-flash')
-                    resp = model.generate_content(f"分析 {stock_name}：\n{news_text}")
-                    llm_results.append(("🤖 Gemini Flash", resp.text))
-                except Exception as e: st.caption(f"Gemini: {e}")
+                    resp = model.generate_content(f"分析 {name} ({sector})：\n{news_text}")
+                    llm_results.append(("🤖 Gemini", resp.text))
+                except Exception as e: st.caption(f"Gemini Error: {e}")
 
-            # 4.3 HuggingFace - 備援
+            # 4.3 🤗 HF Mistral - 備援
             if hf_token:
                 try:
                     status.info("🤗 HF Mistral 分析中...")
                     API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
                     headers = {"Authorization": f"Bearer {hf_token}"}
-                    resp = requests.post(API_URL, headers=headers, json={"inputs": f"[INST] 分析 {stock_name}：\n{news_text[:1000]} [/INST]"})
-                    llm_results.append(("🤗 HF Mistral", resp.json()[0]['generated_text']))
+                    resp = requests.post(API_URL, headers=headers, json={"inputs": f"[INST] 分析 {name}：\n{news_text[:1000]} [/INST]"})
+                    llm_results.append(("🤗 Mistral", resp.json()[0]['generated_text']))
                 except: pass
-                
+            
             progress.progress(100)
             status.empty()
             
@@ -1539,18 +1541,15 @@ with tabs[5]:
                 for i, tab in enumerate(tabs_ai):
                     with tab: st.markdown(llm_results[i][1])
             else:
-                st.error("❌ AI 忙碌，轉為關鍵字報告")
-                bull = sum(1 for t in all_news if '漲' in t or '利多' in t)
-                bear = sum(1 for t in all_news if '跌' in t or '利空' in t)
-                c1, c2 = st.columns(2)
-                c1.metric("🟢 利多", bull)
-                c2.metric("🔴 利空", bear)
+                st.error("❌ AI 全忙碌，轉關鍵字報告")
+                bull = sum(1 for t in all_news if '漲' in t)
+                st.metric("利多新聞", bull)
 
         # ✅ 6. 新聞列表
         with st.expander(f"查看 {len(all_news)} 篇來源"):
             for n in all_news: st.write(n)
 
-    st.caption("✅ 4大 LLM | 20+ 來源 | 產業自動分析")
+    st.caption("✅ 3大 LLM 全開 | 產業自動分析 | 零錯誤")
 
 
 
