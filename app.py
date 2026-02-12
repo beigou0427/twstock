@@ -1410,10 +1410,10 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### 🏭 貝伊果屋 • 終極全能戰情室 🚀")
-    st.caption("⚡ Groq + 🤖 Gemini + 🤗 HF | 全球 20+ 來源 | 產業自動分析")
+    st.markdown("### 🏭 貝伊果屋 • 終極戰情室 🚀")
+    st.caption("⚡ Groq + 🤖 Gemini + 🤗 HF | 全自動修復版")
 
-    # ✅ 1. 金鑰直接設定 (不顯示在 UI)
+    # 金鑰設定 (隱藏式)
     GROQ_KEY = "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"
     GEMINI_KEY = "AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA"
     HF_TOKEN = "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"
@@ -1422,7 +1422,7 @@ with tabs[5]:
     stock_input = col1.text_input("股票代號", "2330")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    # ✅ 2. 自動產業分類
+    # 產業數據
     @st.cache_data(ttl=86400)
     def get_auto_sector(code):
         try:
@@ -1448,81 +1448,90 @@ with tabs[5]:
         import feedparser
         import requests
         import time
+        import httpx  # 修正 Groq 需用到
         
+        # 1. 新聞掃描
         progress = st.progress(0)
         status = st.empty()
         all_news = []
         
-        # 3. 新聞掃描
         search_targets = peers + [name]
-        if len(stock_input.split()) > 1: search_targets.append(stock_input.split()[1])
-        
         total_steps = len(search_targets)
         for i, t in enumerate(search_targets):
-            status.markdown(f"📡 正在掃描：**{t}**...")
+            status.markdown(f"📡 掃描：**{t}**...")
             progress.progress(int((i+1)/total_steps * 40))
-            
             q = urllib.parse.quote(t)
-            rss_list = [
-                f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
-                f"https://tw.stock.yahoo.com/rss2.0/search?q={q}&region=TW"
-            ]
-            for rss in rss_list:
-                try:
-                    feed = feedparser.parse(rss)
-                    for e in feed.entries[:5]: 
-                        all_news.append(f"[{t}] {e.title}")
-                        time.sleep(0.05)
-                except: pass
+            rss = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+            try:
+                feed = feedparser.parse(rss)
+                for e in feed.entries[:5]: 
+                    all_news.append(f"[{t}] {e.title}")
+            except: pass
         
         progress.progress(40)
-        status.success(f"✅ 掃描完成！共 {len(all_news)} 篇情報")
+        status.success(f"✅ 完成！共 {len(all_news)} 篇情報")
         
-        # 4. LLM 競賽
+        # 2. LLM 競賽
         if not all_news:
             st.warning("無相關新聞")
         else:
-            news_text = "\n".join(all_news[:30])
+            news_text = "\n".join(all_news[:25])
             llm_results = []
             
-            # 4.1 Groq
+            # 2.1 Groq 修復版
             if GROQ_KEY:
                 try:
                     from groq import Groq
-                    status.info("⚡ Groq Llama3 分析中...")
-                    client = Groq(api_key=GROQ_KEY)
+                    status.info("⚡ Groq 分析中...")
+                    
+                    # ✅ 修正：手動建立 http_client 避免 proxies 錯誤
+                    http_client = httpx.Client()
+                    client = Groq(api_key=GROQ_KEY, http_client=http_client)
+                    
                     resp = client.chat.completions.create(
                         model="llama3-70b-8192",
-                        messages=[{"role": "user", "content": f"分析 {name} ({sector}) 趨勢與建議：\n{news_text}"}]
+                        messages=[{"role": "user", "content": f"分析 {name} ({sector})：\n{news_text}"}]
                     )
                     llm_results.append(("⚡ Groq", resp.choices[0].message.content))
                 except Exception as e: st.caption(f"Groq Error: {e}")
 
-            # 4.2 Gemini
+            # 2.2 Gemini 修復版
             if GEMINI_KEY:
                 try:
                     import google.generativeai as genai
                     status.info("🤖 Gemini 分析中...")
                     genai.configure(api_key=GEMINI_KEY)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # ✅ 修正：自動抓可用模型
+                    valid_model = 'gemini-pro'
+                    try:
+                        for m in genai.list_models():
+                            if 'generateContent' in m.supported_generation_methods:
+                                if 'flash' in m.name: 
+                                    valid_model = m.name
+                                    break
+                    except: pass
+                    
+                    model = genai.GenerativeModel(valid_model)
                     resp = model.generate_content(f"分析 {name} ({sector})：\n{news_text}")
                     llm_results.append(("🤖 Gemini", resp.text))
                 except Exception as e: st.caption(f"Gemini Error: {e}")
 
-            # 4.3 HF Mistral
+            # 2.3 HF Mistral
             if HF_TOKEN:
                 try:
-                    status.info("🤗 HF Mistral 分析中...")
+                    status.info("🤗 Mistral 分析中...")
                     API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
                     headers = {"Authorization": f"Bearer {HF_TOKEN}"}
                     resp = requests.post(API_URL, headers=headers, json={"inputs": f"[INST] 分析 {name}：\n{news_text[:1000]} [/INST]"})
-                    llm_results.append(("🤗 Mistral", resp.json()[0]['generated_text']))
+                    if resp.status_code == 200:
+                        llm_results.append(("🤗 Mistral", resp.json()[0]['generated_text']))
                 except: pass
             
             progress.progress(100)
             status.empty()
             
-            # 5. 結果展示
+            # 3. 結果展示
             if llm_results:
                 st.balloons()
                 st.markdown("### 🎯 **AI 深度報告**")
@@ -1531,11 +1540,11 @@ with tabs[5]:
                     with tab: st.markdown(llm_results[i][1])
             else:
                 st.error("❌ AI 全忙碌")
+                bull = sum(1 for t in all_news if '漲' in t)
+                st.metric("利多新聞", bull)
 
-        with st.expander(f"查看 {len(all_news)} 篇來源"):
+        with st.expander(f"查看來源 ({len(all_news)}篇)"):
             for n in all_news: st.write(n)
-
-    st.caption("✅ 隱藏式金鑰 | 3大 LLM | 產業自動分析")
 
 
 # --------------------------
