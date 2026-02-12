@@ -1434,6 +1434,11 @@ with tabs[5]:
     if st.button("🚀 啟動分析", type="primary"):
         st.info(f"📊 **{info['name']}** ({info['sector']})")
         
+        # ✅ 補齊 import
+        import urllib.parse
+        import feedparser
+        import time
+        
         # 1. 抓新聞
         progress = st.progress(0)
         all_news = []
@@ -1450,17 +1455,16 @@ with tabs[5]:
             st.warning("無相關新聞")
         elif gemini_key:
             import google.generativeai as genai
-            import time
             genai.configure(api_key=gemini_key)
             
-            # ✅ 自動獲取可用模型
+            # 自動獲取可用模型
             available_models = []
             try:
                 for m in genai.list_models():
                     if 'generateContent' in m.supported_generation_methods:
                         available_models.append(m.name)
             except:
-                available_models = ['models/gemini-pro', 'models/gemini-1.5-flash'] # 備用硬編碼
+                available_models = ['models/gemini-pro', 'models/gemini-1.5-flash']
 
             # 優先順序
             priority = ['models/gemini-1.5-flash', 'models/gemini-pro', 'models/gemini-1.0-pro']
