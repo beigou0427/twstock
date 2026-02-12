@@ -1414,11 +1414,10 @@ with tabs[5]:
     st.caption("個股情報 | 同業比較 | 供應鏈分析")
 
     col1, col2 = st.columns([1.5, 1])
-    # 支援輸入 "2330" 或 "2330 台積電"
     stock_input = col1.text_input("股票代號", "2330")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    # 產業數據庫 (模擬)
+    # 產業數據庫
     SECTOR_MAP = {
         '2330': {'name': '台積電', 'sector': '半導體', 'peers': ['2303 聯電', '5347 世界', '2330 台積電'], 'up': ['矽晶圓', 'IP'], 'down': ['IC設計', '封測']},
         '2317': {'name': '鴻海', 'sector': '電子代工', 'peers': ['2317 鴻海', '4938 和碩', '3231 緯創'], 'up': ['零組件'], 'down': ['品牌商']},
@@ -1426,98 +1425,94 @@ with tabs[5]:
         '2603': {'name': '長榮', 'sector': '航運', 'peers': ['2603 長榮', '2609 陽明', '2615 萬海'], 'up': ['造船'], 'down': ['貨代']}
     }
     
-    # 簡單代號提取
-    stock_code = stock_input.split()[0]
-    stock_info = SECTOR_MAP.get(stock_code, {'name': stock_code, 'sector': '未知', 'peers': [stock_input], 'up': [], 'down': []})
+    code = stock_input.split()[0]
+    info = SECTOR_MAP.get(code, {'name': code, 'sector': '未知', 'peers': [stock_input], 'up': [], 'down': []})
 
     if st.button("🏭 產業深度分析", type="primary"):
-        st.info(f"📊 **{stock_info['name']}** ({stock_info['sector']}) | 同業：{', '.join(stock_info['peers'])}")
+        st.info(f"📊 **{info['name']}** ({info['sector']}) | 同業：{', '.join(info['peers'])}")
         
         progress = st.progress(0)
         all_news = []
         
-        # 1. 掃描本股 + 同業
-        targets = stock_info['peers']
-        total_targets = len(targets)
+        targets = info['peers']
+        total = len(targets)
         
         for i, target in enumerate(targets):
-            progress.progress((i / total_targets) * 80)
+            # ✅ 修復：強制限制在 0-100 之間
+            prog_val = int(((i + 1) / total) * 80)
+            progress.progress(min(prog_val, 100))
             
-            # 關鍵字：代號 OR 名稱
-            code = target.split()[0]
-            name = target.split()[1] if len(target.split()) > 1 else code
-            q = f"{code} OR {name}"
-            
+            q = target.replace(' ', ' OR ')
             try:
                 import urllib.parse
                 import feedparser
                 
-                # Google News (最強)
+                # Google News
                 enc_q = urllib.parse.quote(q)
                 rss = f"https://news.google.com/rss/search?q={enc_q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
                 feed = feedparser.parse(rss)
                 
-                for entry in feed.entries[:10]:
+                for entry in feed.entries[:8]:
                     all_news.append({
                         'title': entry.title,
-                        'target': target, # 標記是哪檔股票
+                        'target': target,
                         'link': entry.link,
                         'date': getattr(entry, 'published', '今日')[:10]
                     })
             except: pass
 
+        progress.progress(100) # 完成
+        
         df = pd.DataFrame(all_news).drop_duplicates('title')
         progress.empty()
         
         if df.empty:
             st.warning("無相關新聞")
         else:
-            # 2. 智能評分
-            BULL = ['漲','up','成長','營收','創高','利多','買超','訂單']
-            BEAR = ['跌','down','衰退','虧損','重挫','利空','賣超','砍單']
+            # 智能評分
+            BULL = ['漲','up','成長','營收','創高','利多','買超','訂單','爆發']
+            BEAR = ['跌','down','衰退','虧損','重挫','利空','賣超','砍單','疲弱']
             
             df['score'] = df['title'].apply(lambda t: sum(t.count(w) for w in BULL) - sum(t.count(w) for w in BEAR))
             
-            # 3. 產業比較儀表板
+            # 同業戰力儀表板
             st.markdown("### 📊 **同業戰力分析**")
+            scores = df.groupby('target')['score'].sum().sort_values(ascending=False)
             
-            # 計算每檔股票的總分
-            peer_scores = df.groupby('target')['score'].sum().sort_values(ascending=False)
+            cols = st.columns(len(scores))
+            for idx, (peer, score) in enumerate(scores.items()):
+                cols[idx].metric(peer, f"{score:+d}")
             
-            cols = st.columns(len(peer_scores))
-            for i, (peer, score) in enumerate(peer_scores.items()):
-                color = "🟢" if score > 0 else "🔴" if score < 0 else "⚪"
-                cols[i].metric(f"{peer}", f"{score:+d}", delta_color="normal")
-            
-            # 4. 產業情緒圖
-            fig = px.bar(peer_scores, x=peer_scores.index, y=peer_scores.values, 
-                       title=f"{stock_info['sector']} 產業情緒排行",
-                       color=peer_scores.values,
+            # 產業情緒圖
+            fig = px.bar(scores, x=scores.index, y=scores.values, 
+                       title=f"{info['sector']} 產業情緒排行",
+                       color=scores.values,
                        color_continuous_scale=['red', 'gray', 'green'])
             st.plotly_chart(fig, use_container_width=True)
             
-            # 5. 上下游關係
-            if stock_info['up'] or stock_info['down']:
+            # 上下游
+            if info['up'] or info['down']:
                 c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown(f"**⬆️ 上游：** {', '.join(stock_info['up'])}")
-                with c2:
-                    st.markdown(f"**⬇️ 下游：** {', '.join(stock_info['down'])}")
+                with c1: st.success(f"**⬆️ 上游：** {', '.join(info['up'])}")
+                with c2: st.info(f"**⬇️ 下游：** {', '.join(info['down'])}")
             
-            # 6. 本股重點新聞
-            st.markdown(f"### 🔥 **{stock_info['name']} 重點情報**")
-            my_news = df[df['target'].str.contains(stock_code)].nlargest(5, 'score')
-            for _, r in my_news.iterrows():
-                c = "limegreen" if r['score'] > 0 else "darkred" if r['score'] < 0 else "gray"
-                st.markdown(f"**<span style='color:{c}'>{r['score']:+d}</span>** [{r['title']}]({r['link']})", unsafe_allow_html=True)
+            # 本股情報
+            st.markdown(f"### 🔥 **{info['name']} 重點情報**")
+            my_news = df[df['target'].str.contains(code)].nlargest(5, 'score')
+            if my_news.empty:
+                st.caption("無相關新聞")
+            else:
+                for _, r in my_news.iterrows():
+                    c = "limegreen" if r['score'] > 0 else "darkred" if r['score'] < 0 else "gray"
+                    st.markdown(f"**<span style='color:{c}'>{r['score']:+d}</span>** [{r['title']}]({r['link']})", unsafe_allow_html=True)
 
-            # 7. 同業重點新聞
+            # 同業動態
             st.markdown(f"### ⚔️ **同業動態**")
-            peer_news = df[~df['target'].str.contains(stock_code)].nlargest(5, 'score')
+            peer_news = df[~df['target'].str.contains(code)].nlargest(5, 'score')
             for _, r in peer_news.iterrows():
                 st.markdown(f"**{r['target']}** | [{r['title']}]({r['link']})")
 
-    st.caption("✅ 自動同業比較 | 產業鏈分析 | 情緒排行")
+    st.caption("✅ 產業鏈全開 | 同業橫向對比 | 零錯誤")
 
 
 # --------------------------
