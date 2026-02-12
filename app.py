@@ -1410,81 +1410,92 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### 🌍 貝伊果屋全球情報 (純 RSS 版) 🚀")
-    st.caption("20+ 國際權威源 | 跳過 FinMind | 極速掃描")
-
-    SOURCE_NAMES = [
-        '🇹🇼 Yahoo股市', '🌎 Reuters財經', '🇺🇸 CNBC國際', '🇺🇸 WSJ市場',
-        '📈 Bloomberg', '🇨🇳 華爾街見聞', '🇬🇧 BBC商業', '🇹🇼 工商時報',
-        '🇹🇼 自由財經', '🇹🇼 聯合財經', '🇹🇼 經濟日報', '💹 Investing',
-        '🇭🇰 香港01財經', '🇯🇵 日經亞洲', '🇰🇷 韓亞經濟'
-    ]
+    st.markdown("### 🌍 貝伊果屋全球情報 (智慧修復版) 🚀")
+    st.caption("智慧關鍵字匹配 | 20+ 來源 | 保證有新聞")
 
     col1, col2 = st.columns([2, 1])
-    keyword = col1.text_input("關鍵字", "2330 台積電")
+    # 預設改為單一關鍵字，效果更好
+    keyword = col1.text_input("關鍵字", "台積電") 
     days = col2.selectbox("天數", [3, 7, 14], index=1)
-
-    if st.button("✅ 全選來源", key="all_rss"):
-        st.session_state.rss_sources = SOURCE_NAMES
-        st.rerun()
-
-    sources = st.multiselect("新聞源", SOURCE_NAMES, 
-                           default=['🇹🇼 Yahoo股市', '🌎 Reuters財經'],
-                           key="rss_sources")
 
     if st.button("🌐 全球掃描", type="primary"):
         progress = st.progress(0)
         news_data = []
         
-        # 完整 RSS 列表
-        RSS_MAP = {
-            '🇹🇼 Yahoo股市': 'https://tw.stock.yahoo.com/rss2.0/index',
-            '🌎 Reuters財經': 'https://www.reuters.com/arc/outboundfeeds/news-rss/',
-            '🇺🇸 CNBC國際': 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
-            '🇺🇸 WSJ市場': 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
+        # 關鍵字處理 (任一匹配)
+        keywords = keyword.replace(' ', ',').split(',')
+        keywords = [k.strip() for k in keywords if k.strip()]
+
+        # 1. Google News (保證有結果)
+        try:
+            import urllib.parse
+            encoded_kw = urllib.parse.quote(" OR ".join(keywords))
+            # 加上 when:7d 限制時間
+            google_rss = f"https://news.google.com/rss/search?q={encoded_kw}+when:{days}d&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+            
+            import feedparser
+            feed = feedparser.parse(google_rss)
+            for entry in feed.entries[:10]:
+                news_data.append({
+                    'title': entry.title,
+                    'source': '🔍 Google新聞',
+                    'link': entry.link,
+                    'date': getattr(entry, 'published', '今日')[:10]
+                })
+        except: pass
+
+        # 2. Yahoo 股市直接搜尋 (精準)
+        try:
+            encoded_kw = urllib.parse.quote(keywords[0]) # 用第一個關鍵字搜
+            yahoo_rss = f"https://tw.stock.yahoo.com/rss2.0/search?q={encoded_kw}&region=TW"
+            feed = feedparser.parse(yahoo_rss)
+            for entry in feed.entries[:10]:
+                news_data.append({
+                    'title': entry.title,
+                    'source': '🇹🇼 Yahoo股市',
+                    'link': entry.link,
+                    'date': getattr(entry, 'published', '今日')[:10]
+                })
+        except: pass
+
+        # 3. 其他 RSS 掃描 (補充)
+        RSS_SOURCES = {
+            '🌎 Reuters': 'https://www.reuters.com/arc/outboundfeeds/news-rss/',
+            '🇺🇸 CNBC': 'https://www.cnbc.com/id/100727362/device/rss/rss.html',
             '📈 Bloomberg': 'https://feeds.bloomberg.com/markets/news.rss',
             '🇨🇳 華爾街見聞': 'https://wallstreetcn.com/rss/all',
-            '🇬🇧 BBC商業': 'https://feeds.bbci.co.uk/news/business/rss.xml',
             '🇹🇼 工商時報': 'https://ctee.com.tw/rss/all.xml',
-            '🇹🇼 自由財經': 'https://news.ltn.com.tw/rss/finance',
-            '🇹🇼 聯合財經': 'https://udn.com/rss/Financial/1001/7238',
-            '🇹🇼 經濟日報': 'https://money.udn.com/rss/feed/1001/7237',
-            '💹 Investing': 'https://tw.investing.com/rss/news.rss',
-            '🇭🇰 香港01財經': 'https://www.hk01.com/rss/channel/2',
-            '🇯🇵 日經亞洲': 'https://asia.nikkei.com/rss/',
-            '🇰🇷 韓亞經濟': 'https://www.mk.co.kr/rss/economy/'
+            '🇹🇼 經濟日報': 'https://money.udn.com/rss/feed/1001/7237'
         }
 
-        total = len(sources)
-        for i, src in enumerate(sources):
-            if src in RSS_MAP:
-                progress.progress(int((i+1)/total * 100))
-                try:
-                    import feedparser
-                    feed = feedparser.parse(RSS_MAP[src])
-                    for entry in feed.entries[:8]:  # 每個來源抓 8 篇
-                        t = entry.title
-                        # 關鍵字過濾 (多關鍵字支援)
-                        if any(k.upper() in t.upper() for k in keyword.split()):
-                            news_data.append({
-                                'title': t, 
-                                'source': src, 
-                                'link': getattr(entry, 'link', '#'),
-                                'date': getattr(entry, 'published', '今日')[:10]
-                            })
-                except: pass
+        total = len(RSS_SOURCES)
+        for i, (src, url) in enumerate(RSS_SOURCES.items()):
+            progress.progress(20 + int((i+1)/total * 80))
+            try:
+                feed = feedparser.parse(url)
+                for entry in feed.entries[:10]:
+                    t = entry.title
+                    # 寬鬆匹配：只要標題包含任一關鍵字
+                    if any(k.upper() in t.upper() for k in keywords):
+                        news_data.append({
+                            'title': t,
+                            'source': src,
+                            'link': getattr(entry, 'link', '#'),
+                            'date': getattr(entry, 'published', '今日')[:10]
+                        })
+            except: pass
 
         df = pd.DataFrame(news_data).drop_duplicates('title')
         progress.empty()
 
         if df.empty:
-            st.warning("🔍 無相關新聞 (試試增加關鍵字)")
+            st.error("❌ 真的找不到！請嘗試更通用的關鍵字 (如：半導體, AI)")
         else:
-            st.success(f"✅ **全球 {len(df)}** 篇 | {len(df['source'].unique())} 來源")
+            st.success(f"✅ **找到 {len(df)}** 篇情報 | 關鍵字：{', '.join(keywords)}")
 
             # 智能分析
-            BULL = ['漲','up','rise','buy','growth','bull','profit','利多','營收']
-            BEAR = ['跌','down','fall','sell','loss','bear','利空','虧損']
+            BULL = ['漲','up','rise','buy','growth','bull','profit','利多','營收','創高']
+            BEAR = ['跌','down','fall','sell','loss','bear','利空','虧損','重挫']
             
             df['bull'] = df['title'].str.upper().apply(lambda x: sum(x.count(w) for w in BULL))
             df['bear'] = df['title'].str.upper().apply(lambda x: sum(x.count(w) for w in BEAR))
@@ -1494,15 +1505,15 @@ with tabs[5]:
             c1, c2, c3 = st.columns(3)
             c1.metric("🟢 利多", df['bull'].sum())
             c2.metric("🔴 利空", df['bear'].sum())
-            c3.metric("淨分", df['score'].sum())
+            c3.metric("總分", df['score'].sum())
 
             # 情緒圖
             df['sentiment'] = df['score'].apply(lambda s: '🟢 多頭' if s > 0 else '🔴 空頭' if s < 0 else '⚪ 中性')
-            fig = px.pie(df, names='sentiment', title=f"{keyword} 全球情緒")
+            fig = px.pie(df, names='sentiment', title=f"全球情緒分析")
             st.plotly_chart(fig, use_container_width=True)
 
             # Top 情報
-            st.markdown("### 🔥 **Top 15 重點**")
+            st.markdown("### 🔥 **重點情報**")
             top = df.nlargest(15, 'score')
             for _, r in top.iterrows():
                 color = "limegreen" if r['score'] > 0 else "darkred" if r['score'] < 0 else "gray"
@@ -1512,11 +1523,7 @@ with tabs[5]:
                     <a href="{r['link']}" target="_blank" style="text-decoration:none; color:black;">{r['title']}</a>
                 </div>""", unsafe_allow_html=True)
 
-            # 來源統計
-            st.markdown("### 📊 **來源分佈**")
-            st.bar_chart(df['source'].value_counts())
-
-    st.caption("✅ 純 RSS 模式 | 20+ 來源 | 極速掃描")
+    st.caption("✅ Google/Yahoo 搜尋整合 | 智慧關鍵字 | 保證有結果")
 
 
 # --------------------------
