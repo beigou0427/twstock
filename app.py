@@ -1411,7 +1411,7 @@ with tabs[4]:
 # --------------------------
 with tabs[5]:
     st.markdown("### 🏭 貝伊果屋產業 LLM 戰情室 🤖")
-    st.caption("智慧模型切換 | 自動重試 | 永不崩潰")
+    st.caption("自動抓取可用模型 | 智慧重試 | 永不崩潰")
 
     gemini_key = st.sidebar.text_input("Gemini Key", 
                                      value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA", 
@@ -1422,105 +1422,90 @@ with tabs[5]:
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
     SECTOR_MAP = {
-        '2330': {'name': '台積電', 'sector': '半導體', 'peers': ['2303 聯電', '5347 世界', '2330 台積電'], 'up': ['矽晶圓', 'IP'], 'down': ['IC設計', '封測']},
-        '2317': {'name': '鴻海', 'sector': '電子代工', 'peers': ['2317 鴻海', '4938 和碩', '3231 緯創'], 'up': ['零組件'], 'down': ['品牌商']},
-        '2454': {'name': '聯發科', 'sector': 'IC設計', 'peers': ['2454 聯發科', '3034 聯詠', '2379 瑞昱'], 'up': ['晶圓代工'], 'down': ['系統廠']},
-        '2603': {'name': '長榮', 'sector': '航運', 'peers': ['2603 長榮', '2609 陽明', '2615 萬海'], 'up': ['造船'], 'down': ['貨代']}
+        '2330': {'name': '台積電', 'sector': '半導體', 'peers': ['2303 聯電', '5347 世界', '2330 台積電']},
+        '2317': {'name': '鴻海', 'sector': '電子代工', 'peers': ['2317 鴻海', '4938 和碩', '3231 緯創']},
+        '2454': {'name': '聯發科', 'sector': 'IC設計', 'peers': ['2454 聯發科', '3034 聯詠', '2379 瑞昱']},
+        '2603': {'name': '長榮', 'sector': '航運', 'peers': ['2603 長榮', '2609 陽明', '2615 萬海']}
     }
     
     code = stock_input.split()[0]
-    info = SECTOR_MAP.get(code, {'name': code, 'sector': '未知', 'peers': [stock_input], 'up': [], 'down': []})
+    info = SECTOR_MAP.get(code, {'name': code, 'sector': '未知', 'peers': [stock_input]})
 
     if st.button("🚀 啟動分析", type="primary"):
         st.info(f"📊 **{info['name']}** ({info['sector']})")
         
+        # 1. 抓新聞
         progress = st.progress(0)
         all_news = []
-        
-        # 1. 搜集情報
-        targets = info['peers']
-        for i, target in enumerate(targets):
-            progress.progress(int((i + 1) / len(targets) * 40))
-            q = target.replace(' ', ' OR ')
+        for i, target in enumerate(info['peers']):
+            progress.progress(int((i+1)/len(info['peers'])*40))
+            q = urllib.parse.quote(target.replace(' ', ' OR '))
+            rss = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
             try:
-                import urllib.parse
-                import feedparser
-                enc_q = urllib.parse.quote(q)
-                rss = f"https://news.google.com/rss/search?q={enc_q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
                 feed = feedparser.parse(rss)
-                for entry in feed.entries[:5]: 
-                    all_news.append(f"[{target}] {entry.title}")
+                for e in feed.entries[:5]: all_news.append(f"[{target}] {e.title}")
             except: pass
             
         if not all_news:
             st.warning("無相關新聞")
-        else:
-            news_context = "\n".join(all_news[:20])
+        elif gemini_key:
+            import google.generativeai as genai
+            import time
+            genai.configure(api_key=gemini_key)
             
-            # 2. LLM 智慧重試機制
-            if gemini_key:
-                import google.generativeai as genai
-                import time
-                genai.configure(api_key=gemini_key)
-                
-                # 模型優先順序
-                models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
-                success = False
-                
-                progress.progress(50)
-                
-                for m_name in models:
-                    if success: break
-                    try:
-                        st.caption(f"🔄 嘗試模型：{m_name}...")
-                        model = genai.GenerativeModel(m_name)
-                        
-                        prompt = f"""
-                        產業情報（{info['sector']}）：
-                        {news_context}
-                        
-                        請分析：
-                        1. 趨勢：上升/下降？
-                        2. {info['name']} 優劣勢？
-                        3. 建議：買/賣？
-                        
-                        精簡條列。
-                        """
-                        
-                        response = model.generate_content(prompt)
-                        progress.progress(100)
-                        
-                        st.balloons()
-                        st.markdown(f"### 🎯 **深度報告 ({m_name})**")
-                        st.markdown(response.text)
-                        success = True
-                        
-                    except Exception as e:
-                        if "429" in str(e):
-                            st.warning(f"⚠️ {m_name} 額度滿，切換中...")
-                            time.sleep(2) # 避讓
-                        else:
-                            st.error(f"{m_name} 錯誤：{e}")
-                
-                if not success:
-                    st.error("❌ 所有 LLM 皆忙碌，轉為關鍵字報告")
-                    # 降級：關鍵字分析
-                    bull = sum(1 for t in all_news if '漲' in t or '利多' in t)
-                    bear = sum(1 for t in all_news if '跌' in t or '利空' in t)
-                    st.markdown("### 📊 **關鍵字趨勢**")
-                    c1, c2 = st.columns(2)
-                    c1.metric("🟢 利多", bull)
-                    c2.metric("🔴 利空", bear)
+            # ✅ 自動獲取可用模型
+            available_models = []
+            try:
+                for m in genai.list_models():
+                    if 'generateContent' in m.supported_generation_methods:
+                        available_models.append(m.name)
+            except:
+                available_models = ['models/gemini-pro', 'models/gemini-1.5-flash'] # 備用硬編碼
 
-            else:
-                st.info("填寫 Token 啟用深度分析")
-                
-            # 新聞列表
-            with st.expander("查看新聞來源"):
-                for n in all_news:
-                    st.write(n)
+            # 優先順序
+            priority = ['models/gemini-1.5-flash', 'models/gemini-pro', 'models/gemini-1.0-pro']
+            models_to_try = [m for m in priority if m in available_models] + \
+                            [m for m in available_models if m not in priority]
+            
+            success = False
+            progress.progress(50)
+            
+            for m_name in models_to_try:
+                if success: break
+                try:
+                    st.caption(f"🔄 嘗試：{m_name}...")
+                    model = genai.GenerativeModel(m_name)
+                    
+                    response = model.generate_content(f"""
+                    產業情報：
+                    {"\n".join(all_news[:20])}
+                    
+                    請分析 {info['name']}：
+                    1. 趨勢
+                    2. 優劣勢
+                    3. 建議
+                    """)
+                    
+                    progress.progress(100)
+                    st.balloons()
+                    st.markdown(f"### 🎯 **深度報告 ({m_name})**")
+                    st.markdown(response.text)
+                    success = True
+                    
+                except Exception as e:
+                    if "429" in str(e):
+                        st.warning(f"⚠️ {m_name} 額度滿")
+                        time.sleep(1)
+                    else:
+                        st.caption(f"❌ {m_name} 失敗")
 
-    st.caption("✅ 自動模型輪詢 | 429 避讓機制")
+            if not success:
+                st.error("❌ LLM 全掛，顯示關鍵字分析")
+                bull = sum(1 for t in all_news if '漲' in t)
+                st.metric("利多新聞數", bull)
+
+        with st.expander("新聞來源"):
+            for n in all_news: st.write(n)
 
 
 # --------------------------
