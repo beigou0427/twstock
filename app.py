@@ -1410,119 +1410,128 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 with tabs[5]:
-    st.markdown("### 🏭 貝伊果屋產業 LLM 戰情室 🤖")
-    st.caption("動態新聞掃描 | 智慧重試 | 永不崩潰")
+    st.markdown("### 🏭 貝伊果屋產業戰情室 (FinMind 自動版) 🤖")
+    st.caption("FinMind 自動分類 | 同業自動匹配 | Gemini 解讀")
 
     gemini_key = st.sidebar.text_input("Gemini Key", 
                                      value="AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA", 
                                      type="password")
 
     col1, col2 = st.columns([1.5, 1])
-    stock_input = col1.text_input("股票代號", "2330")
+    stock_input = col1.text_input("股票代號", "2610")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
-
-    SECTOR_MAP = {
-        '2330': {'name': '台積電', 'sector': '半導體', 'peers': ['2303 聯電', '5347 世界', '2330 台積電']},
-        '2317': {'name': '鴻海', 'sector': '電子代工', 'peers': ['2317 鴻海', '4938 和碩', '3231 緯創']},
-        '2454': {'name': '聯發科', 'sector': 'IC設計', 'peers': ['2454 聯發科', '3034 聯詠', '2379 瑞昱']},
-        '2603': {'name': '長榮', 'sector': '航運', 'peers': ['2603 長榮', '2609 陽明', '2615 萬海']}
-    }
     
-    code = stock_input.split()[0]
-    info = SECTOR_MAP.get(code, {'name': code, 'sector': '未知', 'peers': [stock_input]})
+    # 建立產業資料庫 (快取)
+    @st.cache_data(ttl=86400) # 一天更新一次
+    def get_stock_meta():
+        try:
+            dl = DataLoader()
+            dl.login_by_token(api_token=FINMIND_TOKEN)
+            # 抓取所有台股資訊
+            df = dl.taiwan_stock_info()
+            return df
+        except: return pd.DataFrame()
 
-    if st.button("🚀 啟動分析", type="primary"):
-        st.info(f"📊 **{info['name']}** ({info['sector']})")
+    df_meta = get_stock_meta()
+    
+    # 自動查詢個股資訊
+    target_code = stock_input.split()[0]
+    stock_name = target_code
+    sector_name = "未知"
+    peers = [target_code]
+    
+    if not df_meta.empty:
+        row = df_meta[df_meta['stock_id'] == target_code]
+        if not row.empty:
+            stock_name = row.iloc[0]['stock_name']
+            sector_name = row.iloc[0]['industry_category']
+            
+            # 自動抓同業 (同產業隨機取 3 檔)
+            peer_df = df_meta[df_meta['industry_category'] == sector_name]
+            if not peer_df.empty:
+                # 排除自己，取市值較大的 (模擬：這裡簡單取前幾檔)
+                peers = peer_df.head(4)['stock_id'].tolist()
+                # 把自己加回去
+                if target_code not in peers: peers.insert(0, target_code)
+                # 補上名稱
+                peers_display = []
+                for p in peers:
+                    n = df_meta[df_meta['stock_id']==p].iloc[0]['stock_name']
+                    peers_display.append(f"{p} {n}")
+                peers = peers_display
+
+    if st.button("🚀 啟動全自動分析", type="primary"):
+        st.info(f"📊 **{stock_name}** ({target_code}) | 產業：**{sector_name}**")
+        st.write(f"⚔️ 同業對比：{', '.join(peers)}")
         
         import urllib.parse
         import feedparser
         import time
         
-        # 1. 抓新聞（動態顯示）
+        # 1. 抓新聞
         progress = st.progress(0)
-        status_text = st.empty() # 動態文字框
+        status_text = st.empty()
         all_news = []
         
-        for i, target in enumerate(info['peers']):
-            # 動態顯示
-            status_text.markdown(f"📡 正在掃描：**{target}**...")
-            progress.progress(int((i)/len(info['peers'])*40))
+        for i, target in enumerate(peers):
+            status_text.markdown(f"📡 掃描同業：**{target}**...")
+            progress.progress(int((i)/len(peers)*40))
             
+            # 搜尋代號 + 名稱
             q = urllib.parse.quote(target.replace(' ', ' OR '))
             rss = f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
             try:
                 feed = feedparser.parse(rss)
                 for e in feed.entries[:5]: 
-                    title = e.title
-                    all_news.append(f"[{target}] {title}")
-                    # 即時顯示抓到的標題
-                    status_text.caption(f"📄 獲取：{title[:20]}...")
-                    time.sleep(0.1) # 視覺效果
+                    all_news.append(f"[{target}] {e.title}")
+                    time.sleep(0.05)
             except: pass
             
         progress.progress(40)
-        status_text.success(f"✅ 掃描完成！共 {len(all_news)} 篇情報")
-        time.sleep(1)
-            
-        if not all_news:
-            st.warning("無相關新聞")
-        elif gemini_key:
+        status_text.success(f"✅ 完成！共 {len(all_news)} 篇產業情報")
+        
+        # 2. LLM 分析
+        if gemini_key and all_news:
             import google.generativeai as genai
             genai.configure(api_key=gemini_key)
             
-            available_models = []
-            try:
-                status_text.info("🤖 正在檢測可用 AI 模型...")
-                for m in genai.list_models():
-                    if 'generateContent' in m.supported_generation_methods:
-                        available_models.append(m.name)
-            except:
-                available_models = ['models/gemini-pro', 'models/gemini-1.5-flash']
-
-            priority = ['models/gemini-1.5-flash', 'models/gemini-pro']
-            models_to_try = [m for m in priority if m in available_models] + \
-                            [m for m in available_models if m not in priority]
-            
+            # 自動模型
+            models = ['models/gemini-1.5-flash', 'models/gemini-pro']
             success = False
             progress.progress(50)
             
-            for m_name in models_to_try:
+            for m_name in models:
                 if success: break
                 try:
-                    status_text.markdown(f"🔄 AI 思考中 ({m_name})...")
+                    status_text.info(f"🤖 AI 分析中 ({m_name})...")
                     model = genai.GenerativeModel(m_name)
                     
                     response = model.generate_content(f"""
-                    產業情報：
-                    {"\n".join(all_news[:20])}
+                    產業情報（{sector_name}）：
+                    {"\n".join(all_news[:25])}
                     
-                    請分析 {info['name']}：
-                    1. 趨勢
-                    2. 優劣勢
-                    3. 建議
+                    請分析 {stock_name} ({target_code})：
+                    1. {sector_name} 產業趨勢
+                    2. 與同業 ({', '.join(peers)}) 競爭優劣
+                    3. 投資建議
                     """)
                     
                     progress.progress(100)
                     st.balloons()
-                    status_text.empty() # 清空狀態
+                    status_text.empty()
                     
                     st.markdown(f"### 🎯 **深度報告 ({m_name})**")
                     st.markdown(response.text)
                     success = True
-                    
                 except Exception as e:
-                    if "429" in str(e):
-                        status_text.warning(f"⚠️ {m_name} 額度滿，切換中...")
-                        time.sleep(1)
-                    else:
-                        status_text.error(f"❌ {m_name} 失敗")
-
+                    if "429" in str(e): time.sleep(1)
+            
             if not success:
-                st.error("❌ LLM 全掛，顯示關鍵字分析")
+                st.error("❌ AI 忙碌，轉為關鍵字分析")
                 bull = sum(1 for t in all_news if '漲' in t)
-                st.metric("利多新聞數", bull)
+                st.metric("利多新聞", bull)
 
-        with st.expander(f"查看 {len(all_news)} 篇新聞來源"):
+        with st.expander("查看新聞來源"):
             for n in all_news: st.write(n)
 
 
