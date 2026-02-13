@@ -1502,16 +1502,21 @@ with tabs[5]:
                     llm_results.append(("⚡ Groq", resp.choices[0].message.content))
                 except Exception as e: st.caption(f"Groq Error: {e}")
 
-            # 4.2 Gemini (1.5 Flash)
+            
+            # 4.2 Gemini (改用 gemini-pro)
             if GEMINI_KEY:
                 try:
                     import google.generativeai as genai
                     status.info("🤖 Gemini 分析中...")
                     genai.configure(api_key=GEMINI_KEY)
-                    model = genai.GenerativeModel('gemini-1.5-flash') # ✅ 修正：改用穩定模型
+                    
+                    # ✅ 修正：改用 gemini-pro (最穩定)
+                    model = genai.GenerativeModel('gemini-pro') 
+                    
                     resp = model.generate_content(f"分析 {name} ({sector})：\n{news_text}")
                     llm_results.append(("🤖 Gemini", resp.text))
                 except Exception as e: st.caption(f"Gemini Error: {e}")
+
 
             # 4.3 HF Mistral
             if HF_TOKEN:
