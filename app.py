@@ -258,20 +258,35 @@ with st.sidebar:
 # =========================================
 st.markdown("# 🥯 **貝伊果屋：財富雙軌系統**")
 
-# 市場快報
+# 🚀 市場快報（日期修復版）
 st.markdown("---")
 col1, col2, col3, col4 = st.columns(4)
-with col1:
-    change_pct = (S_current - ma20) / ma20 * 100
-    st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}%")
-with col2:
-    ma_trend = "🔥 多頭" if ma20 > ma60 else "⚖️ 盤整"
-    st.metric("均線狀態", ma_trend)
-with col3:
-    st.metric("資料更新", latest_date.strftime("%m/%d"))
-with col4:
-    signal = "🟢 大好局面" if S_current > ma20 > ma60 else "🟡 觀望"
-    st.metric("今日建議", signal)
+
+# ✅ 1. 加權指數（修復漲跌幅）
+change_pct = (S_current - ma20) / ma20 * 100
+delta_color = "normal" if abs(change_pct) < 0.1 else "inverse"
+st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}%", delta_color=delta_color)
+
+# ✅ 2. 均線狀態
+ma_trend = "🔥 多頭排列" if ma20 > ma60 else "⚖️ 盤整整理"
+st.metric("均線狀態", ma_trend)
+
+# ✅ 3. 資料更新（修復日期）
+today_tw = date.today()
+last_trade_date = latest_date.strftime("%m/%d") if latest_date.date() == today_tw else f"{latest_date.strftime('%m/%d')}⏰"
+st.metric("資料更新", last_trade_date)
+
+# ✅ 4. 今日建議（多層判斷）
+if S_current > ma20 > ma60:
+    signal = "🟢 大好局面"
+elif S_current > ma20:
+    signal = "🟡 輕多觀望"
+elif ma20 > ma60:
+    signal = "🔵 盤整偏多"
+else:
+    signal = "🟠 謹慎觀望"
+st.metric("今日建議", signal)
+
 st.markdown("---")
 
 # 合規聲明
