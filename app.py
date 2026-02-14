@@ -258,22 +258,27 @@ with st.sidebar:
 # =========================================
 st.markdown("# 🥯 **貝伊果屋：財富雙軌系統**")
 
-# 🚀 市場快報（並排修復版）
+# 🚀 市場快報（完美版）
 st.markdown("---")
 
-col1, col2, col3, col4 = st.columns([1.2, 1, 1, 1.3])
+col1, col2, col3, col4 = st.columns([1.4, 1, 1, 1])
 
 with col1:
     change_pct = (S_current - ma20) / ma20 * 100
     st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}%", delta_color="inverse")
 
 with col2:
+    ma_color = "#FF9500" if ma20 > ma60 else "#6C757D"
     ma_trend = "🔥 多頭" if ma20 > ma60 else "⚖️ 盤整"
-    st.metric("均線", ma_trend)
+    st.markdown(f"""
+    <div style='text-align: center; color: {ma_color}; font-size: 20px; font-weight: bold;'>
+        {ma_trend}
+    </div>
+    """, unsafe_allow_html=True)
 
 with col3:
-    today_tw = date.today()
-    date_str = latest_date.strftime("%m/%d") + ("⏰" if latest_date.date() < today_tw else "")
+    real_date = min(latest_date.date(), date.today())
+    date_str = real_date.strftime("%m/%d")
     st.metric("更新", date_str)
 
 with col4:
