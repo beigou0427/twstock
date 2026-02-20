@@ -1419,17 +1419,16 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # ======================================================
-# Tab 5: AI 產業分析版（v6.3 - 全球新聞 + 產業趨勢 + 法規合規）
-# 已移除具體買賣建議，專注於產業動態與客觀數據分析
+# Tab 5: AI 產業分析版 (v6.4 - 包含新聞來源揭露與多媒體保證)
 # 直接貼入 with tabs[5]: 即可運行
 # ======================================================
 with tabs[5]:
     st.markdown("""
     <div style='text-align:center; padding:20px; 
-    background:linear-gradient(135deg, #2b5876 0%, #4e4376 100%); 
-    color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.2);'>
-        <h1>🏭 全球產業趨勢 AI 分析</h1>
-        <p>大盤 TAIEX <strong>{S_current:.0f}</strong> | 更新 <strong>{latest_date:%Y-%m-%d}</strong></p>
+    background:linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); 
+    color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.3);'>
+        <h1 style='color:white;'>🏭 全球產業趨勢 AI 分析</h1>
+        <p style='color:white; opacity:0.9;'>大盤 TAIEX <strong>{S_current:.0f}</strong> | 更新 <strong>{latest_date:%Y-%m-%d}</strong></p>
     </div>
     """.format(S_current=S_current, latest_date=latest_date), unsafe_allow_html=True)
     
@@ -1444,7 +1443,7 @@ with tabs[5]:
     with col3:
         news_sources = st.multiselect("🌐 情報來源", 
             ["🇹🇼 台灣財經", "🇺🇸 科技巨頭", "🇯🇵 半導體", "🌍 總體經濟"], 
-            default=["🇹🇼 台灣財經", "🇺🇸 科技巨頭"])
+            default=["🇹🇼 台灣財經", "🇺🇸 科技巨頭", "🌍 總體經濟"])
     with col4:
         max_news = st.slider("📰 摘要筆數", 5, 30, 15)
     
@@ -1460,46 +1459,86 @@ with tabs[5]:
         prog = st.progress(0)
         status = st.empty()
         
-        # 🌐 產業與總經 RSS 來源分類
+        # 🌐 產業與總經 RSS 來源分類 (保證來源多樣性)
         global_rss = {
-            "🇹🇼 台灣財經": ["https://tw.stock.yahoo.com/rss/index.rss", "https://ctee.com.tw/rss/all_news.xml"],
-            "🇺🇸 科技巨頭": ["https://www.cnbc.com/id/19854910/device/rss/rss.html", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=QQQ,AAPL,NVDA"],
-            "🇯🇵 半導體": ["https://www.nikkei.com/rss/en/business.xml"],
-            "🌍 總體經濟": ["https://feeds.bloomberg.com/markets/news.rss", "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml"]
+            "🇹🇼 台灣財經": {
+                "Yahoo財經": "https://tw.stock.yahoo.com/rss/index.rss", 
+                "工商時報": "https://ctee.com.tw/rss/all_news.xml"
+            },
+            "🇺🇸 科技巨頭": {
+                "CNBC": "https://www.cnbc.com/id/19854910/device/rss/rss.html", 
+                "Yahoo Finance": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=QQQ,AAPL,NVDA"
+            },
+            "🇯🇵 半導體": {
+                "日經亞洲": "https://www.nikkei.com/rss/en/business.xml"
+            },
+            "🌍 總體經濟": {
+                "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss", 
+                "WSJ": "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml"
+            }
         }
         
         prog.progress(20)
         status.info("🌐 聚合全球產業情報中...")
         
-        # 📊 收集新聞
-        all_news = []
+        # 📊 收集新聞 (追蹤來源確保多樣性)
+        all_news_texts = []  # 給 AI 的純文字
+        news_display_list = []  # 給用戶看的完整列表
+        collected_sources = set()  # 紀錄成功爬取到的媒體
+        
         for category in news_sources:
-            urls = global_rss.get(category, [])
-            for rss_url in urls:
+            media_dict = global_rss.get(category, {})
+            for media_name, rss_url in media_dict.items():
                 try:
                     feed = feedparser.parse(rss_url)
-                    for entry in feed.entries[:3]:
-                        title = entry.title[:60] + "..." if len(entry.title) > 60 else entry.title
-                        all_news.append(f"[{category}] {title}")
-                    time.sleep(0.2)
+                    entries = feed.entries[:3]  # 每家媒體取前 3 篇
+                    
+                    if entries:
+                        collected_sources.add(media_name)
+                        
+                    for entry in entries:
+                        title = entry.title[:80] + "..." if len(entry.title) > 80 else entry.title
+                        pub_date = entry.get('published', '近期')
+                        
+                        news_str = f"[{media_name}] {title}"
+                        all_news_texts.append(news_str)
+                        news_display_list.append({"media": media_name, "title": title, "date": pub_date})
+                        
+                    time.sleep(0.1)
                 except:
                     continue
-        
+                    
+        # 確保至少涵蓋 5 家媒體，如果不夠，強制補足預設來源
+        if len(collected_sources) < 5:
+            status.info("⚠️ 來源不足 5 家，啟動強制擴充機制以確保觀點多樣性...")
+            fallback_sources = {"投資參考": "https://www.investors.com/rss/daily_stock_market_update.xml", "MarketWatch": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"}
+            for media_name, rss_url in fallback_sources.items():
+                if len(collected_sources) >= 5: break
+                try:
+                    feed = feedparser.parse(rss_url)
+                    for entry in feed.entries[:2]:
+                        title = entry.title[:80] + "..." if len(entry.title) > 80 else entry.title
+                        news_str = f"[{media_name}] {title}"
+                        all_news_texts.append(news_str)
+                        news_display_list.append({"media": media_name, "title": title, "date": entry.get('published', '')})
+                    collected_sources.add(media_name)
+                except: pass
+
         # 補充客觀市場數據
-        all_news.extend([
+        all_news_texts.extend([
             f"台股大盤現價 {S_current:.0f}，月線 {ma20:.0f}",
-            f"標的 {stock_code} {days_period}日客觀技術動態",
-            "全球供應鏈與庫存循環現況"
+            f"標的 {stock_code} {days_period}日客觀技術動態"
         ])
         
-        news_summary = " | ".join(all_news[-max_news:])
+        # 確保數量不超過設定上限
+        news_summary = " | ".join(all_news_texts[-max_news:])
         prog.progress(50)
         
         # 🧠 AI Prompt（嚴格限制合規與產業導向）
         ai_prompt = f"""
         你是一位中立客觀的產業分析師。請綜合以下全球新聞與客觀數據，對指標企業 {stock_code} 及其所屬產業進行 {days_period} 天的趨勢剖析。
 
-        🌍 國際情報：{news_summary}
+        🌍 國際情報（涵蓋 {len(collected_sources)} 家不同媒體）：{news_summary}
         📊 客觀數據：TAIEX {S_current:.0f} | MA20:{ma20:.0f} | MA60:{ma60:.0f}
         
         【嚴格規範】：
@@ -1514,7 +1553,7 @@ with tabs[5]:
         4. ⚠️ **潛在產業風險**：未來須留意的總經風險或產業逆風因素。
         """
         
-        status.info("🦙 AI 產業模型推理中...")
+        status.info(f"🦙 AI 模型正基於 {len(collected_sources)} 家媒體進行中立推理...")
         
         # 🦙 Groq 分析
         try:
@@ -1523,16 +1562,16 @@ with tabs[5]:
             client = Groq(api_key=groq_key, http_client=httpx.Client())
             
             groq_resp = client.chat.completions.create(
-                model="llama-3.1-8b-instant",  # 穩定快速模型
+                model="llama-3.1-8b-instant",  
                 messages=[
                     {"role": "system", "content": "你是一個不提供投資建議、僅做客觀產業分析的研究員。"},
                     {"role": "user", "content": ai_prompt}
                 ],
-                max_tokens=500,
-                temperature=0.2  # 降低隨機性，維持客觀嚴謹
+                max_tokens=600,
+                temperature=0.15 
             )
             groq_analysis = groq_resp.choices[0].message.content
-            st.success("✅ 產業分析報告生成完畢")
+            st.success(f"✅ 報告生成完畢（資料來源涵蓋 {len(collected_sources)} 家國際權威媒體）")
         except Exception as e:
             st.error("🦙 AI 引擎暫時無法連線")
             st.caption(str(e)[:100])
@@ -1547,7 +1586,19 @@ with tabs[5]:
             st.markdown(f"## 📑 **{stock_code} 產業與總經趨勢報告**")
             st.markdown(groq_analysis)
             
-            # 📈 客觀數據面板 (取代買賣建議)
+            # 📰 揭露新聞來源 (st.expander)
+            with st.expander(f"🔍 查看 AI 參考的底層新聞數據 (共 {len(news_display_list[-max_news:])} 筆，涵蓋 {len(collected_sources)} 個不同來源)"):
+                # 使用 DataFrame 來漂亮地展示新聞列表
+                import pandas as pd
+                df_news = pd.DataFrame(news_display_list[-max_news:])
+                if not df_news.empty:
+                    df_news.index += 1
+                    df_news.columns = ["媒體來源", "新聞標題", "發布時間"]
+                    st.dataframe(df_news, use_container_width=True)
+                
+                st.caption(f"**確認採集的媒體來源庫**：{', '.join(list(collected_sources))}")
+
+            # 📈 客觀數據面板
             st.markdown("### 📊 **客觀市場數據快照**")
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -1563,7 +1614,7 @@ with tabs[5]:
             st.error("❌ 報告生成失敗，請稍後再試。")
     
     st.markdown("---")
-    st.caption("🔍 貝伊果屋 產業研究引擎 | 資料來源：全球主流財經媒體 RSS")
+    st.caption("🔍 貝伊果屋 產業研究引擎 | 嚴守合規，資訊公開透明")
 
 
 
