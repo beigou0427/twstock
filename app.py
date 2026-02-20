@@ -1445,7 +1445,6 @@ FinMind: {'✅ 就緒' if FINMIND_TEST_TOKEN != 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI
         st.stop()
     
     # 更新全域 Token（暫時）
-    global FINMIND_TOKEN
     FINMIND_TOKEN = FINMIND_TEST_TOKEN
     
     # 輸入
