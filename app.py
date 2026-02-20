@@ -1418,150 +1418,158 @@ with tabs[4]:
 # --------------------------
 # Tab 5
 # --------------------------
+# ===== Tab 5: AI 智慧分析（完整可直接貼入） =====
 with tabs[5]:
-    st.markdown("### 🏭 貝伊果屋 • 終極全能戰情室 🚀")
-    st.caption("⚡ Groq + 🤖 Gemini + 🤗 HF | 全球 20+ 來源 | 產業自動分析")
-
-    # ✅ 金鑰（你的 token）
-    FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0wNSAxODo1ODo1MiIsInVzZXJfaWQiOiJiYWdlbDA0MjciLCJpcCI6IjEuMTcyLjEwOC42OSIsImV4cCI6MTc3MDg5MzkzMn0.cojhPC-1LBEFWqG-eakETyteDdeHt5Cqx-hJ9OIK9k0"
-    GROQ_KEY = "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"
-    GEMINI_KEY = "AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA"
-    HF_TOKEN = "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"
-
-    col1, col2 = st.columns([1.5, 1])
-    stock_input = col1.text_input("股票代號", "2330")
-    days = col2.selectbox("天數", [3, 7, 14], index=1)
-
-    # ✅ 產業分類（快取）
-    @st.cache_data(ttl=86400)
-    def get_auto_sector(code):
+    st.markdown("### 🤖 AI 智慧分析")
+    st.caption(f"最新更新：{latest_date.strftime('%Y-%m-%d')} | v6.0 🚀")
+    
+    # Sidebar 控制
+    with st.sidebar:
+        st.header("AI 設定")
+        enable_ai = st.toggle("啟用 AI 分析", value=True)
+        model_choice = st.selectbox("優先模型", ["Groq (最快)", "Gemini", "兩者"], index=0)
+    
+    if not enable_ai:
+        st.info("👋 AI 已關閉，使用手動分析")
+        st.stop()
+    
+    # 輸入
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        stock_code = st.text_input("📈 股票", value="2330", max_chars=10)
+    with col2:
+        analysis_days = st.selectbox("⏰ 天數", [3, 7, 14, 30], index=1)
+    with col3:
+        max_news = st.slider("📰 新聞筆數", 10, 50, 25)
+    
+    # 新聞收集（容錯）
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    all_news = []
+    progress_bar.progress(20)
+    status_text.text("📡 收集台股新聞...")
+    
+    try:
+        # FinMind 新聞
+        taiwan_news = get_real_news(FINMIND_TOKEN)
+        if not taiwan_news.empty:
+            for _, row in taiwan_news.head(5).iterrows():
+                all_news.append(f"[{row.get('date', 'N/A')}] {row.get('title', '')}")
+    except:
+        pass
+    
+    progress_bar.progress(50)
+    status_text.text("🌐 RSS 即時新聞...")
+    
+    # RSS 來源
+    rss_feeds = {
+        "Yahoo 台股": "https://tw.stock.yahoo.com/rss/index.rss",
+        "CNBC 財經": "https://www.cnbc.com/id/19854910/device/rss/rss.html"
+    }
+    
+    for name, url in rss_feeds.items():
         try:
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            df = dl.taiwan_stock_info()
-            row = df[df['stock_id'] == code]
-            if not row.empty:
-                return row.iloc[0]['stock_name'], row.iloc[0]['industry_category'], df[df['industry_category'] == row.iloc[0]['industry_category']]['stock_id'].head(3).tolist()
-        except: pass
-        return code, "自選", [code]
-
-    target = stock_input.split()[0]
-    name, sector, peers = get_auto_sector(target)
-
-    # 🚀 按鈕 + 完整防卡保護
-    if st.button("🚀 啟動全方位分析", type="primary"):
-        progress = st.progress(0)
-        status = st.empty()
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:3]:
+                all_news.append(f"{entry.get('published', 'N/A')} | {entry.title}")
+            time.sleep(0.3)
+        except:
+            pass
+    
+    news_text = " ".join(all_news[-max_news:])
+    progress_bar.progress(80)
+    status_text.text(f"✅ 收集 {len(all_news)} 筆新聞")
+    
+    # AI 分析
+    if news_text:
+        st.caption(f"📊 分析文字長度：{len(news_text)} 字")
         
-        try:
-            # ✅ 步驟1：FinMind 健康檢查
-            status.info("🔍 檢查 FinMind...")
-            progress.progress(10)
-            import requests
-            if requests.get("https://api.finmindtrade.com.tw", timeout=5).status_code != 200:
-                st.error("❌ FinMind 服務異常")
-                st.stop()
-            
-            # ✅ 步驟2：基本資料（超時10秒）
-            status.info("📊 載入台指...")
-            progress.progress(30)
-            dl = DataLoader()
-            dl.login_by_token(api_token=FINMIND_TOKEN)
-            index_df = dl.taiwan_stock_daily('TAIEX', start_date=(date.today() - timedelta(days=100)).strftime('%Y-%m-%d'))
-            S_current = float(index_df['close'].iloc[-1])
-            latest_date = pd.to_datetime(index_df['date'].iloc[-1])
-            
-            status.success(f"✅ {name} ({sector}) | 台指：{S_current:,.0f}")
-            progress.progress(50)
-            
-        except Exception as e:
-            st.error(f"❌ 連線失敗：{e}")
-            st.info("💡 使用備用資料...")
-            S_current, latest_date = 23000, pd.to_datetime(date.today())
-            progress.progress(50)
-
-        # ✅ 步驟3：新聞掃描（RSS + Google）
-        status.info("📰 掃描新聞...")
-        all_news = []
-        search_targets = peers + [name]
-        if len(stock_input.split()) > 1: 
-            search_targets.append(stock_input.split()[1])
-            
-        import urllib.parse
-        import feedparser
-        import time
+        prompt = f"""
+        台股 {stock_code} {analysis_days}天智慧分析：
+        - 最新新聞：{news_text[:1200]}
+        - 大盤：TAIEX {S_current:.0f} (MA20:{ma20:.0f})
+        - 給初學者建議，包含：
+          1. 短期走勢預測 (看多/看空/震盪)
+          2. 適合策略 (持有/賣出/加碼)
+          3. 風險等級 (低/中/高)
+          4. 關鍵支撐壓力位
+        回覆用繁體中文，簡潔有力！
+        """
         
-        for i, t in enumerate(search_targets[:5]):  # 限制5個
-            q = urllib.parse.quote(t)
-            rss_urls = [
-                f"https://news.google.com/rss/search?q={q}+股票&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
-                f"https://tw.stock.yahoo.com/rss2.0/search?q={q}&region=TW"
-            ]
-            for rss in rss_urls:
-                try:
-                    feed = feedparser.parse(rss)
-                    for entry in feed.entries[:3]:
-                        all_news.append(f"[{t}] {entry.title}")
-                    time.sleep(0.1)  # 防風控
-                except: pass
-            progress.progress(50 + i * 10)
+        # LLM 容器
+        col_groq, col_gemini = st.columns(2)
         
-        status.success(f"✅ 收集 {len(all_news)} 篇新聞")
-        progress.progress(80)
-
-        # ✅ 步驟4：AI 分析（並行）
-        news_text = "\n".join(all_news[:25])
         llm_results = []
         
-        col_llm1, col_llm2 = st.columns(2)
+        # Groq
+        with col_groq:
+            if model_choice in ["Groq (最快)", "兩者"] and "GROQ_KEY" in st.secrets:
+                with st.spinner("Groq 思考中..."):
+                    try:
+                        from groq import Groq
+                        client = Groq(api_key=st.secrets["GROQ_KEY"])
+                        resp = client.chat.completions.create(
+                            model="llama-3.1-8b-instant",
+                            messages=[{"role": "user", "content": prompt}],
+                            max_tokens=400,
+                            temperature=0.7
+                        )
+                        groq_analysis = resp.choices[0].message.content
+                        llm_results.append(("🦙 Groq", groq_analysis))
+                        st.success("✅ Groq 完成")
+                    except Exception as e:
+                        st.error(f"Groq: {str(e)[:100]}")
         
-        # Groq（最快）
-        with col_llm1:
-            if GROQ_KEY:
-                try:
-                    from groq import Groq
-                    client = Groq(api_key=GROQ_KEY)
-                    resp = client.chat.completions.create(
-                        model="llama-3.1-8b-instant",
-                        messages=[{"role": "user", "content": f"📈 {name}({sector}) 最新動態分析（{days}天）：\n{news_text}"}],
-                        max_tokens=500
-                    )
-                    llm_results.append(("⚡ Groq", resp.choices[0].message.content))
-                except Exception as e:
-                    st.caption(f"Groq: {e}")
-
-        # Gemini（穩定）
-        with col_llm2:
-            if GEMINI_KEY:
-                try:
-                    import google.generativeai as genai
-                    genai.configure(api_key=GEMINI_KEY)
-                    model = genai.GenerativeModel('gemini-pro')
-                    resp = model.generate_content(f"📊 {name}({sector}) 財報/新聞分析：\n{news_text}")
-                    llm_results.append(("🤖 Gemini", resp.text))
-                except Exception as e:
-                    st.caption(f"Gemini: {e}")
-
-        progress.progress(100)
-        status.empty()
-        st.balloons()
-
-        # ✅ 結果展示
+        # Gemini
+        with col_gemini:
+            if model_choice in ["Gemini", "兩者"] and "GEMINI_KEY" in st.secrets:
+                with st.spinner("Gemini 生成中..."):
+                    try:
+                        import google.generativeai as genai
+                        genai.configure(api_key=st.secrets["GEMINI_KEY"])
+                        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+                        response = model.generate_content(prompt)
+                        gemini_analysis = response.text
+                        llm_results.append(("🔮 Gemini", gemini_analysis))
+                        st.success("✅ Gemini 完成")
+                    except Exception as e:
+                        st.error(f"Gemini: {str(e)[:100]}")
+        
+        progress_bar.progress(100)
+        
+        # 顯示結果
         if llm_results:
-            st.markdown("### 🎯 **AI 財經報告**")
-            ai_tabs = st.tabs([name for name, _ in llm_results])
-            for i, tab in enumerate(ai_tabs):
-                with tab:
-                    st.markdown(llm_results[i][1])
+            st.markdown("---")
+            st.markdown("## 🎯 **AI 綜合分析**")
+            for name, analysis in llm_results:
+                with st.expander(name, expanded=True):
+                    st.markdown(analysis)
+            
+            # 智慧分數（備用）
+            st.markdown("### 📊 技術指標分數")
+            total_score, details = calculate_advanced_factors(S_current, ma20, ma60, df_latest, FINMIND_TOKEN)
+            col_score, col_details = st.columns(2)
+            with col_score:
+                st.metric("市場熱度", f"{total_score:.0f}/100", delta=f"{total_score-50:+.0f}")
+            with col_details:
+                for detail in details:
+                    st.caption(f"• {detail}")
         else:
-            st.warning("🤖 AI 全休假中...")
+            st.warning("🤖 **AI 全休假中**")
+            st.info("""
+            **快速設定**：
+            1. Groq: [console.groq.com/keys](https://console.groq.com/keys) → GROQ_KEY
+            2. Gemini: [aistudio.google.com](https://aistudio.google.com) → GEMINI_KEY
+            3. Secrets → 重啟 App
+            """)
+    
+    else:
+        st.error("❌ 無新聞資料，無法分析")
+    
+    st.divider()
+    st.markdown("💡 *免費額度足夠每日分析 100+ 次*")
 
-        # ✅ 新聞列表
-        with st.expander(f"📋 {len(all_news)} 篇來源新聞"):
-            for news in all_news[-15:]:
-                st.caption(news)
-
-    st.caption("✅ 防卡死 | 超時保護 | 備用資料 | 2026.2.20")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
