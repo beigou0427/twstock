@@ -248,58 +248,100 @@ with col4:
 st.markdown("---")
 
 # =========================================
-# 合規聲明與跳轉
+# 合規聲明與新手導航 (優化版 UI)
 # =========================================
 if not st.session_state.get('disclaimer_accepted', False):
-    st.error("🚨 **股票完全新手必讀！**")
+    
+    # 頂部警告區塊 (使用自訂 CSS 增加視覺衝擊)
     st.markdown("""
-    **先搞懂股票基礎：**
-    - 💹 **股票** = 買公司股份，股價漲才賺錢
-    - 📈 **ETF** = 一籃子優質股票，新手首選  
-    - 💳 **定期定額** = 每月固定買，避開追高殺低
-    """)
-    st.markdown("---")
-    st.markdown("## 🎯 **貝伊果屋 6 大功能**")
-    st.markdown("""
-    **🌱 新手起手（先練這3個）**
-    - **Tab0 定投計畫**：設定每月自動買ETF，複利致富
-    - **Tab1 智能情報**：看懂台股熱門 + 大盤趨勢  
-    - **Tab4 戰情室**：追蹤市場熱門題材（AI、半導體）
+    <div style='background-color: #3b1c1c; border-left: 6px solid #ff4b4b; padding: 20px; border-radius: 8px; margin-bottom: 25px;'>
+        <h2 style='color: #ff4b4b; margin-top: 0;'>🚨 股票完全新手必讀！</h2>
+        <p style='color: #f8f9fa; font-size: 16px; margin-bottom: 10px;'>進入市場前，請務必搞懂以下 3 個核心基礎：</p>
+        <ul style='color: #e0e0e0; font-size: 15px; line-height: 1.6;'>
+            <li>💹 <b>股票</b>：買公司股份，必須承擔公司營運風險與股價波動</li>
+            <li>📈 <b>ETF</b>：買進一籃子優質股票，分散風險，是新手最穩健的首選</li>
+            <li>💳 <b>定期定額</b>：每個月固定金額買入，完美避開追高殺低的人性弱點</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
     
-    **🚀 中級看多（看好中長期）**
-    - **Tab2 CALL獵人**：找**半年以上到期CALL**（低成本槓桿看多個股)
+    # 功能導覽區塊
+    st.markdown("### 🎯 **貝伊果屋 6 大核心引擎**")
     
-    **🧠 高手專用（會寫策略）**
-    - **Tab3 回測系統**：驗證策略過去10年績效
+    # 使用欄位來排版功能，讓畫面更緊湊專業
+    col_feat1, col_feat2 = st.columns(2)
     
-    **🤖 產業研究（最新功能）**
-    - **Tab5 AI 產業鏈**：輸入代碼，自動推導上下游與全球新聞分析
-    """)
-    st.markdown("---")
+    with col_feat1:
+        st.info("🌱 **新手起手式（建議優先使用）**")
+        st.markdown("""
+        * **Tab 0 | 定投計畫**：設定每月自動買 ETF，靠複利致富
+        * **Tab 1 | 智能情報**：秒懂台股資金流向與大盤趨勢  
+        * **Tab 4 | 戰情室**：追蹤市場熱門題材（如 AI、半導體）
+        """)
+        
+    with col_feat2:
+        st.warning("🚀 **進階兵器庫（熟悉後再挑戰）**")
+        st.markdown("""
+        * **Tab 5 | AI 產業鏈**：輸入代碼，自動推導上下游與全球情報
+        * **Tab 2 | CALL獵人**：篩選半年以上到期的低成本槓桿選擇權
+        * **Tab 3 | 回測系統**：一鍵驗證投資策略過去 10 年的真實績效
+        """)
     
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button("✅ **我懂基礎，開始使用**", type="primary", use_container_width=True):
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 雙主打按鈕區 (置中對齊，放大視覺)
+    st.markdown("<h4 style='text-align: center; color: #bbb;'>請選擇你要進入的模式：</h4>", unsafe_allow_html=True)
+    
+    # 建立三個欄位，把按鈕擠在中間兩個，產生置中且不擁擠的效果
+    _, btn_col1, btn_col2, _ = st.columns([1, 2, 2, 1])
+    
+    with btn_col1:
+        if st.button("✅ **我懂基礎，進入主系統**", type="primary", use_container_width=True):
             st.session_state.disclaimer_accepted = True
             st.balloons()
             st.rerun()
             
-    with col_btn2:
+    with btn_col2:
         if st.button("🤖 **直接體驗 AI 產業分析**", use_container_width=True):
             st.session_state.disclaimer_accepted = True
             st.query_params["jump"] = "5"
             st.balloons()
             st.rerun()
             
-    st.markdown("---")
-    st.markdown("### 📚 **零基礎必備書籍**")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="方案一", use_container_width=True)
-        st.markdown("[🛒 購買方案一](https://s.shopee.tw/5AmrxVrig8)")
-    with col2:
-        st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="方案二", use_container_width=True)
-        st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
+    st.markdown("<hr style='margin: 40px 0;'>", unsafe_allow_html=True)
+    
+    # 書籍推薦區塊 (優化排版與陰影)
+    st.markdown("### 📚 **零基礎投資必備書單**")
+    st.caption("如果你對基礎知識還不熟悉，強烈建議先閱讀這兩本經典著作建立正確投資觀念。")
+    
+    book_col1, book_col2, _ = st.columns([2, 2, 1]) # 留白讓排版更好看
+    
+    with book_col1:
+        st.markdown("""
+        <div style='background-color: #1e1e1e; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center;'>
+            <img src='https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp' width='180' style='border-radius: 5px; margin-bottom: 10px;'>
+            <br>
+            <a href='https://s.shopee.tw/5AmrxVrig8' target='_blank' style='text-decoration: none;'>
+                <button style='background-color: #ff6b6b; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold;'>
+                    🛒 購買《持續買進》
+                </button>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with book_col2:
+        st.markdown("""
+        <div style='background-color: #1e1e1e; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center;'>
+            <img src='https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp' width='180' style='border-radius: 5px; margin-bottom: 10px;'>
+            <br>
+            <a href='https://s.shopee.tw/6KypLiCjuy' target='_blank' style='text-decoration: none;'>
+                <button style='background-color: #4ECDC4; color: black; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold;'>
+                    🛒 購買《長期買進》
+                </button>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+    
     st.stop()
 
 # =========================================
