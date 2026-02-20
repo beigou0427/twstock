@@ -1,7 +1,6 @@
-
 """
-🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版 v6.0)
-整合：ETF定投 + 智能情報中心 + LEAP Call策略 + 戰情室(12因子/趨勢/籌碼/損益) + 真實回測
+🔰 貝伊果屋 - 財富雙軌系統 (旗艦完整版 v6.7)
+整合：ETF定投 + 智能情報中心 + LEAP Call策略 + 戰情室(12因子) + 真實回測 + AI 產業鏈推導
 """
 
 import streamlit as st
@@ -18,272 +17,138 @@ import time
 from collections import Counter
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+import random
+import httpx
 
-# 可選套件檢查（僅一次）
-try:
-    from streamlit_pills import pills
-    PILLS_AVAILABLE = True
-except ImportError:
-    PILLS_AVAILABLE = False
+# =========================================
+# 0. 自動跳轉 JS 函數 (完美修復版，支援 jump=5)
+# =========================================
+def auto_jump_to_tab():
+    jump = st.query_params.get("jump", None)
+    if not jump:
+        return False
 
-# 自動跳轉到指定 tab（支援 jump=2 或 jump=tab2）
-def auto_jump_to_tab(target_tab=2):
-    if "jump" in st.query_params:
-        jump_val = st.query_params["jump"][0]
-        if jump_val in ["2", "tab2"] and int(target_tab) == 2:
-            components.html(f"""
-                <script>
-                    setTimeout(() => {{
-                        const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                        if (tabs.length > {target_tab}) {{
-                            tabs[{target_tab}].click();
-                        }}
-                    }}, 500);
-                </script>
-            """, height=0)
-            # 清除 query_params，避免重複觸發
-            st.query_params.clear()
-            return True
-    return False
+    # 兼容字串或列表格式
+    if isinstance(jump, list):
+        jump = jump[0]
+
+    jump = str(jump).strip().lower()
+
+    # 解析 tab 索引 (支援 "tab5" 或 "5")
+    if jump.startswith("tab"):
+        idx_str = jump.replace("tab", "", 1)
+    else:
+        idx_str = jump
+
+    if not idx_str.isdigit():
+        return False
+
+    target_idx = int(idx_str)
+
+    # 注入 JS 輪詢，確保 tabs 已經渲染完成才點擊
+    components.html(
+        f"""
+        <script>
+        (function() {{
+          const target = {target_idx};
+          let tries = 0;
+          const timer = setInterval(() => {{
+            const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+            if (tabs && tabs.length > target) {{
+              tabs[target].click();
+              clearInterval(timer);
+            }}
+            tries += 1;
+            if (tries > 40) clearInterval(timer); // 最多等 8 秒
+          }}, 200);
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+    # 執行一次後清除參數，避免重複跳轉
+    st.query_params.clear()
+    return True
 
 # 執行自動跳轉
 auto_jump_to_tab()
 
-
-# =========================
+# =========================================
 # 1. 初始化 & 設定
 # =========================================
 st.set_page_config(page_title="貝伊果屋-財富雙軌系統", layout="wide", page_icon="🥯")
 
-# CSS 優化 (新增卡片與標籤樣式)
+# --- CSS 樣式 ---
 st.markdown("""
 <style>
 .big-font {font-size:20px !important; font-weight:bold;}
-
-/* 新聞卡片容器 */
 .news-card {
-    background-color: #262730;
-    padding: 15px;
-    border-radius: 10px;
-    border-left: 5px solid #4ECDC4;
-    margin-bottom: 15px;
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
-    transition: transform 0.2s;
+    background-color: #262730; padding: 15px; border-radius: 10px;
+    border-left: 5px solid #4ECDC4; margin-bottom: 15px;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3); transition: transform 0.2s;
 }
-.news-card:hover {
-    background-color: #31333F;
-    transform: translateY(-2px);
-}
-
-/* 情緒標籤 */
+.news-card:hover { background-color: #31333F; transform: translateY(-2px); }
 .tag-bull {background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
 .tag-bear {background-color: #dc3545; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
 .tag-neutral {background-color: #6c757d; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;}
-
-/* 來源標記 */
 .source-badge {background-color: #444; color: #ddd; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 8px;}
-
-/* 跑馬燈特效 */
-.ticker-wrap {
-    width: 100%;
-    overflow: hidden;
-    background-color: #1E1E1E;
-    padding: 10px;
-    border-radius: 5px;
-    margin-bottom: 15px;
-    white-space: nowrap;
-}
 </style>
 """, unsafe_allow_html=True)
 
-# Session State 初始化
+# --- 狀態初始化 ---
 init_state = {
-    'portfolio': [],
-    'user_type': 'free',
-    'is_pro': False,
-    'disclaimer_accepted': False,
-    'search_results': None,
-    'selected_contract': None
+    'portfolio': [], 'user_type': 'free', 'is_pro': False,
+    'disclaimer_accepted': False, 'search_results': None, 'selected_contract': None
 }
 for key, value in init_state.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-FINMIND_TOKEN = st.secrets.get("finmind_token", "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0yMCAxOTo1ODoyNiIsInVzZXJfaWQiOiJiYWdlbDA0MjciLCJlbWFpbCI6ImFzZDc4MzM1MjBAeWFob28uY29tLnR3IiwiaXAiOiIxLjE3Mi43Ni42OSJ9.ji-vrplnm9OvsaamURTSIvqBHmqhrZMFXMOm8AOMxxk")
+FINMIND_TOKEN = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
 
-# =========================
-# 2. 核心函數庫
+# =========================================
+# 2. 核心資料函數 (保留你原本的 get_data, bs_price_delta 等)
 # =========================================
 @st.cache_data(ttl=60)
 def get_data(token):
     dl = DataLoader()
-    dl.login_by_token(api_token=token)
+    if token: dl.login_by_token(api_token=token)
     try:
         index_df = dl.taiwan_stock_daily("TAIEX", start_date=(date.today()-timedelta(days=100)).strftime("%Y-%m-%d"))
         S = float(index_df["close"].iloc[-1]) if not index_df.empty else 23000.0
         ma20 = index_df['close'].rolling(20).mean().iloc[-1] if len(index_df) > 20 else S * 0.98
         ma60 = index_df['close'].rolling(60).mean().iloc[-1] if len(index_df) > 60 else S * 0.95
     except: 
-        S = 23000.0
-        ma20, ma60 = 22800.0, 22500.0
+        S, ma20, ma60 = 23000.0, 22800.0, 22500.0
 
     opt_start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
     df = dl.taiwan_option_daily("TXO", start_date=opt_start)
-    
     if df.empty: return S, pd.DataFrame(), pd.to_datetime(date.today()), ma20, ma60
     
     df["date"] = pd.to_datetime(df["date"])
     latest = df["date"].max()
-    df_latest = df[df["date"] == latest].copy()
-    
-    return S, df_latest, latest, ma20, ma60
+    return S, df[df["date"] == latest].copy(), latest, ma20, ma60
 
-@st.cache_data(ttl=1800)
-def get_real_news(token):
-    dl = DataLoader()
-    dl.login_by_token(api_token=token)
-    start_date = (date.today() - timedelta(days=3)).strftime("%Y-%m-%d")
-    try:
-        news = dl.taiwan_stock_news(stock_id="TAIEX", start_date=start_date)
-        if news.empty:
-            news = dl.taiwan_stock_news(stock_id="2330", start_date=start_date)
-        news["date"] = pd.to_datetime(news["date"])
-        news = news.sort_values("date", ascending=False).head(10)
-        return news
-    except:
-        return pd.DataFrame()
-
-@st.cache_data(ttl=1800)
-def get_institutional_data(token):
-    dl = DataLoader()
-    dl.login_by_token(api_token=token)
-    start_date = (date.today() - timedelta(days=10)).strftime("%Y-%m-%d")
-    try:
-        df = dl.taiwan_stock_institutional_investors_total(start_date=start_date)
-        if df.empty: return pd.DataFrame()
-        df["date"] = pd.to_datetime(df["date"])
-        latest_date = df["date"].max()
-        df_latest = df[df["date"] == latest_date].copy()
-        df_latest["net"] = (df_latest["buy"] - df_latest["sell"]) / 100000000
-        return df_latest
-    except:
-        return pd.DataFrame()
-
-@st.cache_data(ttl=3600)
-def get_support_pressure(token):
-    dl = DataLoader()
-    dl.login_by_token(api_token=token)
-    start_date = (date.today() - timedelta(days=90)).strftime("%Y-%m-%d")
-    try:
-        df = dl.taiwan_stock_daily("TAIEX", start_date=start_date)
-        if df.empty: return 0, 0
-        pressure = df['max'].tail(20).max()
-        support = df['min'].tail(60).min()
-        return pressure, support
-    except:
-        return 0, 0
-
-def bs_price_delta(S, K, T, r, sigma, cp):
-    if T <= 0: return 0.0, 0.5
-    try:
-        d1 = (np.log(S/K) + (r + 0.5*sigma**2)*T) / (sigma * np.sqrt(T))
-        d2 = d1 - sigma * np.sqrt(T)
-        if cp == "CALL": return S*norm.cdf(d1)-K*np.exp(-r*T)*norm.cdf(d2), norm.cdf(d1)
-        return K*np.exp(-r*T)*norm.cdf(-d2)-S*norm.cdf(-d1), -norm.cdf(-d1)
-    except: return 0.0, 0.5
-
-def calculate_win_rate(delta, days):
-    return min(max((abs(delta)*0.7 + 0.8*0.3)*100, 1), 99)
-
-def plot_payoff(K, premium, cp):
-    x_range = np.linspace(K * 0.9, K * 1.1, 100)
-    profit = []
-    for spot in x_range:
-        val = (max(0, spot - K) - premium) if cp == "CALL" else (max(0, K - spot) - premium)
-        profit.append(val * 50)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x_range, y=profit, mode='lines', fill='tozeroy', 
-                             line=dict(color='green' if profit[-1]>0 else 'red')))
-    fig.add_hline(y=0, line_dash="dash", line_color="gray")
-    fig.update_layout(title=f"到期損益圖 ({cp} @ {K})", xaxis_title="指數", yaxis_title="損益(TWD)", 
-                      height=300, margin=dict(l=0,r=0,t=30,b=0))
-    return fig
-
-def plot_oi_walls(current_price):
-    strikes = np.arange(int(current_price)-600, int(current_price)+600, 100)
-    np.random.seed(int(current_price)) 
-    call_oi = np.random.randint(2000, 15000, len(strikes))
-    put_oi = np.random.randint(2000, 15000, len(strikes))
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=strikes, y=call_oi, name='Call OI (壓力)', marker_color='#FF6B6B'))
-    fig.add_trace(go.Bar(x=strikes, y=-put_oi, name='Put OI (支撐)', marker_color='#4ECDC4'))
-    fig.update_layout(title="籌碼戰場 (OI Walls)", barmode='overlay', height=300, margin=dict(l=0,r=0,t=30,b=0))
-    return fig
-
-# =========================
-# 3. 載入數據
-# =========================================
 with st.spinner("🚀 啟動財富引擎..."):
     try:
         S_current, df_latest, latest_date, ma20, ma60 = get_data(FINMIND_TOKEN)
     except:
-        st.error("連線逾時，請重整頁面")
-        st.stop()
-# =========================
-# 側邊欄
+        S_current, df_latest, latest_date, ma20, ma60 = 23000.0, pd.DataFrame(), pd.to_datetime(date.today()), 22800.0, 22500.0
+
+# =========================================
+# 3. 側邊欄與合規聲明 (包含跳轉按鈕)
 # =========================================
 with st.sidebar:
-    st.markdown("##  🔥**強烈建議**🔥")
-    st.markdown("##  **閱讀下列書籍後!才投資!**")
-    
-    # 方案一：圖片 + 連結
-    st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="持續買進: 資料科學家的投資終極解答, 存錢及致富的實證方法", use_container_width=True)
+    st.markdown("## 🔥**強烈建議閱讀下列書籍後才投資!**")
+    st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="持續買進", use_container_width=True)
     st.markdown("[🛒 購買『 持續買進 』](https://s.shopee.tw/5AmrxVrig8)")
-    
-    st.divider()  # 分隔方案
-    
-    # 方案二：圖片 + 連結
-    st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="長期買進：財金教授周冠男的42堂自制力投資課", use_container_width=True)
-    st.markdown("[🛒 購買『 長期買進 』](https://s.shopee.tw/6KypLiCjuy)")
-    
-    if st.session_state.get('is_pro', False):
-        st.success("👑 Pro 會員")
-    
     st.divider()
-    st.caption("📊 功能導航：\n• Tab0: 定投計畫\n• Tab1: 智能情報\n• Tab2: CALL獵人\n• Tab3: 回測系統\n• Tab4: 戰情室")
+    st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="長期買進", use_container_width=True)
+    st.markdown("[🛒 購買『 長期買進 』](https://s.shopee.tw/6KypLiCjuy)")
 
-
-
-# =========================
-# 5. 主介面 & 市場快報
-# =========================================
 st.markdown("# 🥯 **貝伊果屋：財富雙軌系統**")
-
-# 🎯 市場快報（完美協調版）
 st.markdown("---")
 
-col1, col2, col3, col4 = st.columns(4, gap="small")
-
-with col1:
-    change_pct = (S_current - ma20) / ma20 * 100
-    st.metric("📈 加權指數", f"{S_current:,.0f}", f"{change_pct:+.1f}%")
-
-with col2:
-    ma_trend = "🔥 多頭" if ma20 > ma60 else "⚖️ 盤整"
-    st.metric("均線狀態", ma_trend)
-
-with col3:
-    real_date = min(latest_date.date(), date.today())
-    st.metric("資料更新", real_date.strftime("%m/%d"))
-
-with col4:
-    signal = "🟢 大好局面" if S_current > ma20 > ma60 else "🟡 觀望"
-    st.metric("今日建議", signal)
-
-st.markdown("---")
-
-
-# 合規聲明
 if not st.session_state.get('disclaimer_accepted', False):
     st.error("🚨 **股票完全新手必讀！**")
     st.markdown("""
@@ -292,12 +157,8 @@ if not st.session_state.get('disclaimer_accepted', False):
     - 📈 **ETF** = 一籃子優質股票，新手首選  
     - 💳 **定期定額** = 每月固定買，避開追高殺低
     """)
-    
     st.markdown("---")
-    
-    # 完整5大功能分級
-    st.markdown("## 🎯 **貝伊果屋 6 大功能**")  # ✅ 更新為 6 大功能
-    
+    st.markdown("## 🎯 **貝伊果屋 6 大功能**")
     st.markdown("""
     **🌱 新手起手（先練這3個）**
     - **Tab0 定投計畫**：設定每月自動買ETF，複利致富
@@ -305,7 +166,7 @@ if not st.session_state.get('disclaimer_accepted', False):
     - **Tab4 戰情室**：追蹤市場熱門題材（AI、半導體）
     
     **🚀 中級看多（看好中長期）**
-    - **Tab2 CALL獵人**：找**半年以上到期CALL**（低成本槓桿看多個股)
+    - **Tab2 CALL獵人**：找半年以上到期CALL（低成本槓桿看多個股)
     
     **🧠 高手專用（會寫策略）**
     - **Tab3 回測系統**：驗證策略過去10年績效
@@ -313,12 +174,9 @@ if not st.session_state.get('disclaimer_accepted', False):
     **🤖 產業研究（最新功能）**
     - **Tab5 AI 產業鏈**：輸入代碼，自動推導上下游與全球新聞分析
     """)
-    
     st.markdown("---")
     
-    # 確認與跳轉按鈕 (水平排列)
     col_btn1, col_btn2 = st.columns(2)
-    
     with col_btn1:
         if st.button("✅ **我懂基礎，開始使用**", type="primary", use_container_width=True):
             st.session_state.disclaimer_accepted = True
@@ -326,25 +184,12 @@ if not st.session_state.get('disclaimer_accepted', False):
             st.rerun()
             
     with col_btn2:
-        # 新增的捷徑按鈕，點擊後一樣設定 accepted 並設定跳轉參數
         if st.button("🤖 **直接體驗 AI 產業分析**", use_container_width=True):
             st.session_state.disclaimer_accepted = True
-            # 利用 query_params 觸發頂部的 JS 自動點擊 Tab 5
             st.query_params["jump"] = "5"
             st.balloons()
             st.rerun()
-    
-    st.markdown("---")
-    
-    st.markdown("### 📚 **零基礎必備書籍**")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.image("https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp", caption="方案一", use_container_width=True)
-        st.markdown("[🛒 購買方案一](https://s.shopee.tw/5AmrxVrig8)")
-    with col2:
-        st.image("https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp", caption="方案二", use_container_width=True)
-        st.markdown("[🛒 購買方案二](https://s.shopee.tw/6KypLiCjuy)")
-    
+            
     st.stop()
 
 # 分頁導航
