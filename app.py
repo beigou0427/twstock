@@ -284,7 +284,6 @@ st.markdown("---")
 
 
 # 合規聲明
-# 合規聲明（零基礎新手版，CALL獵人改半年以上）
 if not st.session_state.get('disclaimer_accepted', False):
     st.error("🚨 **股票完全新手必讀！**")
     st.markdown("""
@@ -297,7 +296,7 @@ if not st.session_state.get('disclaimer_accepted', False):
     st.markdown("---")
     
     # 完整5大功能分級
-    st.markdown("## 🎯 **貝伊果屋5大功能**")
+    st.markdown("## 🎯 **貝伊果屋 6 大功能**")  # ✅ 更新為 6 大功能
     
     st.markdown("""
     **🌱 新手起手（先練這3個）**
@@ -310,15 +309,30 @@ if not st.session_state.get('disclaimer_accepted', False):
     
     **🧠 高手專用（會寫策略）**
     - **Tab3 回測系統**：驗證策略過去10年績效
+    
+    **🤖 產業研究（最新功能）**
+    - **Tab5 AI 產業鏈**：輸入代碼，自動推導上下游與全球新聞分析
     """)
     
     st.markdown("---")
     
-    # 確認按鈕
-    if st.button("✅ **我懂基礎，開始使用**", type="primary", use_container_width=True):
-        st.session_state.disclaimer_accepted = True
-        st.balloons()
-        st.rerun()
+    # 確認與跳轉按鈕 (水平排列)
+    col_btn1, col_btn2 = st.columns(2)
+    
+    with col_btn1:
+        if st.button("✅ **我懂基礎，開始使用**", type="primary", use_container_width=True):
+            st.session_state.disclaimer_accepted = True
+            st.balloons()
+            st.rerun()
+            
+    with col_btn2:
+        # 新增的捷徑按鈕，點擊後一樣設定 accepted 並設定跳轉參數
+        if st.button("🤖 **直接體驗 AI 產業分析**", use_container_width=True):
+            st.session_state.disclaimer_accepted = True
+            # 利用 query_params 觸發頂部的 JS 自動點擊 Tab 5
+            st.query_params["jump"] = "5"
+            st.balloons()
+            st.rerun()
     
     st.markdown("---")
     
