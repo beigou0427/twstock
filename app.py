@@ -5,6 +5,7 @@
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 from datetime import date, timedelta
@@ -14,40 +15,40 @@ import plotly.graph_objects as go
 import plotly.express as px
 import feedparser
 import time
-
 from collections import Counter
-# Add these imports at the top of your app.py (after existing imports)
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-# Optional: pip install streamlit-pills for clickable pills
+
+# 可選套件檢查（僅一次）
 try:
     from streamlit_pills import pills
     PILLS_AVAILABLE = True
 except ImportError:
     PILLS_AVAILABLE = False
-if "jump" in st.query_params and st.query_params["jump"] == "2":
-    st.components.v1.html("""
-        <script>
-            setTimeout(function(){
-                var tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
-                if (tabs.length > 2) { tabs[2].click(); }
-            }, 500);
-        </script>
-    """, height=0)
 
-# === 放在程式最開頭 ===
-import streamlit.components.v1 as components
+# 自動跳轉到指定 tab（支援 jump=2 或 jump=tab2）
+def auto_jump_to_tab(target_tab=2):
+    if "jump" in st.query_params:
+        jump_val = st.query_params["jump"][0]
+        if jump_val in ["2", "tab2"] and int(target_tab) == 2:
+            components.html(f"""
+                <script>
+                    setTimeout(() => {{
+                        const tabs = window.parent.document.querySelectorAll('button[data-baseweb="tab"]');
+                        if (tabs.length > {target_tab}) {{
+                            tabs[{target_tab}].click();
+                        }}
+                    }}, 500);
+                </script>
+            """, height=0)
+            # 清除 query_params，避免重複觸發
+            st.query_params.clear()
+            return True
+    return False
 
-# 檢查 URL 是否帶有 jump=tab2 參數
-if "jump" in st.query_params and st.query_params["jump"] == "tab2":
-    # 注入自動點擊 JS
-    components.html("""
-        <script>
-            window.parent.document.querySelectorAll('button[data-baseweb="tab"]')[2].click();
-        </script>
-    """, height=0)
-    # 清除參數，避免下次刷新還在跳
-    st.query_params.clear()
+# 執行自動跳轉
+auto_jump_to_tab()
+
 
 # =========================
 # 1. 初始化 & 設定
