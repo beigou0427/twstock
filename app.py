@@ -1419,141 +1419,162 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # ======================================================
-# Tab 5: AI 產業分析版 (v6.4 - 包含新聞來源揭露與多媒體保證)
-# 直接貼入 with tabs[5]: 即可運行
+# Tab 5: 產業上下游深度分析版（v6.5）
+# 強化：全球產業鏈新聞 + 上下游供應鏈分析 + 競爭格局
+# 直接貼入 with tabs[5]:
 # ======================================================
 with tabs[5]:
     st.markdown("""
     <div style='text-align:center; padding:20px; 
-    background:linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); 
-    color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.3);'>
-        <h1 style='color:white;'>🏭 全球產業趨勢 AI 分析</h1>
-        <p style='color:white; opacity:0.9;'>大盤 TAIEX <strong>{S_current:.0f}</strong> | 更新 <strong>{latest_date:%Y-%m-%d}</strong></p>
+    background:linear-gradient(135deg, #0f3460 0%, #1e3c72 50%, #2a5298 100%); 
+    color:white; border-radius:15px; box-shadow:0 10px 30px rgba(0,0,0,0.3);'>
+        <h1 style='color:white; margin:0;'>🏭 產業鏈深度分析引擎</h1>
+        <p style='margin:5px 0;'>全球供應鏈 + 上下游 + 競爭格局 | TAIEX <strong>{S_current:.0f}</strong></p>
     </div>
-    """.format(S_current=S_current, latest_date=latest_date), unsafe_allow_html=True)
+    """.format(S_current=S_current), unsafe_allow_html=True)
     
-    st.info("⚠️ 本分析報告僅供產業研究與學術討論，非投資勸誘，亦不構成任何證券之買賣建議。投資人應自行評估風險。")
+    st.info("⚠️ 本報告僅供產業研究與學術討論，非投資建議。請自行評估風險並遵守相關法規。")
     
-    # 🎛️ 控制面板
+    # 🎛️ 產業鏈分析面板
     col1, col2, col3, col4 = st.columns([1.5, 1, 1.5, 1])
     with col1:
-        stock_code = st.text_input("🏭 產業指標股", value="2330", help="輸入具代表性之企業代碼")
+        core_company = st.text_input("🎯 核心企業", value="2330", help="台積電等產業龍頭")
     with col2:
-        days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
+        ana_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
     with col3:
-        news_sources = st.multiselect("🌐 情報來源", 
-            ["🇹🇼 台灣財經", "🇺🇸 科技巨頭", "🇯🇵 半導體", "🌍 總體經濟"], 
-            default=["🇹🇼 台灣財經", "🇺🇸 科技巨頭", "🌍 總體經濟"])
+        chain_focus = st.selectbox("🔗 產業鏈焦點", 
+            ["全產業鏈", "上游原物料", "中游製造", "下游終端"], 
+            index=0)
     with col4:
-        max_news = st.slider("📰 摘要筆數", 5, 30, 15)
+        max_news = st.slider("📰 情報筆數", 10, 50, 25)
     
     # 🔑 金鑰檢查
     groq_key = st.secrets.get("GROQ_KEY", "")
     if not groq_key:
-        st.error("❌ **GROQ_KEY 遺失**！請至 Settings → Secrets 設定")
+        st.error("❌ **GROQ_KEY 遺失**！Settings → Secrets → 新增 `GROQ_KEY`")
         st.stop()
     
     # 🚀 分析按鈕
-    if st.button("🚀 **生成產業分析報告**", type="primary", use_container_width=True):
+    if st.button("🚀 **啟動產業鏈深度分析**", type="primary", use_container_width=True):
         
         prog = st.progress(0)
         status = st.empty()
         
-        # 🌐 產業與總經 RSS 來源分類 (保證來源多樣性)
-        global_rss = {
-            "🇹🇼 台灣財經": {
-                "Yahoo財經": "https://tw.stock.yahoo.com/rss/index.rss", 
-                "工商時報": "https://ctee.com.tw/rss/all_news.xml"
+        # 🌐 產業鏈分類 RSS 來源（強化上下游覆蓋）
+        supply_chain_rss = {
+            # 🎯 上游：原物料、設備、晶圓
+            "上游原物料": {
+                "彭博商品": "https://feeds.bloomberg.com/markets/commodities/news.rss",
+                "鋼鐵鋁銅": "https://www.metal.com/rss/en/news", 
+                "設備供應": "https://appliedmaterials.com/rss/news.xml"
             },
-            "🇺🇸 科技巨頭": {
-                "CNBC": "https://www.cnbc.com/id/19854910/device/rss/rss.html", 
-                "Yahoo Finance": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=QQQ,AAPL,NVDA"
+            
+            # 🏭 中游：半導體、電子代工、面板
+            "中游製造": {
+                "半導體新聞": "https://semiengineering.com/feed/",
+                "電子代工": "https://www.digitimes.com/rss/dt_n.xml",
+                "面板產業": "https://www.oled-info.com/rss.xml"
             },
-            "🇯🇵 半導體": {
-                "日經亞洲": "https://www.nikkei.com/rss/en/business.xml"
+            
+            # 📱 下游：終端品牌、消費電子、雲端
+            "下游終端": {
+                "蘋果新聞": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL",
+                "科技消費": "https://www.cnet.com/rss/news/",
+                "雲端運算": "https://feeds.reuters.com/reuters/technologyNews"
             },
-            "🌍 總體經濟": {
-                "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss", 
-                "WSJ": "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml"
+            
+            # 🌍 總經與產業環境
+            "總經環境": {
+                "美聯儲": "https://www.federalreserve.gov/feeds/about.htm",
+                "全球PMI": "https://www.supplychaindive.com/rss/all/",
+                "地緣政治": "https://www.reuters.com/world/rss"
             }
         }
         
         prog.progress(20)
-        status.info("🌐 聚合全球產業情報中...")
+        status.info(f"🔍 掃描 {chain_focus} 產業鏈相關新聞...")
         
-        # 📊 收集新聞 (追蹤來源確保多樣性)
-        all_news_texts = []  # 給 AI 的純文字
-        news_display_list = []  # 給用戶看的完整列表
-        collected_sources = set()  # 紀錄成功爬取到的媒體
+        # 📊 收集產業鏈新聞（確保上下游平衡）
+        all_news = []
+        news_display = []
+        source_counter = {}
         
-        for category in news_sources:
-            media_dict = global_rss.get(category, {})
+        # 針對選擇的產業鏈焦點，優先抓取對應新聞
+        target_sources = supply_chain_rss.get(chain_focus, {})
+        for category, media_dict in target_sources.items():
             for media_name, rss_url in media_dict.items():
                 try:
                     feed = feedparser.parse(rss_url)
-                    entries = feed.entries[:3]  # 每家媒體取前 3 篇
-                    
-                    if entries:
-                        collected_sources.add(media_name)
-                        
+                    entries = feed.entries[:4]  # 每類取 4 篇
                     for entry in entries:
-                        title = entry.title[:80] + "..." if len(entry.title) > 80 else entry.title
-                        pub_date = entry.get('published', '近期')
+                        title = entry.title[:70]
+                        news_line = f"[{media_name}]{title}"
+                        all_news.append(news_line)
+                        news_display.append({
+                            "來源": media_name, 
+                            "標題": title,
+                            "類別": category,
+                            "時間": entry.get('published', '即時')
+                        })
                         
-                        news_str = f"[{media_name}] {title}"
-                        all_news_texts.append(news_str)
-                        news_display_list.append({"media": media_name, "title": title, "date": pub_date})
-                        
-                    time.sleep(0.1)
+                        # 統計來源多樣性
+                        source_counter[media_name] = source_counter.get(media_name, 0) + 1
+                    time.sleep(0.15)
                 except:
                     continue
-                    
-        # 確保至少涵蓋 5 家媒體，如果不夠，強制補足預設來源
-        if len(collected_sources) < 5:
-            status.info("⚠️ 來源不足 5 家，啟動強制擴充機制以確保觀點多樣性...")
-            fallback_sources = {"投資參考": "https://www.investors.com/rss/daily_stock_market_update.xml", "MarketWatch": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"}
-            for media_name, rss_url in fallback_sources.items():
-                if len(collected_sources) >= 5: break
+        
+        # 擴充其他產業鏈新聞（平衡視角）
+        other_chains = [k for k in supply_chain_rss.keys() if k != chain_focus]
+        for other_chain in other_chains[:2]:  # 最多補充 2 個其他鏈
+            media_dict = supply_chain_rss[other_chain]
+            for media_name, rss_url in list(media_dict.items())[:2]:  # 每鏈補 2 篇
                 try:
                     feed = feedparser.parse(rss_url)
-                    for entry in feed.entries[:2]:
-                        title = entry.title[:80] + "..." if len(entry.title) > 80 else entry.title
-                        news_str = f"[{media_name}] {title}"
-                        all_news_texts.append(news_str)
-                        news_display_list.append({"media": media_name, "title": title, "date": entry.get('published', '')})
-                    collected_sources.add(media_name)
-                except: pass
-
-        # 補充客觀市場數據
-        all_news_texts.extend([
-            f"台股大盤現價 {S_current:.0f}，月線 {ma20:.0f}",
-            f"標的 {stock_code} {days_period}日客觀技術動態"
+                    entries = feed.entries[:2]
+                    for entry in entries:
+                        title = entry.title[:70]
+                        news_line = f"[{media_name}]{title}"
+                        all_news.append(news_line)
+                        news_display.append({
+                            "來源": media_name,
+                            "標題": title,
+                            "類別": other_chain,
+                            "時間": entry.get('published', '即時')
+                        })
+                except:
+                    continue
+        
+        # 加入客觀數據
+        all_news.extend([
+            f"核心 {stock_code} {days_period}日技術動態",
+            f"台股大盤 {S_current:.0f} 相對均線位置",
+            "全球供應鏈庫存循環狀態"
         ])
         
-        # 確保數量不超過設定上限
-        news_summary = " | ".join(all_news_texts[-max_news:])
+        news_summary = " | ".join(all_news[-max_news:])
         prog.progress(50)
         
-        # 🧠 AI Prompt（嚴格限制合規與產業導向）
+        # 🧠 產業鏈深度 AI Prompt
         ai_prompt = f"""
-        你是一位中立客觀的產業分析師。請綜合以下全球新聞與客觀數據，對指標企業 {stock_code} 及其所屬產業進行 {days_period} 天的趨勢剖析。
+        你是一位資深的產業鏈研究員。請基於以下全球新聞，對 {stock_code} 及其產業鏈進行 {days_period} 天趨勢觀察。
 
-        🌍 國際情報（涵蓋 {len(collected_sources)} 家不同媒體）：{news_summary}
-        📊 客觀數據：TAIEX {S_current:.0f} | MA20:{ma20:.0f} | MA60:{ma60:.0f}
+        🔗 **{chain_focus} 產業鏈情報**（涵蓋 {len(set([n['來源'] for n in news_display])} 家媒體）：
+        {news_summary}
         
-        【嚴格規範】：
-        1. 絕對禁止提供任何「買入、賣出、持有、目標價、停損價」等具體交易建議。
-        2. 絕對禁止預測絕對漲跌幅。
-        3. 內容必須符合台灣金管會法規，僅作學術與產業討論。
-
-        【請提供以下架構的專業分析】（繁體中文，400字內）：
-        1. 🏭 **產業總體環境**：全球供應鏈動態、總經影響（如美股連動、利率）。
-        2. 🏢 **企業基本面觀測**：根據新聞，該企業或其產業鏈近期的營運亮點或挑戰。
-        3. 📉 **客觀技術面狀態**：目前價格相對於均線（MA20/MA60）的位置結構，是強勢、弱勢或盤整格局。
-        4. ⚠️ **潛在產業風險**：未來須留意的總經風險或產業逆風因素。
+        📊 **客觀數據**：TAIEX {S_current:.0f} | MA20: {ma20:.0f} | MA60: {ma60:.0f}
+        
+        【分析架構】（繁體中文，500字內，嚴守法規）：
+        1. 🏭 **{chain_focus} 總體環境**：全球需求、庫存、產能利用率觀察
+        2. ⬆️ **上游觀察**：原物料價格、設備投資動向
+        3. 🏭 **中游現況**：製造環節稼動率、訂單能見度
+        4. ⬇️ **下游需求**：終端消費、庫存水位
+        5. 🔗 **產業鏈連動**：{stock_code} 在整個供應鏈中的關鍵地位與影響
+        6. 📉 **客觀技術**：目前與歷史均線的相對位置結構
+        
+        ✅ **嚴格禁止**：任何買賣建議、目標價、漲跌預測
         """
         
-        status.info(f"🦙 AI 模型正基於 {len(collected_sources)} 家媒體進行中立推理...")
+        status.info("🦙 AI 產業鏈模型深度推理...")
         
         # 🦙 Groq 分析
         try:
@@ -1562,59 +1583,57 @@ with tabs[5]:
             client = Groq(api_key=groq_key, http_client=httpx.Client())
             
             groq_resp = client.chat.completions.create(
-                model="llama-3.1-8b-instant",  
+                model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "你是一個不提供投資建議、僅做客觀產業分析的研究員。"},
+                    {"role": "system", "content": "你是一位產業鏈研究專家，僅提供客觀分析，絕不給出交易建議。"},
                     {"role": "user", "content": ai_prompt}
                 ],
-                max_tokens=600,
-                temperature=0.15 
+                max_tokens=700,
+                temperature=0.1
             )
             groq_analysis = groq_resp.choices[0].message.content
-            st.success(f"✅ 報告生成完畢（資料來源涵蓋 {len(collected_sources)} 家國際權威媒體）")
+            st.success("✅ 產業鏈深度報告完成")
         except Exception as e:
-            st.error("🦙 AI 引擎暫時無法連線")
-            st.caption(str(e)[:100])
+            st.error("🦙 AI 引擎暫停服務")
             groq_analysis = None
         
         prog.progress(100)
         status.empty()
         
-        # 📋 結果展示
+        # 📋 完整結果展示
         if groq_analysis:
             st.markdown("---")
-            st.markdown(f"## 📑 **{stock_code} 產業與總經趨勢報告**")
+            st.markdown(f"## 🔗 **{stock_code} {chain_focus} 產業鏈分析報告**")
             st.markdown(groq_analysis)
             
-            # 📰 揭露新聞來源 (st.expander)
-            with st.expander(f"🔍 查看 AI 參考的底層新聞數據 (共 {len(news_display_list[-max_news:])} 筆，涵蓋 {len(collected_sources)} 個不同來源)"):
-                # 使用 DataFrame 來漂亮地展示新聞列表
+            # 📰 新聞來源揭露
+            with st.expander(f"🔍 底層資料集 (共 {len(news_display)} 筆新聞，涵蓋 {len(set([n['來源'] for n in news_display])} 家媒體)"):
                 import pandas as pd
-                df_news = pd.DataFrame(news_display_list[-max_news:])
+                df_news = pd.DataFrame(news_display[-max_news:])
                 if not df_news.empty:
                     df_news.index += 1
-                    df_news.columns = ["媒體來源", "新聞標題", "發布時間"]
-                    st.dataframe(df_news, use_container_width=True)
-                
-                st.caption(f"**確認採集的媒體來源庫**：{', '.join(list(collected_sources))}")
-
-            # 📈 客觀數據面板
-            st.markdown("### 📊 **客觀市場數據快照**")
+                    df_news.columns = ["媒體", "新聞標題", "產業鏈位置", "時間"]
+                    st.dataframe(df_news, use_container_width=True, hide_index=False)
+                    st.caption(f"**採集來源統計**：{dict(sorted(source_counter.items(), key=lambda x: x[1], reverse=True)[:5])}")
+            
+            # 📈 數據面板
+            st.markdown("### 📊 **產業鏈數據快覽**")
             col1, col2, col3 = st.columns(3)
             with col1:
                 trend = "均線之上" if S_current > ma20 else "均線之下"
-                st.metric("大盤與月線位階", trend)
+                st.metric("核心股位階", trend)
             with col2:
                 gap_pct = (S_current - ma20) / ma20 * 100
-                st.metric("大盤月線乖離率", f"{gap_pct:+.2f}%")
+                st.metric("與月線距離", f"{gap_pct:+.1f}%")
             with col3:
-                volatility = "擴大" if abs(gap_pct) > 2 else "收斂"
-                st.metric("近期波動度觀察", volatility)
+                volatility = "高波動" if abs(gap_pct) > 3 else "相對平穩"
+                st.metric("近期動態", volatility)
         else:
-            st.error("❌ 報告生成失敗，請稍後再試。")
+            st.error("❌ 報告生成失敗")
     
     st.markdown("---")
-    st.caption("🔍 貝伊果屋 產業研究引擎 | 嚴守合規，資訊公開透明")
+    st.caption("🔗 貝伊果屋 產業鏈研究平台 | 全球供應鏈情報即時監測")
+
 
 
 
