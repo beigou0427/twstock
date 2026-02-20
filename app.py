@@ -1419,150 +1419,152 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # ======================================================
-# Tab 5: 強化版 AI 台股分析（全球新聞搜集）
-# 包含國內外 15+ 權威財經媒體 RSS
-# ======================================================
-# ======================================================
-# Tab 5: 全球新聞 AI 台股分析（完整無錯版 v6.2）
-# 已修復：max_news NameError + 所有 API 錯誤
+# Tab 5: AI 產業分析版（v6.3 - 全球新聞 + 產業趨勢 + 法規合規）
+# 已移除具體買賣建議，專注於產業動態與客觀數據分析
 # 直接貼入 with tabs[5]: 即可運行
 # ======================================================
 with tabs[5]:
     st.markdown("""
     <div style='text-align:center; padding:20px; 
-    background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+    background:linear-gradient(135deg, #2b5876 0%, #4e4376 100%); 
     color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.2);'>
-        <h1>🤖 全球新聞 AI 台股分析</h1>
-        <p>TAIEX <strong>{S_current:.0f}</strong> | 更新 <strong>{latest_date:%Y-%m-%d}</strong></p>
+        <h1>🏭 全球產業趨勢 AI 分析</h1>
+        <p>大盤 TAIEX <strong>{S_current:.0f}</strong> | 更新 <strong>{latest_date:%Y-%m-%d}</strong></p>
     </div>
     """.format(S_current=S_current, latest_date=latest_date), unsafe_allow_html=True)
     
-    # 🎛️ 完整控制面板（包含 max_news）
+    st.info("⚠️ 本分析報告僅供產業研究與學術討論，非投資勸誘，亦不構成任何證券之買賣建議。投資人應自行評估風險。")
+    
+    # 🎛️ 控制面板
     col1, col2, col3, col4 = st.columns([1.5, 1, 1.5, 1])
     with col1:
-        stock_code = st.text_input("📈 核心標的", value="2330", max_chars=6)
+        stock_code = st.text_input("🏭 產業指標股", value="2330", help="輸入具代表性之企業代碼")
     with col2:
-        days_period = st.selectbox("⏰ 天數", [3, 7, 14, 30], index=1)
+        days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
     with col3:
-        news_sources = st.multiselect("🌐 新聞來源", 
-            ["🇹🇼 台股", "🇹🇼 工商", "🇺🇸 CNBC", "🇺🇸 Yahoo", 
-             "🇯🇵 日經", "🇭🇰 彭博", "📊 技術"], 
-            default=["🇹🇼 台股", "🇺🇸 CNBC"])
+        news_sources = st.multiselect("🌐 情報來源", 
+            ["🇹🇼 台灣財經", "🇺🇸 科技巨頭", "🇯🇵 半導體", "🌍 總體經濟"], 
+            default=["🇹🇼 台灣財經", "🇺🇸 科技巨頭"])
     with col4:
-        max_news = st.slider("📰 筆數", 5, 30, 15)  # ✅ 修復 NameError
+        max_news = st.slider("📰 摘要筆數", 5, 30, 15)
     
     # 🔑 金鑰檢查
     groq_key = st.secrets.get("GROQ_KEY", "")
     if not groq_key:
-        st.error("❌ **GROQ_KEY 遺失**！Settings → Secrets → 新增 `GROQ_KEY = \"gsk_...\"`")
+        st.error("❌ **GROQ_KEY 遺失**！請至 Settings → Secrets 設定")
         st.stop()
     
     # 🚀 分析按鈕
-    if st.button("🚀 **全球新聞 + AI 分析**", type="primary", use_container_width=True):
+    if st.button("🚀 **生成產業分析報告**", type="primary", use_container_width=True):
         
         prog = st.progress(0)
         status = st.empty()
         
-        # 🌐 全球 RSS 來源
+        # 🌐 產業與總經 RSS 來源分類
         global_rss = {
-            "🇹🇼 台股": "https://tw.stock.yahoo.com/rss/index.rss",
-            "🇹🇼 工商": "https://ctee.com.tw/rss/all_news.xml",
-            "🇺🇸 CNBC": "https://www.cnbc.com/id/100003114/device/rss/rss.html", 
-            "🇺🇸 Yahoo": "https://feeds.finance.yahoo.com/rss/2.0/headline?r=z",
-            "🇯🇵 日經": "https://www.nikkei.com/rss/en/abr.xml",
-            "🇭🇰 彭博": "https://feeds.bloomberg.com/markets/asia/news.rss",
-            "📊 技術": "https://www.tradingview.com/feed/"
+            "🇹🇼 台灣財經": ["https://tw.stock.yahoo.com/rss/index.rss", "https://ctee.com.tw/rss/all_news.xml"],
+            "🇺🇸 科技巨頭": ["https://www.cnbc.com/id/19854910/device/rss/rss.html", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=QQQ,AAPL,NVDA"],
+            "🇯🇵 半導體": ["https://www.nikkei.com/rss/en/business.xml"],
+            "🌍 總體經濟": ["https://feeds.bloomberg.com/markets/news.rss", "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml"]
         }
         
-        # 🔍 篩選來源
-        selected_feeds = {k: v for k, v in global_rss.items() if k in news_sources}
-        
         prog.progress(20)
-        status.info(f"🌐 抓取 {len(selected_feeds)} 家媒體...")
+        status.info("🌐 聚合全球產業情報中...")
         
         # 📊 收集新聞
         all_news = []
-        for source_name, rss_url in selected_feeds.items():
-            try:
-                feed = feedparser.parse(rss_url)
-                for entry in feed.entries[:2]:
-                    title = entry.title[:60] + "..." if len(entry.title) > 60 else entry.title
-                    all_news.append(f"[{source_name}]{title}")
-                time.sleep(0.2)
-            except:
-                continue
+        for category in news_sources:
+            urls = global_rss.get(category, [])
+            for rss_url in urls:
+                try:
+                    feed = feedparser.parse(rss_url)
+                    for entry in feed.entries[:3]:
+                        title = entry.title[:60] + "..." if len(entry.title) > 60 else entry.title
+                        all_news.append(f"[{category}] {title}")
+                    time.sleep(0.2)
+                except:
+                    continue
         
-        # 台股專屬數據
+        # 補充客觀市場數據
         all_news.extend([
-            f"TAIEX {S_current:.0f} | MA20 {ma20:.0f}",
-            f"{stock_code} 技術面分析",
-            "美股科技連動影響"
+            f"台股大盤現價 {S_current:.0f}，月線 {ma20:.0f}",
+            f"標的 {stock_code} {days_period}日客觀技術動態",
+            "全球供應鏈與庫存循環現況"
         ])
         
-        # 截取指定數量 ✅ 修復 NameError
         news_summary = " | ".join(all_news[-max_news:])
         prog.progress(50)
         
-        # 🧠 AI Prompt
+        # 🧠 AI Prompt（嚴格限制合規與產業導向）
         ai_prompt = f"""
-        【全球新聞 + 台股 {stock_code} {days_period}天分析】
+        你是一位中立客觀的產業分析師。請綜合以下全球新聞與客觀數據，對指標企業 {stock_code} 及其所屬產業進行 {days_period} 天的趨勢剖析。
+
+        🌍 國際情報：{news_summary}
+        📊 客觀數據：TAIEX {S_current:.0f} | MA20:{ma20:.0f} | MA60:{ma60:.0f}
         
-        🌍 國際財經：{news_summary}
-        📊 技術數據：TAIEX {S_current:.0f} | MA20:{ma20:.0f} | MA60:{ma60:.0f}
-        
-        提供專業分析：
-        1. 走勢預測
-        2. 交易策略  
-        3. 關鍵價位
-        4. 風險評估
+        【嚴格規範】：
+        1. 絕對禁止提供任何「買入、賣出、持有、目標價、停損價」等具體交易建議。
+        2. 絕對禁止預測絕對漲跌幅。
+        3. 內容必須符合台灣金管會法規，僅作學術與產業討論。
+
+        【請提供以下架構的專業分析】（繁體中文，400字內）：
+        1. 🏭 **產業總體環境**：全球供應鏈動態、總經影響（如美股連動、利率）。
+        2. 🏢 **企業基本面觀測**：根據新聞，該企業或其產業鏈近期的營運亮點或挑戰。
+        3. 📉 **客觀技術面狀態**：目前價格相對於均線（MA20/MA60）的位置結構，是強勢、弱勢或盤整格局。
+        4. ⚠️ **潛在產業風險**：未來須留意的總經風險或產業逆風因素。
         """
         
-        status.info("🦙 Groq 全球分析...")
+        status.info("🦙 AI 產業模型推理中...")
         
-        # 🦙 Groq（核心引擎）
+        # 🦙 Groq 分析
         try:
             from groq import Groq
             import httpx
             client = Groq(api_key=groq_key, http_client=httpx.Client())
             
             groq_resp = client.chat.completions.create(
-                model="llama-3.1-8b-instant",  # 2026 最穩模型
-                messages=[{"role": "user", "content": ai_prompt}],
-                max_tokens=450,
-                temperature=0.25
+                model="llama-3.1-8b-instant",  # 穩定快速模型
+                messages=[
+                    {"role": "system", "content": "你是一個不提供投資建議、僅做客觀產業分析的研究員。"},
+                    {"role": "user", "content": ai_prompt}
+                ],
+                max_tokens=500,
+                temperature=0.2  # 降低隨機性，維持客觀嚴謹
             )
             groq_analysis = groq_resp.choices[0].message.content
-            st.success("✅ Groq 完成")
+            st.success("✅ 產業分析報告生成完畢")
         except Exception as e:
-            st.error("🦙 Groq 故障")
+            st.error("🦙 AI 引擎暫時無法連線")
+            st.caption(str(e)[:100])
             groq_analysis = None
         
         prog.progress(100)
-        status.success("🎉 分析完成！")
+        status.empty()
         
         # 📋 結果展示
         if groq_analysis:
             st.markdown("---")
-            st.markdown("## 🎯 **全球新聞 AI 交易策略**")
+            st.markdown(f"## 📑 **{stock_code} 產業與總經趨勢報告**")
             st.markdown(groq_analysis)
             
-            # 📈 技術總覽
-            st.markdown("### 📊 **技術指標總覽**")
+            # 📈 客觀數據面板 (取代買賣建議)
+            st.markdown("### 📊 **客觀市場數據快照**")
             col1, col2, col3 = st.columns(3)
             with col1:
-                trend = "🟢 多頭" if S_current > ma20 else "🔴 空頭"
-                st.metric("趨勢", trend)
+                trend = "均線之上" if S_current > ma20 else "均線之下"
+                st.metric("大盤與月線位階", trend)
             with col2:
-                gap_pct = (S_current-ma20)/ma20*100
-                st.metric("月線乖離", f"{gap_pct:+.1f}%")
+                gap_pct = (S_current - ma20) / ma20 * 100
+                st.metric("大盤月線乖離率", f"{gap_pct:+.2f}%")
             with col3:
-                action = "進場" if gap_pct < -1 else "觀望"
-                st.metric("建議", action)
+                volatility = "擴大" if abs(gap_pct) > 2 else "收斂"
+                st.metric("近期波動度觀察", volatility)
         else:
-            st.error("❌ 分析失敗，檢查金鑰")
+            st.error("❌ 報告生成失敗，請稍後再試。")
     
     st.markdown("---")
-    st.caption("🌐 15+ 全球財經媒體 | 貝伊果屋 AI 引擎")
+    st.caption("🔍 貝伊果屋 產業研究引擎 | 資料來源：全球主流財經媒體 RSS")
+
 
 
 # --------------------------
