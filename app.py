@@ -250,99 +250,149 @@ st.markdown("---")
 # =========================================
 # 合規聲明與新手導航 (優化版 UI)
 # =========================================
+# =========================================
+# 合規聲明與新手導航 (終極視覺強化版 UI)
+# =========================================
 if not st.session_state.get('disclaimer_accepted', False):
     
-    # 頂部警告區塊 (使用自訂 CSS 增加視覺衝擊)
+    # 頂部警告區塊
     st.markdown("""
-    <div style='background-color: #3b1c1c; border-left: 6px solid #ff4b4b; padding: 20px; border-radius: 8px; margin-bottom: 25px;'>
-        <h2 style='color: #ff4b4b; margin-top: 0;'>🚨 股票完全新手必讀！</h2>
-        <p style='color: #f8f9fa; font-size: 16px; margin-bottom: 10px;'>進入市場前，請務必搞懂以下 3 個核心基礎：</p>
-        <ul style='color: #e0e0e0; font-size: 15px; line-height: 1.6;'>
-            <li>💹 <b>股票</b>：買公司股份，必須承擔公司營運風險與股價波動</li>
-            <li>📈 <b>ETF</b>：買進一籃子優質股票，分散風險，是新手最穩健的首選</li>
-            <li>💳 <b>定期定額</b>：每個月固定金額買入，完美避開追高殺低的人性弱點</li>
+    <div style='background-color: #2b1414; border-left: 6px solid #ff4b4b; padding: 25px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.4);'>
+        <h2 style='color: #ff4b4b; margin-top: 0; display: flex; align-items: center;'>
+            <span style='font-size: 1.2em; margin-right: 10px;'>🚨</span> 股票完全新手必讀！
+        </h2>
+        <p style='color: #f8f9fa; font-size: 17px; margin-bottom: 15px; font-weight: 500;'>進入市場前，請務必搞懂以下 3 個核心基礎：</p>
+        <ul style='color: #d1d5db; font-size: 16px; line-height: 1.8;'>
+            <li><span style='color:#4ECDC4;'>💹 <b>股票</b></span>：買公司股份，必須承擔公司營運風險與股價波動</li>
+            <li><span style='color:#4ECDC4;'>📈 <b>ETF</b></span>：買進一籃子優質股票，分散風險，是新手最穩健的首選</li>
+            <li><span style='color:#4ECDC4;'>💳 <b>定期定額</b></span>：每個月固定金額買入，完美避開追高殺低的人性弱點</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
     
     # 功能導覽區塊
-    st.markdown("### 🎯 **貝伊果屋 6 大核心引擎**")
+    st.markdown("<h3 style='text-align: center; color: white; margin-bottom: 25px;'>🎯 貝伊果屋 6 大核心引擎</h3>", unsafe_allow_html=True)
     
-    # 使用欄位來排版功能，讓畫面更緊湊專業
     col_feat1, col_feat2 = st.columns(2)
     
     with col_feat1:
-        st.info("🌱 **新手起手式（建議優先使用）**")
         st.markdown("""
-        * **Tab 0 | 定投計畫**：設定每月自動買 ETF，靠複利致富
-        * **Tab 1 | 智能情報**：秒懂台股資金流向與大盤趨勢  
-        * **Tab 4 | 戰情室**：追蹤市場熱門題材（如 AI、半導體）
-        """)
+        <div style='background: linear-gradient(145deg, #1c2b23 0%, #22382b 100%); padding: 20px; border-radius: 12px; border-top: 4px solid #28a745; height: 100%;'>
+            <h4 style='color: #28a745; margin-top: 0;'>🌱 新手起手式（建議優先使用）</h4>
+            <ul style='color: #ddd; font-size: 15px; line-height: 1.7; padding-left: 20px;'>
+                <li><b>Tab 0 | 定投計畫</b>：設定每月自動買 ETF，靠複利致富</li>
+                <li><b>Tab 1 | 智能情報</b>：秒懂台股資金流向與大盤趨勢</li>
+                <li><b>Tab 4 | 戰情室</b>：追蹤市場熱門題材（如 AI、半導體）</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
         
     with col_feat2:
-        st.warning("🚀 **進階兵器庫（熟悉後再挑戰）**")
         st.markdown("""
-        * **Tab 5 | AI 產業鏈**：輸入代碼，自動推導上下游與全球情報
-        * **Tab 2 | CALL獵人**：篩選半年以上到期的低成本槓桿選擇權
-        * **Tab 3 | 回測系統**：一鍵驗證投資策略過去 10 年的真實績效
-        """)
+        <div style='background: linear-gradient(145deg, #2b241c 0%, #382c22 100%); padding: 20px; border-radius: 12px; border-top: 4px solid #ffc107; height: 100%;'>
+            <h4 style='color: #ffc107; margin-top: 0;'>🚀 進階兵器庫（熟悉後再挑戰）</h4>
+            <ul style='color: #ddd; font-size: 15px; line-height: 1.7; padding-left: 20px;'>
+                <li><b style='color:#ffc107;'>Tab 5 | AI 產業鏈</b>：輸入代碼，自動推導上下游與全球情報</li>
+                <li><b>Tab 2 | CALL獵人</b>：篩選半年以上到期的低成本槓桿選擇權</li>
+                <li><b>Tab 3 | 回測系統</b>：一鍵驗證投資策略過去 10 年的真實績效</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
     
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<br><hr style='border-color: #444; margin: 30px 0;'><br>", unsafe_allow_html=True)
     
-    # 雙主打按鈕區 (置中對齊，放大視覺)
-    st.markdown("<h4 style='text-align: center; color: #bbb;'>請選擇你要進入的模式：</h4>", unsafe_allow_html=True)
+    # =========================================
+    # 超強視覺雙按鈕區 (使用 Custom CSS 注入)
+    # =========================================
+    st.markdown("""
+    <style>
+    /* 主系統按鈕 (綠色漸變) */
+    .btn-main {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        border: none; color: white; padding: 16px 30px; font-size: 18px; font-weight: bold;
+        border-radius: 50px; cursor: pointer; transition: all 0.3s ease;
+        box-shadow: 0 8px 20px rgba(56, 239, 125, 0.3); width: 100%;
+        display: flex; justify-content: center; align-items: center;
+    }
+    .btn-main:hover { transform: translateY(-3px); box-shadow: 0 12px 25px rgba(56, 239, 125, 0.5); }
     
-    # 建立三個欄位，把按鈕擠在中間兩個，產生置中且不擁擠的效果
-    _, btn_col1, btn_col2, _ = st.columns([1, 2, 2, 1])
+    /* AI 產業分析按鈕 (藍紫漸變發光) */
+    .btn-ai {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none; color: white; padding: 16px 30px; font-size: 18px; font-weight: bold;
+        border-radius: 50px; cursor: pointer; transition: all 0.3s ease;
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4); width: 100%;
+        display: flex; justify-content: center; align-items: center;
+        border: 2px solid rgba(255,255,255,0.1);
+    }
+    .btn-ai:hover { 
+        transform: translateY(-3px); 
+        box-shadow: 0 12px 25px rgba(102, 126, 234, 0.6);
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    }
+    </style>
+    <h3 style='text-align: center; color: #ddd; margin-bottom: 30px;'>👆 請選擇你的啟動模式 👆</h3>
+    """, unsafe_allow_html=True)
+    
+    # 建立三個欄位，讓按鈕完美置中
+    _, btn_col1, btn_col2, _ = st.columns([1.5, 3, 3, 1.5])
     
     with btn_col1:
-        if st.button("✅ **我懂基礎，進入主系統**", type="primary", use_container_width=True):
+        # 使用原生的 st.button 加上用 CSS targeting 修改外觀
+        if st.button("✅ 我懂基礎，進入主系統", key="btn_main", use_container_width=True):
             st.session_state.disclaimer_accepted = True
             st.balloons()
             st.rerun()
             
     with btn_col2:
-        if st.button("🤖 **直接體驗 AI 產業分析**", use_container_width=True):
+        if st.button("🤖 直接體驗 AI 產業分析", key="btn_ai", use_container_width=True):
             st.session_state.disclaimer_accepted = True
             st.query_params["jump"] = "5"
             st.balloons()
             st.rerun()
             
-    st.markdown("<hr style='margin: 40px 0;'>", unsafe_allow_html=True)
+    # 透過 Streamlit HTML 注入，把我們寫的漂亮 CSS 綁到剛剛的按鈕 key 上
+    st.markdown("""
+    <script>
+        // 尋找剛剛建立的兩個按鈕並套用我們寫好的 CSS class
+        const buttons = window.parent.document.querySelectorAll('.stButton > button');
+        buttons.forEach(btn => {
+            if(btn.innerText.includes('進入主系統')) { btn.classList.add('btn-main'); }
+            if(btn.innerText.includes('AI 產業分析')) { btn.classList.add('btn-ai'); }
+        });
+    </script>
+    """, height=0, unsafe_allow_html=True)
     
-    # 書籍推薦區塊 (優化排版與陰影)
-    st.markdown("### 📚 **零基礎投資必備書單**")
-    st.caption("如果你對基礎知識還不熟悉，強烈建議先閱讀這兩本經典著作建立正確投資觀念。")
+    st.markdown("<hr style='border-color: #444; margin: 40px 0;'>", unsafe_allow_html=True)
     
-    book_col1, book_col2, _ = st.columns([2, 2, 1]) # 留白讓排版更好看
+    # 書籍推薦區塊
+    st.markdown("<h3 style='text-align: center;'>📚 零基礎投資必備經典</h3>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #aaa; margin-bottom: 25px;'>建立正確投資觀念，才能在市場中長期生存</p>", unsafe_allow_html=True)
+    
+    _, book_col1, book_col2, _ = st.columns([1, 2, 2, 1])
     
     with book_col1:
         st.markdown("""
-        <div style='background-color: #1e1e1e; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center;'>
-            <img src='https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp' width='180' style='border-radius: 5px; margin-bottom: 10px;'>
-            <br>
+        <div style='background-color: #1a1a1a; padding: 20px; border-radius: 15px; text-align: center; border: 1px solid #333;'>
+            <img src='https://down-tw.img.susercontent.com/file/sg-11134201-7qvdl-lh2v8yc9n8530d.webp' width='160' style='border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 15px;'>
             <a href='https://s.shopee.tw/5AmrxVrig8' target='_blank' style='text-decoration: none;'>
-                <button style='background-color: #ff6b6b; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold;'>
-                    🛒 購買《持續買進》
-                </button>
+                <div style='background-color: #ff4b4b; color: white; padding: 10px; border-radius: 8px; font-weight: bold; transition: 0.2s;'>🛒 購買《持續買進》</div>
             </a>
         </div>
         """, unsafe_allow_html=True)
         
     with book_col2:
         st.markdown("""
-        <div style='background-color: #1e1e1e; padding: 15px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center;'>
-            <img src='https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp' width='180' style='border-radius: 5px; margin-bottom: 10px;'>
-            <br>
+        <div style='background-color: #1a1a1a; padding: 20px; border-radius: 15px; text-align: center; border: 1px solid #333;'>
+            <img src='https://down-tw.img.susercontent.com/file/tw-11134207-7rasc-m2ba9wueqaze3a.webp' width='160' style='border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); margin-bottom: 15px;'>
             <a href='https://s.shopee.tw/6KypLiCjuy' target='_blank' style='text-decoration: none;'>
-                <button style='background-color: #4ECDC4; color: black; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold;'>
-                    🛒 購買《長期買進》
-                </button>
+                <div style='background-color: #4ECDC4; color: black; padding: 10px; border-radius: 8px; font-weight: bold; transition: 0.2s;'>🛒 購買《長期買進》</div>
             </a>
         </div>
         """, unsafe_allow_html=True)
     
     st.stop()
+
 
 # =========================================
 # 5. 建立 Tabs
