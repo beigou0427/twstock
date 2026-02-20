@@ -1539,7 +1539,7 @@ FinMind: {'✅ 就緒' if FINMIND_TEST_TOKEN != 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI
                     try:
                         import google.generativeai as genai
                         genai.configure(api_key=GEMINI_TEST_TOKEN)
-                        model = genai.GenerativeModel("gemini-2.0-flash-exp")
+                        model = genai.GenerativeModel("gemini-1.5-flash")  
                         response = model.generate_content(prompt)
                         llm_results.append(("🔮 Gemini", response.text))
                         st.balloons()
