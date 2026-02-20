@@ -1419,155 +1419,145 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # ======================================================
-# Tab 5: AI 台股分析（2026 完美修復版）
-# 修復：Groq 400 模型名 + Gemini 403 洩漏金鑰
-# 直接貼入 with tabs[5]:
+# Tab 5: AI 台股分析（2026 最新 API 規範修復版）
 # ======================================================
 with tabs[5]:
     st.markdown("""
-    <div style='text-align:center; padding:20px; 
-    background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-    color:white; border-radius:15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
-        <h1>🤖 AI 台股智慧分析 v6.1</h1>
-        <p>TAIEX <strong>{S_current:.0f}</strong> | 更新 <strong>{latest_date:%Y-%m-%d}</strong></p>
+    <div style='text-align:center; padding:15px; 
+    background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
+    color:white; border-radius:10px;'>
+        <h2 style='color:white; margin:0;'>🤖 AI 台股分析引擎</h2>
+        <p style='margin:0;'>TAIEX <strong>{S_current:.0f}</strong></p>
     </div>
-    """.format(S_current=S_current, latest_date=latest_date), unsafe_allow_html=True)
+    """.format(S_current=S_current), unsafe_allow_html=True)
+    
+    st.write("") # 間距
     
     # 🎛️ 輸入控制
     col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
-        stock_code = st.text_input("📈 分析股票", value="2330", max_chars=6, 
-                                 help="台積電2330、元大0050等")
+        stock_code = st.text_input("📈 分析標的", value="2330", max_chars=6)
     with col2:
-        days_period = st.selectbox("⏰ 分析天數", [3, 7, 14, 30], index=1)
+        days_period = st.selectbox("⏰ 預測天數", [3, 7, 14, 30], index=1)
     with col3:
-        max_news = st.slider("📰 新聞數", 10, 50, 25)
+        max_news = st.slider("📰 參考新聞", 10, 50, 25)
     
-    # 🔑 金鑰檢查（僅從 Secrets 讀取）
+    # 🔑 金鑰讀取 (請確保已在 Streamlit Secrets 設定)
     groq_key = st.secrets.get("GROQ_KEY", "")
     gemini_key = st.secrets.get("GEMINI_KEY", "")
     
-    if not groq_key:
-        st.error("❌ **GROQ_KEY 遺失**")
-        st.info("Settings → Secrets → 新增：\n`GROQ_KEY = \"gsk_你的新金鑰\"`")
+    if not groq_key or not gemini_key:
+        st.error("❌ **找不到 API 金鑰**")
+        st.info("請至 Streamlit Cloud 右上角 Manage App → Settings → Secrets 填入 `GROQ_KEY` 與 `GEMINI_KEY`")
         st.stop()
     
     # 🚀 分析按鈕
-    if st.button("🚀 **雙 AI 深度分析**", type="primary", use_container_width=True):
+    if st.button("🚀 **啟動雙引擎 AI 分析**", type="primary", use_container_width=True):
         
         prog = st.progress(0)
         status = st.empty()
         
-        # 📊 收集分析資料
-        prog.progress(20)
-        status.info("📡 整理盤面資料...")
+        # 📊 整理資料
+        prog.progress(30)
+        status.info("📡 整理最新盤面資料中...")
         
-        # 即時市場數據（防 API 阻塞）
         market_context = [
-            f"TAIEX 即時 {S_current:.0f}，月線 MA20 {ma20:.0f}，季線 MA60 {ma60:.0f}",
-            f"{stock_code} 近期籌碼面動向",
-            f"{days_period} 天技術面預測",
-            "美股科技股與台股連動效應"
+            f"大盤 TAIEX {S_current:.0f}，月線 {ma20:.0f}，季線 {ma60:.0f}",
+            f"{stock_code} 近期籌碼面動向與法人買賣超",
+            f"台股技術面 {days_period} 天預測趨勢",
+            "全球科技股與半導體連動影響"
         ]
         
-        # 專業 Prompt
         ai_prompt = f"""
-        【台股 {stock_code} {days_period}天 AI 專業分析】
+        【台股 {stock_code} 短期 {days_period} 天 AI 分析報告】
         
-        📊 技術面：TAIEX {S_current:.0f} | MA20: {ma20:.0f} | MA60: {ma60:.0f}
+        📊 盤面數據：TAIEX {S_current:.0f} | MA20: {ma20:.0f} | MA60: {ma60:.0f}
         📰 市場焦點：{" | ".join(market_context)}
         
         請提供精準分析（繁體中文，350字內）：
-        1. **走勢判斷**：看多/看空/盤整（機率）
-        2. **操作策略**：買入時機/停損點/目標價
-        3. **風險評估**：低/中/高 + 關鍵支撐壓力
-        4. **勝率預估**：短期操作勝率
-        
-        🎯 專業客觀，初學者也能懂！
+        1. 走勢預測：看多/看空/盤整
+        2. 操作策略：買入/分批/觀望/賣出
+        3. 關鍵價位：支撐與壓力區間
+        4. 風險評估：低/中/高
         """
         
-        prog.progress(50)
-        status.info("🧠 Groq 高速推理...")
+        prog.progress(60)
+        status.info("🧠 AI 模型推理中 (預計 5-10 秒)...")
         
-        # 🦙 Groq 分析（2026 最新模型）
         col_groq, col_gemini = st.columns(2)
         groq_result = None
+        gemini_result = None
         
+        # 🦙 Groq 分析
         with col_groq:
             try:
+                import httpx
                 from groq import Groq
-                client = Groq(api_key=groq_key)
+                # 強制使用乾淨的 httpx client 避免 proxies 錯誤
+                client = Groq(api_key=groq_key, http_client=httpx.Client())
                 
-                # ✅ 2026 年 2 月最新穩定模型
+                # ✅ 2026 官方最新模型 llama-3.3-70b-versatile
                 groq_resp = client.chat.completions.create(
-                    model="llama-3.1-70b-versatile",  # 修復 400 錯誤
+                    model="llama-3.3-70b-versatile", 
                     messages=[{"role": "user", "content": ai_prompt}],
                     max_tokens=400,
-                    temperature=0.2
+                    temperature=0.3
                 )
                 groq_result = groq_resp.choices[0].message.content
-                st.success("✅ Groq 完成")
-                prog.progress(80)
+                st.success("✅ Groq 分析完成")
             except Exception as e:
-                st.error("🦙 Groq 故障")
-                st.caption(f"錯誤：{str(e)[:80]}")
+                st.error("🦙 Groq 錯誤")
+                st.caption(str(e)[:100])
         
         # 🔮 Gemini 分析
-        if gemini_key:
-            with col_gemini:
-                try:
-                    import google.generativeai as genai
-                    genai.configure(api_key=gemini_key)
-                    
-                    # ✅ 自動偵測可用模型（防 404）
-                    models = genai.list_models()
-                    stable_model = "models/gemini-1.5-pro-latest"
-                    
-                    model = genai.GenerativeModel(stable_model)
-                    gemini_resp = model.generate_content(ai_prompt)
-                    
-                    st.success("✅ Gemini 完成")
-                    prog.progress(95)
-                except Exception as e:
-                    st.error("🔮 Gemini 故障")
-                    st.caption(f"錯誤：{str(e)[:80]}")
-        else:
-            prog.progress(90)
+        with col_gemini:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=gemini_key)
+                
+                # ✅ 2026 穩定官方 API 模型
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                gemini_resp = model.generate_content(ai_prompt)
+                gemini_result = gemini_resp.text
+                st.success("✅ Gemini 分析完成")
+            except Exception as e:
+                st.error("🔮 Gemini 錯誤")
+                st.caption(str(e)[:100])
         
         prog.progress(100)
         status.success("🎉 分析完成！")
         
         # 📋 結果展示
-        if groq_result:
+        if groq_result or gemini_result:
             st.markdown("---")
-            st.markdown("## 🎯 **AI 交易決策**")
+            st.markdown("## 🎯 **AI 雙引擎交易決策**")
             
-            with st.expander("🦙 Groq Llama 3.1 分析", expanded=True):
-                st.markdown(groq_result)
+            tab_g, tab_m = st.tabs(["🦙 Groq (Llama-3.3)", "🔮 Gemini (2.0 Flash)"])
             
-            # 📈 技術指標總結
-            st.markdown("### 📊 **即時技術面板**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
+            with tab_g:
+                if groq_result:
+                    st.markdown(groq_result)
+                else:
+                    st.warning("Groq 未能產生結果")
+                    
+            with tab_m:
+                if gemini_result:
+                    st.markdown(gemini_result)
+                else:
+                    st.warning("Gemini 未能產生結果")
+            
+            # 📈 系統技術面板
+            st.markdown("### 📊 **系統指標快照**")
+            col_1, col_2, col_3 = st.columns(3)
+            with col_1:
                 trend = "🟢 多頭" if S_current > ma20 else "🔴 空頭"
                 st.metric("短線趨勢", trend)
-            with col2:
-                gap_pct = (S_current - ma20) / ma20 * 100
-                st.metric("月線乖離", f"{gap_pct:+.1f}%")
-            with col3:
-                suggestion = "分批進場" if gap_pct < -2 else "觀望"
-                st.metric("AI 建議", suggestion)
-        else:
-            st.error("⚠️ Groq 分析失敗，請檢查金鑰")
-    
-    # 📱 底部資訊
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align:center; padding:15px; font-size:14px; color:#666'>
-        💎 貝伊果屋 | AI 驅動台股決策助手<br>
-        <small>Secrets: GROQ_KEY, GEMINI_KEY | 免費使用</small>
-    </div>
-    """, unsafe_allow_html=True)
+            with col_2:
+                gap = S_current - ma20
+                st.metric("距月線(MA20)", f"{gap:+.0f} 點")
+            with col_3:
+                action = "分批佈局" if gap < 0 else "持有觀望"
+                st.metric("系統建議", action)
 
 
 # --------------------------
