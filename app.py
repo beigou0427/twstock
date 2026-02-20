@@ -1419,156 +1419,146 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # =====================================================
-# Tab 5: 完整功能 AI 台股分析（2026 穩定版）
+# Tab 5: AI 台股分析（SCC 修復版）
+# 已移除所有可能導致 proxies/404 錯誤的寫法
 # 直接貼入 with tabs[5]: 即可運行
 # =====================================================
 with tabs[5]:
-    st.markdown("""
-    <div style='text-align:center; padding:20px; background:linear-gradient(90deg,#667eea 0%,#764ba2 100%); 
-    color:white; border-radius:15px; margin-bottom:20px'>
-        <h1>🤖 AI 台股智慧助手 v6.0</h1>
-        <p>TAIEX {S_current:.0f} | 更新：{latest_date:%Y-%m-%d}</p>
-    </div>
-    """.format(S_current=S_current, latest_date=latest_date), unsafe_allow_html=True)
+    st.markdown("### 🤖 **AI 智慧台股分析**")
+    st.caption(f"最新更新：{latest_date.strftime('%Y-%m-%d')} | TAIEX {S_current:.0f} | v6.0")
     
     # 🎛️ 控制面板
     col_input1, col_input2, col_input3 = st.columns(3)
     with col_input1:
-        stock_symbol = st.text_input("📈 分析股票", value="2330", max_chars=6, 
-                                   help="輸入股票代碼如：2330(台積電)、0050(元大)")
+        stock_symbol = st.text_input("📈 分析標的", value="2330", max_chars=6, help="如: 2330")
     with col_input2:
-        ana_period = st.selectbox("⏰ 分析期間", options=[3, 7, 14, 30], 
-                                format_func=lambda x: f"{x}天")
+        ana_period = st.selectbox("⏰ 分析期間", [3, 7, 14, 30], index=1)
     with col_input3:
-        news_count = st.slider("📰 新聞筆數", 10, 40, 20)
+        news_count = st.slider("📰 參考新聞筆數", 10, 40, 20)
     
-    # 🔑 Token 設定區（填入後刪除！）
-    with st.expander("🔐 API 金鑰設定（填完立即刪除）", expanded=False):
-        groq_key = st.text_input("🦙 Groq API Key", type="password", 
-                               placeholder="gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-        gemini_key = st.text_input("🔮 Gemini API Key", type="password", 
-                                 placeholder="AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
-        st.info("💡 填完 → 儲存 → 立即刪除此區 → 用 st.secrets 永久化")
+    # 🚨 請使用 Streamlit Community Cloud 的 Secrets 功能設定金鑰
+    # 設定路徑：App 右側選單 -> Settings -> Secrets
+    GROQ_KEY = st.secrets.get("GROQ_KEY", "")
+    GEMINI_KEY = st.secrets.get("GEMINI_KEY", "")
     
-    # 分析按鈕
-    if st.button("🚀 **立即 AI 分析**", type="primary", use_container_width=True):
+    if st.button("🚀 **啟動雙引擎 AI 分析**", type="primary", use_container_width=True):
         
-        # 🔄 進度顯示
-        progress_container = st.container()
-        status_container = st.container()
+        # 檢查金鑰
+        if not GROQ_KEY or not GEMINI_KEY:
+            st.error("❌ 找不到 API 金鑰！請至 Streamlit Cloud 設定 Secrets：")
+            st.code('GROQ_KEY = "gsk_..."\nGEMINI_KEY = "AIzaSy..."', language="toml")
+            st.stop()
+            
+        # 🔄 進度條
+        prog_bar = st.progress(0)
+        status_msg = st.empty()
         
-        # 📊 步驟 1: 資料收集 (30%)
-        with progress_container:
-            prog = st.progress(0)
-        with status_container:
-            st.text("📡 收集即時財經資料...")
+        # 📊 步驟 1: 模擬收集新聞與數據 (避免 API 阻塞)
+        prog_bar.progress(30)
+        status_msg.info("📡 整理最新盤面資訊...")
         
-        # 模擬 + RSS 資料（超穩）
-        market_news = [
-            f"TAIEX 即時 {S_current:.0f}, MA20 {ma20:.0f}",
-            f"{stock_symbol} 最新籌碼異動",
-            f"{ana_period}天技術面預測",
-            "美股科技股連動影響"
+        recent_market_data = [
+            f"大盤 TAIEX 目前點位 {S_current:.0f}，月線 {ma20:.0f}，季線 {ma60:.0f}",
+            f"{stock_symbol} 近期籌碼面與法人動向變化",
+            f"國際股市連動與科技股 {ana_period} 天趨勢",
+            "相關產業供應鏈最新消息"
         ]
         
+        # 建立共用 Prompt
         analysis_prompt = f"""
-        【台股 {stock_symbol} {ana_period}天 AI 分析】
+        【台股 {stock_symbol} {ana_period}天 AI 分析報告】
         
-        🏛️ 大盤：TAIEX {S_current:.0f} | MA20:{ma20:.0f} | MA60:{ma60:.0f}
-        📰 最新動態：{" | ".join(market_news)}
+        📌 大盤背景：TAIEX {S_current:.0f} | MA20:{ma20:.0f} | MA60:{ma60:.0f}
+        📰 近期焦點：{" / ".join(recent_market_data)}
         
-        請提供專業但易懂的分析：
-        1. **走勢判斷**：看多/看空/震盪
-        2. **操作建議**：買入/賣出/持有
-        3. **風險等級**：低/中/高 + 理由  
-        4. **關鍵價位**：支撐/壓力
-        
-        🎯 繁體中文，初學者友善，300字內！
+        請提供專業且精煉的分析（繁體中文，300字以內）：
+        1. 走勢預期（看多/看空/震盪）
+        2. 操作建議（積極買進/分批佈局/觀望/減碼）
+        3. 風險評估（低/中/高）與關鍵支撐壓力價位
         """
         
-        prog.progress(40)
-        st.text("🧠 AI 模型啟動...")
+        prog_bar.progress(60)
+        status_msg.info("🧠 AI 模型深度推理中...")
         
-        # 🎯 AI 分析結果
+        # 🎯 步驟 2: AI 分析結果
         ai_analyses = []
         
-        # 🦙 Groq（優先，最快）
-        if groq_key.startswith("gsk_"):
-            prog.progress(70)
-            st.text("🦙 Groq 高速推理...")
+        col_res1, col_res2 = st.columns(2)
+        
+        # 🦙 Groq 分析
+        with col_res1:
             try:
                 from groq import Groq
-                client = Groq(api_key=groq_key)
+                # 使用 httpx 自訂 client 繞過 proxies 錯誤
+                import httpx
+                http_client = httpx.Client() 
+                client = Groq(api_key=GROQ_KEY, http_client=http_client)
+                
                 groq_resp = client.chat.completions.create(
-                    model="llama3-70b-8192",  # 2026 頂規
+                    model="llama3-8b-8192",  # ✅ 最穩定的開源模型
                     messages=[{"role": "user", "content": analysis_prompt}],
-                    max_tokens=350,
-                    temperature=0.1
+                    max_tokens=400,
+                    temperature=0.3
                 )
                 groq_result = groq_resp.choices[0].message.content
-                ai_analyses.append(("🦙 Groq Llama3-70B", groq_result))
+                ai_analyses.append(("🦙 Groq (Llama3)", groq_result))
                 st.success("✅ Groq 分析完成")
             except Exception as e:
-                st.error(f"🦙 Groq 錯誤：{str(e)[:60]}")
+                st.error("🦙 Groq 錯誤")
+                st.caption(f"Error: {str(e)[:60]}")
         
-        # 🔮 Gemini（備援）
-        if gemini_key.startswith("AIza"):
-            prog.progress(85)
-            st.text("🔮 Gemini 深度分析...")
+        # 🔮 Gemini 分析
+        with col_res2:
             try:
                 import google.generativeai as genai
-                genai.configure(api_key=gemini_key)
-                model = genai.GenerativeModel("gemini-1.5-pro")  # 超穩
+                genai.configure(api_key=GEMINI_KEY)
+                
+                # 取得可用模型列表來自動選擇，避免 404
+                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                
+                # 優先使用 gemini-pro，若無則選列表第一個可用模型
+                model_name = "models/gemini-pro"
+                if model_name not in available_models and available_models:
+                    model_name = available_models[0]
+                    
+                model = genai.GenerativeModel(model_name)  # ✅ 自動避開 404 錯誤
                 gemini_resp = model.generate_content(analysis_prompt)
-                gemini_result = gemini_resp.text
-                ai_analyses.append(("🔮 Gemini 1.5 Pro", gemini_result))
+                ai_analyses.append((f"🔮 Gemini ({model_name.replace('models/','')})", gemini_resp.text))
                 st.success("✅ Gemini 分析完成")
             except Exception as e:
-                st.error(f"🔮 Gemini 錯誤：{str(e)[:60]}")
+                st.error("🔮 Gemini 錯誤")
+                st.caption(f"Error: {str(e)[:60]}")
         
-        prog.progress(100)
-        st.success("🎉 **分析完成！**")
+        prog_bar.progress(100)
+        status_msg.success("🎉 分析完成！")
         
-        # 📋 結果展示
+        # 📋 步驟 3: 展示結果
         if ai_analyses:
             st.markdown("---")
-            st.markdown("## 🎯 **AI 綜合交易建議**")
+            st.markdown("## 🎯 **AI 綜合交易觀點**")
             
-            tab_results = st.tabs([name for name, _ in ai_analyses])
-            for i, tab in enumerate(tab_results):
+            # 使用 Tabs 分開顯示兩家 AI 的觀點
+            res_tabs = st.tabs([name for name, _ in ai_analyses])
+            for i, tab in enumerate(res_tabs):
                 with tab:
                     st.markdown(ai_analyses[i][1])
             
-            # 📈 技術總結
-            st.markdown("### 📊 **即時技術指標**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                trend_signal = "🟢 看多" if S_current > ma20 else "🔴 看空"
-                st.metric("趨勢", trend_signal)
-            with col2:
-                heat_score = min(100, max(0, int((S_current / ma20 - 1) * 500 + 50)))
-                st.metric("熱度", f"{heat_score}", f"{heat_score-50:+.0f}")
-            with col3:
-                action = "持有" if abs(S_current-ma20) < 200 else "觀望"
-                st.metric("建議", action)
+            # 📈 系統技術總結
+            st.markdown("### 📊 **系統指標快照**")
+            col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+            with col_kpi1:
+                trend = "🟢 偏多" if S_current > ma20 else "🔴 偏空"
+                st.metric("大盤短線趨勢", trend)
+            with col_kpi2:
+                dist = S_current - ma20
+                st.metric("距月線(MA20)乖離", f"{dist:+.0f} 點", f"{(dist/ma20)*100:+.2f}%")
+            with col_kpi3:
+                st.metric("系統建議", "分批承接" if dist < 0 else "持有觀望")
         else:
-            st.error("🤖 **AI 無法啟動**")
-            st.info("""
-            **🔧 快速修復**：
-            1. console.groq.com/keys → 新 Groq 金鑰
-            2. aistudio.google.com/app/apikey → 新 Gemini 金鑰  
-            3. 貼入上方輸入框
-            4. 點「立即 AI 分析」
-            """)
-    
-    # 📱 手機最佳化
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align:center; padding:10px; font-size:12px; color:#666'>
-        💰 貝伊果屋 | AI 台股助手 | 免費使用
-    </div>
-    """, unsafe_allow_html=True)
+            st.error("⚠️ 兩家 AI 皆無法提供分析，請檢查 Cloud 日誌。")
 
+    st.markdown("---")
+    st.caption("💡 免費 AI 台股分析工具 | 結合 Groq Llama3 與 Google Gemini")
 
 
 # --------------------------
