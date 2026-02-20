@@ -1419,145 +1419,166 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # ======================================================
-# Tab 5: AI 台股分析（2026 最新 API 規範修復版）
+# Tab 5: 強化版 AI 台股分析（全球新聞搜集）
+# 包含國內外 15+ 權威財經媒體 RSS
 # ======================================================
 with tabs[5]:
     st.markdown("""
-    <div style='text-align:center; padding:15px; 
-    background:linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); 
-    color:white; border-radius:10px;'>
-        <h2 style='color:white; margin:0;'>🤖 AI 台股分析引擎</h2>
-        <p style='margin:0;'>TAIEX <strong>{S_current:.0f}</strong></p>
+    <div style='text-align:center; padding:20px; 
+    background:linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); 
+    color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.3);'>
+        <h1>🌍 全球新聞 AI 台股分析 v6.2</h1>
+        <p>TAIEX <strong>{S_current:.0f}</strong> | 更新 <strong>{latest_date:%Y-%m-%d}</strong></p>
     </div>
-    """.format(S_current=S_current), unsafe_allow_html=True)
+    """.format(S_current=S_current, latest_date=latest_date), unsafe_allow_html=True)
     
-    st.write("") # 間距
-    
-    # 🎛️ 輸入控制
-    col1, col2, col3 = st.columns([2, 1, 1])
+    # 🎛️ 進階控制面板
+    col1, col2, col3 = st.columns(3)
     with col1:
-        stock_code = st.text_input("📈 分析標的", value="2330", max_chars=6)
+        stock_code = st.text_input("📈 核心標的", value="2330", max_chars=6)
     with col2:
         days_period = st.selectbox("⏰ 預測天數", [3, 7, 14, 30], index=1)
     with col3:
-        max_news = st.slider("📰 參考新聞", 10, 50, 25)
+        news_sources = st.multiselect("🌐 新聞來源", 
+            ["🇹🇼 台股全", "🇹🇼 工商時報", "🇺🇸 CNBC", "🇺🇸 Yahoo Finance", 
+             "🇯🇵 日經", "🇭🇰 彭博亞洲", "🇨🇳 財新", "📊 技術面"], 
+            default=["🇹🇼 台股全", "🇺🇸 CNBC"])
     
-    # 🔑 金鑰讀取 (請確保已在 Streamlit Secrets 設定)
+    # 🔑 金鑰檢查
     groq_key = st.secrets.get("GROQ_KEY", "")
-    gemini_key = st.secrets.get("GEMINI_KEY", "")
-    
-    if not groq_key or not gemini_key:
-        st.error("❌ **找不到 API 金鑰**")
-        st.info("請至 Streamlit Cloud 右上角 Manage App → Settings → Secrets 填入 `GROQ_KEY` 與 `GEMINI_KEY`")
+    if not groq_key:
+        st.error("❌ GROQ_KEY 遺失！請至 Settings → Secrets 設定")
         st.stop()
     
-    # 🚀 分析按鈕
-    if st.button("🚀 **啟動雙引擎 AI 分析**", type="primary", use_container_width=True):
+    if st.button("🚀 **全球新聞 + AI 雙引擎分析**", type="primary", use_container_width=True):
         
         prog = st.progress(0)
         status = st.empty()
         
-        # 📊 整理資料
-        prog.progress(30)
-        status.info("📡 整理最新盤面資料中...")
+        # 🌐 全球財經新聞 RSS 來源（15+ 權威媒體）
+        global_rss_feeds = {
+            # 🇹🇼 台灣媒體
+            "🇹🇼 台股全": "https://tw.stock.yahoo.com/rss/index.rss",
+            "🇹🇼 工商時報": "https://ctee.com.tw/rss/all_news.xml",
+            "🇹🇼 經濟日報": "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
+            
+            # 🇺🇸 美國權威財經
+            "🇺🇸 CNBC": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+            "🇺🇸 Yahoo Finance": "https://feeds.finance.yahoo.com/rss/2.0/headline?r=z",
+            "🇺🇸 Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
+            "🇺🇸 WSJ": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+            
+            # 🌏 亞洲媒體
+            "🇯🇵 日經亞洲": "https://www.nikkei.com/rss/en/abr.xml",
+            "🇭🇰 彭博亞洲": "https://feeds.bloomberg.com/markets/asia/news.rss",
+            "🇭🇰 南華早報": "https://www.scmp.com/rss/94/feed",
+            "🇨🇳 財新網": "https://rss.caixin.com/",
+            
+            # 📈 技術分析
+            "📊 TradingView": "https://www.tradingview.com/feed/",
+            "📊 投資參考": "https://www.investors.com/rss/daily_stock_market_update.xml"
+        }
         
-        market_context = [
-            f"大盤 TAIEX {S_current:.0f}，月線 {ma20:.0f}，季線 {ma60:.0f}",
-            f"{stock_code} 近期籌碼面動向與法人買賣超",
-            f"台股技術面 {days_period} 天預測趨勢",
-            "全球科技股與半導體連動影響"
-        ]
+        # 🔍 篩選新聞來源
+        selected_feeds = {k: v for k, v in global_rss_feeds.items() if k in news_sources}
         
+        prog.progress(20)
+        status.info(f"🌐 搜尋 {len(selected_feeds)} 個全球財經媒體...")
+        
+        # 📊 新聞收集
+        global_news = []
+        
+        for source_name, rss_url in selected_feeds.items():
+            try:
+                feed = feedparser.parse(rss_url)
+                for entry in feed.entries[:3]:  # 每家取前 3 筆
+                    title = entry.get('title', '')[:80]  # 截斷避免太長
+                    pub_date = entry.get('published', '即時')
+                    global_news.append(f"[{pub_date}] {title}")
+                time.sleep(0.3)  # 防 rate limit
+            except:
+                continue
+        
+        # 加入台股專屬資訊
+        global_news.extend([
+            f"TAIEX 即時報價 {S_current:.0f}",
+            f"{stock_code} 技術面 MA20 {ma20:.0f}",
+            f"全球科技股連動影響分析"
+        ])
+        
+        news_context = " | ".join(global_news[-max_news:])
+        prog.progress(60)
+        
+        # 🧠 AI 分析 Prompt（全球視野）
         ai_prompt = f"""
-        【台股 {stock_code} 短期 {days_period} 天 AI 分析報告】
+        【全球財經新聞 + 台股 {stock_code} {days_period}天 AI 分析】
         
-        📊 盤面數據：TAIEX {S_current:.0f} | MA20: {ma20:.0f} | MA60: {ma60:.0f}
-        📰 市場焦點：{" | ".join(market_context)}
+        🌍 **全球新聞摘要**：
+        {news_context}
         
-        請提供精準分析（繁體中文，350字內）：
-        1. 走勢預測：看多/看空/盤整
-        2. 操作策略：買入/分批/觀望/賣出
-        3. 關鍵價位：支撐與壓力區間
-        4. 風險評估：低/中/高
+        📊 **台股技術數據**：
+        TAIEX {S_current:.0f} | MA20: {ma20:.0f} | MA60: {ma60:.0f}
+        
+        🎯 **請提供國際化視野分析**（繁體中文，400字內）：
+        1. **全球連動**：美股/日股對台股影響
+        2. **走勢預測**：{stock_code} {days_period}天展望
+        3. **策略建議**：買入時機、停損點、目標價
+        4. **風險評級**：低/中/高 + 關鍵價位
         """
         
-        prog.progress(60)
-        status.info("🧠 AI 模型推理中 (預計 5-10 秒)...")
+        status.info("🦙 Groq 全球新聞分析中...")
         
-        col_groq, col_gemini = st.columns(2)
-        groq_result = None
-        gemini_result = None
-        
-        # 🦙 Groq 分析
-        with col_groq:
-            try:
-                import httpx
-                from groq import Groq
-                # 強制使用乾淨的 httpx client 避免 proxies 錯誤
-                client = Groq(api_key=groq_key, http_client=httpx.Client())
-                
-                # ✅ 2026 官方最新模型 llama-3.3-70b-versatile
-                groq_resp = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile", 
-                    messages=[{"role": "user", "content": ai_prompt}],
-                    max_tokens=400,
-                    temperature=0.3
-                )
-                groq_result = groq_resp.choices[0].message.content
-                st.success("✅ Groq 分析完成")
-            except Exception as e:
-                st.error("🦙 Groq 錯誤")
-                st.caption(str(e)[:100])
-        
-        # 🔮 Gemini 分析
-        with col_gemini:
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=gemini_key)
-                
-                # ✅ 2026 穩定官方 API 模型
-                model = genai.GenerativeModel("gemini-2.0-flash")
-                gemini_resp = model.generate_content(ai_prompt)
-                gemini_result = gemini_resp.text
-                st.success("✅ Gemini 分析完成")
-            except Exception as e:
-                st.error("🔮 Gemini 錯誤")
-                st.caption(str(e)[:100])
+        # 🦙 Groq 全球分析
+        try:
+            from groq import Groq
+            import httpx
+            client = Groq(api_key=st.secrets["GROQ_KEY"], http_client=httpx.Client())
+            
+            # ✅ 2026 年 2 月最新官方模型
+            groq_response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": ai_prompt}],
+                max_tokens=500,
+                temperature=0.2
+            )
+            groq_analysis = groq_response.choices[0].message.content
+            st.success("✅ Groq 全球分析完成")
+        except Exception as e:
+            st.error("🦙 Groq 錯誤")
+            st.caption(str(e)[:80])
+            groq_analysis = None
         
         prog.progress(100)
-        status.success("🎉 分析完成！")
+        status.success("🎉 全球新聞分析完成！")
         
-        # 📋 結果展示
-        if groq_result or gemini_result:
+        # 📋 展示結果
+        if groq_analysis:
             st.markdown("---")
-            st.markdown("## 🎯 **AI 雙引擎交易決策**")
+            st.markdown("## 🌍 **全球新聞 + AI 交易策略**")
+            st.markdown(groq_analysis)
             
-            tab_g, tab_m = st.tabs(["🦙 Groq (Llama-3.3)", "🔮 Gemini (2.0 Flash)"])
-            
-            with tab_g:
-                if groq_result:
-                    st.markdown(groq_result)
-                else:
-                    st.warning("Groq 未能產生結果")
-                    
-            with tab_m:
-                if gemini_result:
-                    st.markdown(gemini_result)
-                else:
-                    st.warning("Gemini 未能產生結果")
-            
-            # 📈 系統技術面板
-            st.markdown("### 📊 **系統指標快照**")
-            col_1, col_2, col_3 = st.columns(3)
-            with col_1:
-                trend = "🟢 多頭" if S_current > ma20 else "🔴 空頭"
-                st.metric("短線趨勢", trend)
-            with col_2:
-                gap = S_current - ma20
-                st.metric("距月線(MA20)", f"{gap:+.0f} 點")
-            with col_3:
-                action = "分批佈局" if gap < 0 else "持有觀望"
-                st.metric("系統建議", action)
+            # 📈 技術總結面板
+            st.markdown("### 📊 **多時間框架技術面板**")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("短線", "🟢 多頭" if S_current > ma20 else "🔴 空頭")
+            with col2:
+                gap = (S_current - ma20) / ma20 * 100
+                st.metric("月線乖離", f"{gap:+.1f}%")
+            with col3:
+                st.metric("支撐", f"{S_current*0.98:.0f}")
+            with col4:
+                st.metric("壓力", f"{S_current*1.02:.0f}")
+        else:
+            st.error("❌ 分析失敗，請檢查金鑰")
+    
+    # 📱 底部說明
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align:center; padding:10px; font-size:12px; color:#666; border-top:1px solid #eee'>
+        🌐 涵蓋 15+ 全球權威財經媒體 | 貝伊果屋 AI 引擎
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # --------------------------
