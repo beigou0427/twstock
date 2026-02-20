@@ -1419,9 +1419,8 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # ======================================================
-# Tab 5: 產業上下游深度分析版（v6.5）
-# 強化：全球產業鏈新聞 + 上下游供應鏈分析 + 競爭格局
-# 直接貼入 with tabs[5]:
+# Tab 5: 產業上下游深度分析版（v6.6 - 完美修復語法錯誤）
+# 直接貼入 with tabs[5]: 即可運行
 # ======================================================
 with tabs[5]:
     st.markdown("""
@@ -1462,103 +1461,90 @@ with tabs[5]:
         
         # 🌐 產業鏈分類 RSS 來源（強化上下游覆蓋）
         supply_chain_rss = {
-            # 🎯 上游：原物料、設備、晶圓
             "上游原物料": {
                 "彭博商品": "https://feeds.bloomberg.com/markets/commodities/news.rss",
                 "鋼鐵鋁銅": "https://www.metal.com/rss/en/news", 
                 "設備供應": "https://appliedmaterials.com/rss/news.xml"
             },
-            
-            # 🏭 中游：半導體、電子代工、面板
             "中游製造": {
                 "半導體新聞": "https://semiengineering.com/feed/",
                 "電子代工": "https://www.digitimes.com/rss/dt_n.xml",
                 "面板產業": "https://www.oled-info.com/rss.xml"
             },
-            
-            # 📱 下游：終端品牌、消費電子、雲端
             "下游終端": {
                 "蘋果新聞": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL",
                 "科技消費": "https://www.cnet.com/rss/news/",
                 "雲端運算": "https://feeds.reuters.com/reuters/technologyNews"
             },
-            
-            # 🌍 總經與產業環境
-            "總經環境": {
+            "全產業鏈": {
                 "美聯儲": "https://www.federalreserve.gov/feeds/about.htm",
                 "全球PMI": "https://www.supplychaindive.com/rss/all/",
-                "地緣政治": "https://www.reuters.com/world/rss"
+                "地緣政治": "https://www.reuters.com/world/rss",
+                "Yahoo財經": "https://tw.stock.yahoo.com/rss/index.rss"
             }
         }
         
         prog.progress(20)
         status.info(f"🔍 掃描 {chain_focus} 產業鏈相關新聞...")
         
-        # 📊 收集產業鏈新聞（確保上下游平衡）
+        # 📊 收集產業鏈新聞
         all_news = []
         news_display = []
         source_counter = {}
         
-        # 針對選擇的產業鏈焦點，優先抓取對應新聞
-        target_sources = supply_chain_rss.get(chain_focus, {})
-        for category, media_dict in target_sources.items():
-            for media_name, rss_url in media_dict.items():
-                try:
-                    feed = feedparser.parse(rss_url)
-                    entries = feed.entries[:4]  # 每類取 4 篇
-                    for entry in entries:
-                        title = entry.title[:70]
-                        news_line = f"[{media_name}]{title}"
-                        all_news.append(news_line)
-                        news_display.append({
-                            "來源": media_name, 
-                            "標題": title,
-                            "類別": category,
-                            "時間": entry.get('published', '即時')
-                        })
-                        
-                        # 統計來源多樣性
-                        source_counter[media_name] = source_counter.get(media_name, 0) + 1
-                    time.sleep(0.15)
-                except:
-                    continue
+        # 優先抓取目標產業鏈
+        target_sources = supply_chain_rss.get(chain_focus, supply_chain_rss["全產業鏈"])
+        for media_name, rss_url in target_sources.items():
+            try:
+                feed = feedparser.parse(rss_url)
+                for entry in feed.entries[:4]:
+                    title = entry.title[:70]
+                    all_news.append(f"[{media_name}]{title}")
+                    news_display.append({
+                        "來源": media_name, 
+                        "標題": title,
+                        "類別": chain_focus,
+                        "時間": entry.get('published', '即時')
+                    })
+                    source_counter[media_name] = source_counter.get(media_name, 0) + 1
+                time.sleep(0.15)
+            except:
+                continue
         
-        # 擴充其他產業鏈新聞（平衡視角）
-        other_chains = [k for k in supply_chain_rss.keys() if k != chain_focus]
-        for other_chain in other_chains[:2]:  # 最多補充 2 個其他鏈
-            media_dict = supply_chain_rss[other_chain]
-            for media_name, rss_url in list(media_dict.items())[:2]:  # 每鏈補 2 篇
+        # 擴充其他產業鏈環節
+        for other_chain in [k for k in supply_chain_rss.keys() if k != chain_focus][:2]:
+            for media_name, rss_url in list(supply_chain_rss[other_chain].items())[:2]:
                 try:
                     feed = feedparser.parse(rss_url)
-                    entries = feed.entries[:2]
-                    for entry in entries:
+                    for entry in feed.entries[:2]:
                         title = entry.title[:70]
-                        news_line = f"[{media_name}]{title}"
-                        all_news.append(news_line)
+                        all_news.append(f"[{media_name}]{title}")
                         news_display.append({
                             "來源": media_name,
                             "標題": title,
                             "類別": other_chain,
                             "時間": entry.get('published', '即時')
                         })
+                        source_counter[media_name] = source_counter.get(media_name, 0) + 1
                 except:
                     continue
         
-        # 加入客觀數據
+        # 客觀數據
         all_news.extend([
-            f"核心 {stock_code} {days_period}日技術動態",
-            f"台股大盤 {S_current:.0f} 相對均線位置",
-            "全球供應鏈庫存循環狀態"
+            f"核心 {core_company} {ana_period}日技術動態",
+            f"台股大盤 {S_current:.0f} 相對均線位置"
         ])
         
         news_summary = " | ".join(all_news[-max_news:])
         prog.progress(50)
         
-        # 🧠 產業鏈深度 AI Prompt
+        # 🧠 AI Prompt (已修復 SyntaxError)
+        unique_sources_count = len(set([n['來源'] for n in news_display])) if news_display else 0
+        
         ai_prompt = f"""
-        你是一位資深的產業鏈研究員。請基於以下全球新聞，對 {stock_code} 及其產業鏈進行 {days_period} 天趨勢觀察。
+        你是一位資深的產業鏈研究員。請基於以下全球新聞，對 {core_company} 及其產業鏈進行 {ana_period} 天趨勢觀察。
 
-        🔗 **{chain_focus} 產業鏈情報**（涵蓋 {len(set([n['來源'] for n in news_display])} 家媒體）：
+        🔗 **{chain_focus} 產業鏈情報**（涵蓋 {unique_sources_count} 家媒體）：
         {news_summary}
         
         📊 **客觀數據**：TAIEX {S_current:.0f} | MA20: {ma20:.0f} | MA60: {ma60:.0f}
@@ -1568,7 +1554,7 @@ with tabs[5]:
         2. ⬆️ **上游觀察**：原物料價格、設備投資動向
         3. 🏭 **中游現況**：製造環節稼動率、訂單能見度
         4. ⬇️ **下游需求**：終端消費、庫存水位
-        5. 🔗 **產業鏈連動**：{stock_code} 在整個供應鏈中的關鍵地位與影響
+        5. 🔗 **產業鏈連動**：{core_company} 在整個供應鏈中的關鍵地位與影響
         6. 📉 **客觀技術**：目前與歷史均線的相對位置結構
         
         ✅ **嚴格禁止**：任何買賣建議、目標價、漲跌預測
@@ -1595,6 +1581,7 @@ with tabs[5]:
             st.success("✅ 產業鏈深度報告完成")
         except Exception as e:
             st.error("🦙 AI 引擎暫停服務")
+            st.caption(str(e)[:80])
             groq_analysis = None
         
         prog.progress(100)
@@ -1603,28 +1590,29 @@ with tabs[5]:
         # 📋 完整結果展示
         if groq_analysis:
             st.markdown("---")
-            st.markdown(f"## 🔗 **{stock_code} {chain_focus} 產業鏈分析報告**")
+            st.markdown(f"## 🔗 **{core_company} {chain_focus} 產業鏈分析報告**")
             st.markdown(groq_analysis)
             
-            # 📰 新聞來源揭露
-            with st.expander(f"🔍 底層資料集 (共 {len(news_display)} 筆新聞，涵蓋 {len(set([n['來源'] for n in news_display])} 家媒體)"):
+            # 📰 新聞來源揭露 (已修復 SyntaxError)
+            with st.expander(f"🔍 底層資料集 (共 {len(news_display)} 筆新聞，涵蓋 {unique_sources_count} 家媒體)"):
                 import pandas as pd
-                df_news = pd.DataFrame(news_display[-max_news:])
-                if not df_news.empty:
+                if news_display:
+                    df_news = pd.DataFrame(news_display[-max_news:])
                     df_news.index += 1
-                    df_news.columns = ["媒體", "新聞標題", "產業鏈位置", "時間"]
-                    st.dataframe(df_news, use_container_width=True, hide_index=False)
+                    st.dataframe(df_news, use_container_width=True)
                     st.caption(f"**採集來源統計**：{dict(sorted(source_counter.items(), key=lambda x: x[1], reverse=True)[:5])}")
+                else:
+                    st.warning("未能抓取到新聞資料")
             
             # 📈 數據面板
             st.markdown("### 📊 **產業鏈數據快覽**")
             col1, col2, col3 = st.columns(3)
             with col1:
                 trend = "均線之上" if S_current > ma20 else "均線之下"
-                st.metric("核心股位階", trend)
+                st.metric("大盤相對位階", trend)
             with col2:
                 gap_pct = (S_current - ma20) / ma20 * 100
-                st.metric("與月線距離", f"{gap_pct:+.1f}%")
+                st.metric("與月線乖離", f"{gap_pct:+.1f}%")
             with col3:
                 volatility = "高波動" if abs(gap_pct) > 3 else "相對平穩"
                 st.metric("近期動態", volatility)
@@ -1633,8 +1621,6 @@ with tabs[5]:
     
     st.markdown("---")
     st.caption("🔗 貝伊果屋 產業鏈研究平台 | 全球供應鏈情報即時監測")
-
-
 
 
 # --------------------------
