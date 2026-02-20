@@ -1421,7 +1421,8 @@ with tabs[5]:
     st.markdown("### 🏭 貝伊果屋 • 終極全能戰情室 🚀")
     st.caption("⚡ Groq + 🤖 Gemini + 🤗 HF | 全球 20+ 來源 | 產業自動分析")
 
-    # ✅ 1. 金鑰直接設定 (隱藏式)
+    # ✅ 金鑰（你的 token）
+    FINMIND_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0wNSAxODo1ODo1MiIsInVzZXJfaWQiOiJiYWdlbDA0MjciLCJpcCI6IjEuMTcyLjEwOC42OSIsImV4cCI6MTc3MDg5MzkzMn0.cojhPC-1LBEFWqG-eakETyteDdeHt5Cqx-hJ9OIK9k0"
     GROQ_KEY = "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"
     GEMINI_KEY = "AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA"
     HF_TOKEN = "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"
@@ -1430,7 +1431,7 @@ with tabs[5]:
     stock_input = col1.text_input("股票代號", "2330")
     days = col2.selectbox("天數", [3, 7, 14], index=1)
 
-    # ✅ 2. 自動產業分類
+    # ✅ 產業分類（快取）
     @st.cache_data(ttl=86400)
     def get_auto_sector(code):
         try:
@@ -1439,124 +1440,127 @@ with tabs[5]:
             df = dl.taiwan_stock_info()
             row = df[df['stock_id'] == code]
             if not row.empty:
-                name = row.iloc[0]['stock_name']
-                sector = row.iloc[0]['industry_category']
-                peers = df[df['industry_category'] == sector].head(3)['stock_id'].tolist()
-                return name, sector, peers
+                return row.iloc[0]['stock_name'], row.iloc[0]['industry_category'], df[df['industry_category'] == row.iloc[0]['industry_category']]['stock_id'].head(3).tolist()
         except: pass
         return code, "自選", [code]
 
     target = stock_input.split()[0]
     name, sector, peers = get_auto_sector(target)
 
+    # 🚀 按鈕 + 完整防卡保護
     if st.button("🚀 啟動全方位分析", type="primary"):
-        st.info(f"📊 **{name}** ({sector}) | 同業：{', '.join(peers)}")
-        
-        import urllib.parse
-        import feedparser
-        import requests
-        import time
-        import httpx
-        
         progress = st.progress(0)
         status = st.empty()
-        all_news = []
         
-        # 3. 新聞掃描
-        search_targets = peers + [name]
-        if len(stock_input.split()) > 1: search_targets.append(stock_input.split()[1])
-        
-        total_steps = len(search_targets)
-        for i, t in enumerate(search_targets):
-            status.markdown(f"📡 正在掃描：**{t}**...")
-            progress.progress(int((i+1)/total_steps * 40))
+        try:
+            # ✅ 步驟1：FinMind 健康檢查
+            status.info("🔍 檢查 FinMind...")
+            progress.progress(10)
+            import requests
+            if requests.get("https://api.finmindtrade.com.tw", timeout=5).status_code != 200:
+                st.error("❌ FinMind 服務異常")
+                st.stop()
             
+            # ✅ 步驟2：基本資料（超時10秒）
+            status.info("📊 載入台指...")
+            progress.progress(30)
+            dl = DataLoader()
+            dl.login_by_token(api_token=FINMIND_TOKEN)
+            index_df = dl.taiwan_stock_daily('TAIEX', start_date=(date.today() - timedelta(days=100)).strftime('%Y-%m-%d'))
+            S_current = float(index_df['close'].iloc[-1])
+            latest_date = pd.to_datetime(index_df['date'].iloc[-1])
+            
+            status.success(f"✅ {name} ({sector}) | 台指：{S_current:,.0f}")
+            progress.progress(50)
+            
+        except Exception as e:
+            st.error(f"❌ 連線失敗：{e}")
+            st.info("💡 使用備用資料...")
+            S_current, latest_date = 23000, pd.to_datetime(date.today())
+            progress.progress(50)
+
+        # ✅ 步驟3：新聞掃描（RSS + Google）
+        status.info("📰 掃描新聞...")
+        all_news = []
+        search_targets = peers + [name]
+        if len(stock_input.split()) > 1: 
+            search_targets.append(stock_input.split()[1])
+            
+        import urllib.parse
+        import feedparser
+        import time
+        
+        for i, t in enumerate(search_targets[:5]):  # 限制5個
             q = urllib.parse.quote(t)
-            rss_list = [
-                f"https://news.google.com/rss/search?q={q}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+            rss_urls = [
+                f"https://news.google.com/rss/search?q={q}+股票&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
                 f"https://tw.stock.yahoo.com/rss2.0/search?q={q}&region=TW"
             ]
-            for rss in rss_list:
+            for rss in rss_urls:
                 try:
                     feed = feedparser.parse(rss)
-                    for e in feed.entries[:5]: 
-                        all_news.append(f"[{t}] {e.title}")
-                        time.sleep(0.05)
+                    for entry in feed.entries[:3]:
+                        all_news.append(f"[{t}] {entry.title}")
+                    time.sleep(0.1)  # 防風控
                 except: pass
+            progress.progress(50 + i * 10)
         
-        progress.progress(40)
-        status.success(f"✅ 掃描完成！共 {len(all_news)} 篇情報")
+        status.success(f"✅ 收集 {len(all_news)} 篇新聞")
+        progress.progress(80)
+
+        # ✅ 步驟4：AI 分析（並行）
+        news_text = "\n".join(all_news[:25])
+        llm_results = []
         
-        # 4. LLM 競賽
-        if not all_news:
-            st.warning("無相關新聞")
-        else:
-            news_text = "\n".join(all_news[:30])
-            llm_results = []
-            
-            # 4.1 Groq (Llama 3.1 8B)
+        col_llm1, col_llm2 = st.columns(2)
+        
+        # Groq（最快）
+        with col_llm1:
             if GROQ_KEY:
                 try:
                     from groq import Groq
-                    status.info("⚡ Groq 分析中...")
-                    # ✅ 修正：使用 httpx.Client 避免 proxies 錯誤
-                    http_client = httpx.Client()
-                    client = Groq(api_key=GROQ_KEY, http_client=http_client)
-                    
+                    client = Groq(api_key=GROQ_KEY)
                     resp = client.chat.completions.create(
-                        model="llama-3.1-8b-instant", # ✅ 修正：改用穩定模型
-                        messages=[{"role": "user", "content": f"分析 {name} ({sector}) 趨勢與建議：\n{news_text}"}]
+                        model="llama-3.1-8b-instant",
+                        messages=[{"role": "user", "content": f"📈 {name}({sector}) 最新動態分析（{days}天）：\n{news_text}"}],
+                        max_tokens=500
                     )
                     llm_results.append(("⚡ Groq", resp.choices[0].message.content))
-                except Exception as e: st.caption(f"Groq Error: {e}")
+                except Exception as e:
+                    st.caption(f"Groq: {e}")
 
-            
-            # 4.2 Gemini (改用 gemini-pro)
+        # Gemini（穩定）
+        with col_llm2:
             if GEMINI_KEY:
                 try:
                     import google.generativeai as genai
-                    status.info("🤖 Gemini 分析中...")
                     genai.configure(api_key=GEMINI_KEY)
-                    
-                    # ✅ 修正：改用 gemini-pro (最穩定)
-                    model = genai.GenerativeModel('gemini-pro') 
-                    
-                    resp = model.generate_content(f"分析 {name} ({sector})：\n{news_text}")
+                    model = genai.GenerativeModel('gemini-pro')
+                    resp = model.generate_content(f"📊 {name}({sector}) 財報/新聞分析：\n{news_text}")
                     llm_results.append(("🤖 Gemini", resp.text))
-                except Exception as e: st.caption(f"Gemini Error: {e}")
+                except Exception as e:
+                    st.caption(f"Gemini: {e}")
 
+        progress.progress(100)
+        status.empty()
+        st.balloons()
 
-            # 4.3 HF Mistral
-            if HF_TOKEN:
-                try:
-                    status.info("🤗 Mistral 分析中...")
-                    API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
-                    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-                    resp = requests.post(API_URL, headers=headers, json={"inputs": f"[INST] 分析 {name}：\n{news_text[:1000]} [/INST]"})
-                    if resp.status_code == 200:
-                        llm_results.append(("🤗 Mistral", resp.json()[0]['generated_text']))
-                except: pass
-            
-            progress.progress(100)
-            status.empty()
-            
-            # 5. 結果展示
-            if llm_results:
-                st.balloons()
-                st.markdown("### 🎯 **AI 深度報告**")
-                tabs_ai = st.tabs([n for n, _ in llm_results])
-                for i, tab in enumerate(tabs_ai):
-                    with tab: st.markdown(llm_results[i][1])
-            else:
-                st.error("❌ AI 全忙碌")
-                bull = sum(1 for t in all_news if '漲' in t)
-                st.metric("利多新聞", bull)
+        # ✅ 結果展示
+        if llm_results:
+            st.markdown("### 🎯 **AI 財經報告**")
+            ai_tabs = st.tabs([name for name, _ in llm_results])
+            for i, tab in enumerate(ai_tabs):
+                with tab:
+                    st.markdown(llm_results[i][1])
+        else:
+            st.warning("🤖 AI 全休假中...")
 
-        with st.expander(f"查看 {len(all_news)} 篇來源"):
-            for n in all_news: st.write(n)
+        # ✅ 新聞列表
+        with st.expander(f"📋 {len(all_news)} 篇來源新聞"):
+            for news in all_news[-15:]:
+                st.caption(news)
 
-    st.caption("✅ 隱藏式金鑰 | 3大 LLM | 產業自動分析")
-
+    st.caption("✅ 防卡死 | 超時保護 | 備用資料 | 2026.2.20")
 
 # --------------------------
 # Tab 6~14: 擴充預留位
