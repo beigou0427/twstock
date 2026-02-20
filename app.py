@@ -1419,148 +1419,191 @@ with tabs[4]:
 # Tab 5
 # --------------------------
 # ======================================================
-# Tab 5: 產業上下游深度分析版（v6.6 - 完美修復語法錯誤）
+# Tab 5: 全球百大媒體 AI 產業分析版 (v6.6)
+# 內建 50家媒體池 -> 隨機抽 10家 -> 萃取 20篇新聞
 # 直接貼入 with tabs[5]: 即可運行
 # ======================================================
 with tabs[5]:
     st.markdown("""
     <div style='text-align:center; padding:20px; 
-    background:linear-gradient(135deg, #0f3460 0%, #1e3c72 50%, #2a5298 100%); 
-    color:white; border-radius:15px; box-shadow:0 10px 30px rgba(0,0,0,0.3);'>
-        <h1 style='color:white; margin:0;'>🏭 產業鏈深度分析引擎</h1>
-        <p style='margin:5px 0;'>全球供應鏈 + 上下游 + 競爭格局 | TAIEX <strong>{S_current:.0f}</strong></p>
+    background:linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); 
+    color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.3);'>
+        <h1 style='color:white; margin:0;'>🌍 全球媒體矩陣 AI 分析</h1>
+        <p style='color:white; opacity:0.9; margin:5px 0;'>大盤 TAIEX <strong>{S_current:.0f}</strong> | 隨機抽樣全球財經觀點</p>
     </div>
     """.format(S_current=S_current), unsafe_allow_html=True)
     
-    st.info("⚠️ 本報告僅供產業研究與學術討論，非投資建議。請自行評估風險並遵守相關法規。")
+    st.info("⚠️ 本分析報告僅供產業研究與學術討論，非投資建議。資料來自全球隨機媒體抽樣。")
     
-    # 🎛️ 產業鏈分析面板
-    col1, col2, col3, col4 = st.columns([1.5, 1, 1.5, 1])
+    # 🎛️ 控制面板
+    col1, col2, col3 = st.columns([1.5, 1, 1.5])
     with col1:
-        core_company = st.text_input("🎯 核心企業", value="2330", help="台積電等產業龍頭")
+        stock_code = st.text_input("🏭 產業指標股", value="2330", help="輸入具代表性之企業代碼")
     with col2:
-        ana_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
+        days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
     with col3:
-        chain_focus = st.selectbox("🔗 產業鏈焦點", 
-            ["全產業鏈", "上游原物料", "中游製造", "下游終端"], 
-            index=0)
-    with col4:
-        max_news = st.slider("📰 情報筆數", 10, 50, 25)
+        focus_region = st.selectbox("🌐 權重傾斜", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
     
     # 🔑 金鑰檢查
     groq_key = st.secrets.get("GROQ_KEY", "")
     if not groq_key:
-        st.error("❌ **GROQ_KEY 遺失**！Settings → Secrets → 新增 `GROQ_KEY`")
+        st.error("❌ **GROQ_KEY 遺失**！請至 Settings → Secrets 設定")
         st.stop()
     
-    # 🚀 分析按鈕
-    if st.button("🚀 **啟動產業鏈深度分析**", type="primary", use_container_width=True):
+    if st.button("🚀 **啟動全球媒體掃描與分析**", type="primary", use_container_width=True):
         
         prog = st.progress(0)
         status = st.empty()
         
-        # 🌐 產業鏈分類 RSS 來源（強化上下游覆蓋）
-        supply_chain_rss = {
-            "上游原物料": {
-                "彭博商品": "https://feeds.bloomberg.com/markets/commodities/news.rss",
-                "鋼鐵鋁銅": "https://www.metal.com/rss/en/news", 
-                "設備供應": "https://appliedmaterials.com/rss/news.xml"
-            },
-            "中游製造": {
-                "半導體新聞": "https://semiengineering.com/feed/",
-                "電子代工": "https://www.digitimes.com/rss/dt_n.xml",
-                "面板產業": "https://www.oled-info.com/rss.xml"
-            },
-            "下游終端": {
-                "蘋果新聞": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL",
-                "科技消費": "https://www.cnet.com/rss/news/",
-                "雲端運算": "https://feeds.reuters.com/reuters/technologyNews"
-            },
-            "全產業鏈": {
-                "美聯儲": "https://www.federalreserve.gov/feeds/about.htm",
-                "全球PMI": "https://www.supplychaindive.com/rss/all/",
-                "地緣政治": "https://www.reuters.com/world/rss",
-                "Yahoo財經": "https://tw.stock.yahoo.com/rss/index.rss"
-            }
+        # 🌐 50 家全球財經/科技媒體 RSS 池
+        mega_rss_pool = {
+            # 🇹🇼 台灣 (10)
+            "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
+            "工商時報": "https://ctee.com.tw/rss/all_news.xml",
+            "經濟日報": "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
+            "科技新報": "https://www.digitimes.com.tw/rss/rss.xml",
+            "鉅亨網": "https://www.moneydj.com/rss/allnews.xml",
+            "天下雜誌": "https://www.cw.com.tw/rss/news.xml",
+            "數位時代": "https://www.bnext.com.tw/rss/all",
+            "科技橘子": "https://technews.tw/feed/",
+            "風傳媒": "https://www.storm.mg/feeds/all",
+            "自由財經": "https://ec.ltn.com.tw/rss/all",
+            
+            # 🇺🇸 美國主流 (15)
+            "CNBC": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+            "Yahoo Finance": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=QQQ,AAPL",
+            "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
+            "WSJ": "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",
+            "Reuters": "https://feeds.reuters.com/reuters/businessNews",
+            "FT": "https://www.ft.com/rss/home/us",
+            "MarketWatch": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+            "Forbes": "https://fortune.com/feed/",
+            "TechCrunch": "https://www.cnet.com/rss/news/",
+            "Wired": "https://www.wired.com/feed/rss",
+            "The Verge": "https://www.theverge.com/rss/index.xml",
+            "VentureBeat": "https://techcrunch.com/feed/",
+            "Barron's": "https://feeds.barrons.com/v1/articles",
+            "Investing.com": "https://www.investing.com/rss/news_25.rss",
+            "Seeking Alpha": "https://seekingalpha.com/feed.xml",
+            
+            # 🌏 亞洲與歐洲 (10)
+            "日經亞洲(日)": "https://www.nikkei.com/rss/en/business.xml",
+            "彭博亞洲(港)": "https://feeds.bloomberg.com/markets/asia/news.rss",
+            "南華早報(港)": "https://www.scmp.com/rss/94/feed",
+            "財新網(中)": "https://rss.caixin.com/",
+            "新浪財經(中)": "https://finance.sina.com.cn/rss/roll.xml",
+            "華爾街見聞(中)": "https://wallstreetcn.com/rss",
+            "BBC Business(英)": "http://feeds.bbci.co.uk/news/business/rss.xml",
+            "The Economist(英)": "https://www.economist.com/business/rss.xml",
+            "Asahi(日)": "https://www.asahi.com/rss/asahi/business.rdf",
+            "Channel NewsAsia": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml",
+            
+            # 🏭 半導體與科技專門 (15)
+            "EE Times": "https://www.eetimes.com/feed/",
+            "SemiEngineering": "https://semiengineering.com/feed/",
+            "Tom's Hardware": "https://www.tomshardware.com/feeds/all",
+            "AnandTech": "https://www.anandtech.com/rss",
+            "ZDNet": "https://zdnet.com/feed/",
+            "Ars Technica": "https://feeds.arstechnica.com/arstechnica/index",
+            "Engadget": "https://www.engadget.com/rss.xml",
+            "Gizmodo": "https://www.gizmodo.com/rss",
+            "IEEE Spectrum": "https://arstechnica.com/feed/",
+            "TechRadar": "https://www.techradar.com/rss",
+            "SiliconAngle": "https://www.siliconangle.com/feed/",
+            "Hacker News": "https://news.ycombinator.com/rss",
+            "AI News": "https://www.artificialintelligence-news.com/feed/",
+            "CoinDesk": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+            "MIT Tech Review": "https://spectrum.ieee.org/rss/blog/tech-talk.xml"
         }
         
+        import random
+        # 根據權重篩選媒體池
+        if focus_region == "偏重台美":
+            pool_keys = [k for k in mega_rss_pool.keys() if k in list(mega_rss_pool.keys())[:25]]
+        elif focus_region == "偏重亞洲":
+            pool_keys = [k for k in mega_rss_pool.keys() if k in list(mega_rss_pool.keys())[:10] + list(mega_rss_pool.keys())[25:35]]
+        else:
+            pool_keys = list(mega_rss_pool.keys())
+            
+        # 🎲 從池中隨機抽出 10 家媒體
+        selected_media_names = random.sample(pool_keys, min(10, len(pool_keys)))
+        selected_feeds = {k: mega_rss_pool[k] for k in selected_media_names}
+        
         prog.progress(20)
-        status.info(f"🔍 掃描 {chain_focus} 產業鏈相關新聞...")
+        status.info(f"🎲 已隨機選定 10 家國際媒體，開始並行抓取...")
         
-        # 📊 收集產業鏈新聞
-        all_news = []
-        news_display = []
-        source_counter = {}
+        # 📊 收集新聞
+        raw_news_pool = []
+        collected_sources = set()
         
-        # 優先抓取目標產業鏈
-        target_sources = supply_chain_rss.get(chain_focus, supply_chain_rss["全產業鏈"])
-        for media_name, rss_url in target_sources.items():
+        for media_name, rss_url in selected_feeds.items():
             try:
                 feed = feedparser.parse(rss_url)
-                for entry in feed.entries[:4]:
-                    title = entry.title[:70]
-                    all_news.append(f"[{media_name}]{title}")
-                    news_display.append({
-                        "來源": media_name, 
-                        "標題": title,
-                        "類別": chain_focus,
-                        "時間": entry.get('published', '即時')
+                if feed.entries:
+                    collected_sources.add(media_name)
+                # 每家抓取 5 篇放入候選池
+                for entry in feed.entries[:5]:
+                    title = entry.title[:80] + "..." if len(entry.title) > 80 else entry.title
+                    raw_news_pool.append({
+                        "media": media_name, 
+                        "title": title, 
+                        "date": entry.get('published', '即時')
                     })
-                    source_counter[media_name] = source_counter.get(media_name, 0) + 1
-                time.sleep(0.15)
+                time.sleep(0.1)
             except:
                 continue
+                
+        prog.progress(50)
+        status.info(f"📥 成功從 {len(collected_sources)} 家媒體抓取 {len(raw_news_pool)} 篇候選新聞，進行篩選...")
         
-        # 擴充其他產業鏈環節
-        for other_chain in [k for k in supply_chain_rss.keys() if k != chain_focus][:2]:
-            for media_name, rss_url in list(supply_chain_rss[other_chain].items())[:2]:
-                try:
-                    feed = feedparser.parse(rss_url)
-                    for entry in feed.entries[:2]:
-                        title = entry.title[:70]
-                        all_news.append(f"[{media_name}]{title}")
-                        news_display.append({
-                            "來源": media_name,
-                            "標題": title,
-                            "類別": other_chain,
-                            "時間": entry.get('published', '即時')
-                        })
-                        source_counter[media_name] = source_counter.get(media_name, 0) + 1
-                except:
-                    continue
+        # 🧹 隨機/相關性篩選出最終 20 篇新聞
+        if len(raw_news_pool) > 20:
+            # 優先保留標題含有標的名稱或產業關鍵字的，其餘隨機補足
+            keywords = [stock_code, "半導體", "AI", "台積電", "科技", "晶片", "股市", "Tech", "Chip"]
+            priority_news = [n for n in raw_news_pool if any(k.lower() in n['title'].lower() for k in keywords)]
+            
+            if len(priority_news) >= 20:
+                final_20_news = random.sample(priority_news, 20)
+            else:
+                remaining_slots = 20 - len(priority_news)
+                other_news = [n for n in raw_news_pool if n not in priority_news]
+                final_20_news = priority_news + random.sample(other_news, min(remaining_slots, len(other_news)))
+        else:
+            final_20_news = raw_news_pool
+            
+        # 整理成給 AI 的字串
+        news_texts_for_ai = [f"[{n['media']}] {n['title']}" for n in final_20_news]
         
-        # 客觀數據
-        all_news.extend([
-            f"核心 {core_company} {ana_period}日技術動態",
-            f"台股大盤 {S_current:.0f} 相對均線位置"
+        # 補充客觀市場數據
+        news_texts_for_ai.extend([
+            f"台股大盤現價 {S_current:.0f}，月線 {ma20:.0f}",
+            f"標的 {stock_code} 客觀技術動態"
         ])
         
-        news_summary = " | ".join(all_news[-max_news:])
-        prog.progress(50)
+        news_summary = " | ".join(news_texts_for_ai)
+        prog.progress(65)
         
-        # 🧠 AI Prompt (已修復 SyntaxError)
-        unique_sources_count = len(set([n['來源'] for n in news_display])) if news_display else 0
-        
+        # 🧠 AI Prompt
         ai_prompt = f"""
-        你是一位資深的產業鏈研究員。請基於以下全球新聞，對 {core_company} 及其產業鏈進行 {ana_period} 天趨勢觀察。
+        你是一位中立客觀的產業分析師。請綜合以下 {len(final_20_news)} 篇隨機抽樣的全球新聞，對指標企業 {stock_code} 及其所屬產業進行 {days_period} 天的趨勢剖析。
 
-        🔗 **{chain_focus} 產業鏈情報**（涵蓋 {unique_sources_count} 家媒體）：
+        🌍 國際抽樣情報（來自 {len(collected_sources)} 家獨立媒體）：
         {news_summary}
         
-        📊 **客觀數據**：TAIEX {S_current:.0f} | MA20: {ma20:.0f} | MA60: {ma60:.0f}
+        📊 客觀數據：TAIEX {S_current:.0f} | MA20:{ma20:.0f} | MA60:{ma60:.0f}
         
-        【分析架構】（繁體中文，500字內，嚴守法規）：
-        1. 🏭 **{chain_focus} 總體環境**：全球需求、庫存、產能利用率觀察
-        2. ⬆️ **上游觀察**：原物料價格、設備投資動向
-        3. 🏭 **中游現況**：製造環節稼動率、訂單能見度
-        4. ⬇️ **下游需求**：終端消費、庫存水位
-        5. 🔗 **產業鏈連動**：{core_company} 在整個供應鏈中的關鍵地位與影響
-        6. 📉 **客觀技術**：目前與歷史均線的相對位置結構
-        
-        ✅ **嚴格禁止**：任何買賣建議、目標價、漲跌預測
+        【嚴格規範】：
+        1. 絕對禁止提供任何「買賣、持有、目標價」等具體交易建議。
+        2. 內容必須符合台灣法規，僅作學術與產業趨勢討論。
+
+        【請提供以下架構的專業分析】（繁體中文，500字內）：
+        1. 🌍 **全球媒體共識**：統整這 10 家不同國家媒體對該產業的綜合看法與風向。
+        2. 🏭 **產業總體環境**：全球供應鏈動態、總經影響（如美股連動、利率）。
+        3. 🏢 **企業基本面觀測**：該企業或其產業鏈近期的營運亮點或挑戰。
+        4. 📉 **客觀技術面狀態**：目前價格相對於均線的位置結構。
         """
         
-        status.info("🦙 AI 產業鏈模型深度推理...")
+        status.info(f"🦙 AI 引擎正基於 {len(final_20_news)} 篇萃取情報進行深度推理...")
         
         # 🦙 Groq 分析
         try:
@@ -1569,58 +1612,60 @@ with tabs[5]:
             client = Groq(api_key=groq_key, http_client=httpx.Client())
             
             groq_resp = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.1-8b-instant",  
                 messages=[
-                    {"role": "system", "content": "你是一位產業鏈研究專家，僅提供客觀分析，絕不給出交易建議。"},
+                    {"role": "system", "content": "你是一個不提供投資建議、僅做客觀產業分析的研究員。"},
                     {"role": "user", "content": ai_prompt}
                 ],
                 max_tokens=700,
-                temperature=0.1
+                temperature=0.2 
             )
             groq_analysis = groq_resp.choices[0].message.content
-            st.success("✅ 產業鏈深度報告完成")
+            st.success(f"✅ 報告生成完畢（成功萃取 {len(final_20_news)} 篇核心情報）")
         except Exception as e:
-            st.error("🦙 AI 引擎暫停服務")
-            st.caption(str(e)[:80])
+            st.error("🦙 AI 引擎暫時無法連線")
             groq_analysis = None
         
         prog.progress(100)
         status.empty()
         
-        # 📋 完整結果展示
+        # 📋 結果展示
         if groq_analysis:
             st.markdown("---")
-            st.markdown(f"## 🔗 **{core_company} {chain_focus} 產業鏈分析報告**")
+            st.markdown(f"## 📑 **{stock_code} 全球媒體共識與產業報告**")
             st.markdown(groq_analysis)
             
-            # 📰 新聞來源揭露 (已修復 SyntaxError)
-            with st.expander(f"🔍 底層資料集 (共 {len(news_display)} 筆新聞，涵蓋 {unique_sources_count} 家媒體)"):
+            # 📰 揭露 10 家媒體與 20 篇新聞
+            with st.expander(f"🔍 查看 AI 採樣的底層數據 (嚴選 {len(final_20_news)} 篇，來自 {len(collected_sources)} 家隨機媒體)"):
                 import pandas as pd
-                if news_display:
-                    df_news = pd.DataFrame(news_display[-max_news:])
+                if final_20_news:
+                    df_news = pd.DataFrame(final_20_news)
                     df_news.index += 1
+                    df_news.columns = ["媒體來源", "新聞標題", "發布時間"]
                     st.dataframe(df_news, use_container_width=True)
-                    st.caption(f"**採集來源統計**：{dict(sorted(source_counter.items(), key=lambda x: x[1], reverse=True)[:5])}")
+                    
+                    st.caption(f"**本次命中的媒體矩陣**：{', '.join(list(collected_sources))}")
                 else:
-                    st.warning("未能抓取到新聞資料")
-            
-            # 📈 數據面板
-            st.markdown("### 📊 **產業鏈數據快覽**")
+                    st.warning("無有效新聞數據")
+
+            # 📈 客觀數據面板
+            st.markdown("### 📊 **客觀市場數據快照**")
             col1, col2, col3 = st.columns(3)
             with col1:
                 trend = "均線之上" if S_current > ma20 else "均線之下"
-                st.metric("大盤相對位階", trend)
+                st.metric("大盤與月線位階", trend)
             with col2:
                 gap_pct = (S_current - ma20) / ma20 * 100
-                st.metric("與月線乖離", f"{gap_pct:+.1f}%")
+                st.metric("大盤月線乖離率", f"{gap_pct:+.2f}%")
             with col3:
-                volatility = "高波動" if abs(gap_pct) > 3 else "相對平穩"
-                st.metric("近期動態", volatility)
+                volatility = "擴大" if abs(gap_pct) > 2 else "收斂"
+                st.metric("近期波動度觀察", volatility)
         else:
-            st.error("❌ 報告生成失敗")
+            st.error("❌ 報告生成失敗，請檢查 API 金鑰或網路狀態。")
     
     st.markdown("---")
-    st.caption("🔗 貝伊果屋 產業鏈研究平台 | 全球供應鏈情報即時監測")
+    st.caption("🔍 貝伊果屋 | 內建 50 家全球財經媒體庫 | 演算法動態抽樣確保觀點多樣性")
+
 
 
 # --------------------------
