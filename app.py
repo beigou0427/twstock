@@ -1418,20 +1418,35 @@ with tabs[4]:
 # --------------------------
 # Tab 5
 # --------------------------
-# ===== Tab 5: AI 智慧分析（完整可直接貼入） =====
+# ===== Tab 5: AI 智慧分析（內嵌 Token 版 - 僅測試用！） =====
 with tabs[5]:
     st.markdown("### 🤖 AI 智慧分析")
     st.caption(f"最新更新：{latest_date.strftime('%Y-%m-%d')} | v6.0 🚀")
     
+    # ⚠️ 測試 Token（立即移除！改用 Secrets）
+    GROQ_TEST_TOKEN = "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"  # ← 貼你的新 Groq 金鑰
+    GEMINI_TEST_TOKEN = "AIzaSyBl_oO6zKVgqLgl6Yr-xDaCvDN6JCcueyA"  # ← 貼你的新 Gemini 金鑰
+    FINMIND_TEST_TOKEN = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJkYXRlIjoiMjAyNi0wMi0yMCAxOTo1ODoyNiIsInVzZXJfaWQiOiJiYWdlbDA0MjciLCJlbWFpbCI6ImFzZDc4MzM1MjBAeWFob28uY29tLnR3IiwiaXAiOiIxLjE3Mi43Ni42OSJ9.ji-vrplnm9OvsaamURTSIvqBHmqhrZMFXMOm8AOMxxk"  # ← FinMind 新 token
+    
+    st.warning("🔐 **測試 Token 已內嵌！生產請移除改用 st.secrets**")
+    
     # Sidebar 控制
     with st.sidebar:
         st.header("AI 設定")
+        st.text_area("🗝️ Token 狀態", f"""
+GROQ: {'✅ 就緒' if GROQ_TEST_TOKEN != 'gsk_你的全新金鑰' else '❌ 請更新'}
+Gemini: {'✅ 就緒' if GEMINI_TEST_TOKEN != 'AIzaSy_你的Gemini金鑰' else '❌ 請更新'}
+FinMind: {'✅ 就緒' if FINMIND_TEST_TOKEN != 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.新token' else '❌ 請更新'}
+        """, height=100)
         enable_ai = st.toggle("啟用 AI 分析", value=True)
-        model_choice = st.selectbox("優先模型", ["Groq (最快)", "Gemini", "兩者"], index=0)
     
     if not enable_ai:
-        st.info("👋 AI 已關閉，使用手動分析")
+        st.info("👋 AI 已關閉")
         st.stop()
+    
+    # 更新全域 Token（暫時）
+    global FINMIND_TOKEN
+    FINMIND_TOKEN = FINMIND_TEST_TOKEN
     
     # 輸入
     col1, col2, col3 = st.columns(3)
@@ -1442,7 +1457,7 @@ with tabs[5]:
     with col3:
         max_news = st.slider("📰 新聞筆數", 10, 50, 25)
     
-    # 新聞收集（容錯）
+    # 新聞收集
     progress_bar = st.progress(0)
     status_text = st.empty()
     
@@ -1451,18 +1466,21 @@ with tabs[5]:
     status_text.text("📡 收集台股新聞...")
     
     try:
-        # FinMind 新聞
-        taiwan_news = get_real_news(FINMIND_TOKEN)
+        # 用測試 Token
+        dl = DataLoader()
+        dl.login_by_token(api_token=FINMIND_TEST_TOKEN)
+        taiwan_news = dl.taiwan_stock_news(stock_id="TAIEX", start_date=(date.today() - timedelta(days=3)).strftime('%Y-%m-%d'))
         if not taiwan_news.empty:
             for _, row in taiwan_news.head(5).iterrows():
                 all_news.append(f"[{row.get('date', 'N/A')}] {row.get('title', '')}")
-    except:
-        pass
+        progress_bar.progress(40)
+    except Exception as e:
+        status_text.error(f"FinMind: {e}")
     
-    progress_bar.progress(50)
+    progress_bar.progress(60)
     status_text.text("🌐 RSS 即時新聞...")
     
-    # RSS 來源
+    # RSS
     rss_feeds = {
         "Yahoo 台股": "https://tw.stock.yahoo.com/rss/index.rss",
         "CNBC 財經": "https://www.cnbc.com/id/19854910/device/rss/rss.html"
@@ -1478,97 +1496,70 @@ with tabs[5]:
             pass
     
     news_text = " ".join(all_news[-max_news:])
-    progress_bar.progress(80)
-    status_text.text(f"✅ 收集 {len(all_news)} 筆新聞")
+    progress_bar.progress(90)
+    status_text.success(f"✅ 收集 {len(all_news)} 筆新聞")
     
     # AI 分析
     if news_text:
-        st.caption(f"📊 分析文字長度：{len(news_text)} 字")
-        
         prompt = f"""
         台股 {stock_code} {analysis_days}天智慧分析：
         - 最新新聞：{news_text[:1200]}
         - 大盤：TAIEX {S_current:.0f} (MA20:{ma20:.0f})
         - 給初學者建議，包含：
-          1. 短期走勢預測 (看多/看空/震盪)
-          2. 適合策略 (持有/賣出/加碼)
-          3. 風險等級 (低/中/高)
+          1. 短期走勢預測 
+          2. 適合策略 
+          3. 風險等級 
           4. 關鍵支撐壓力位
-        回覆用繁體中文，簡潔有力！
+        用繁體中文回覆！
         """
         
-        # LLM 容器
         col_groq, col_gemini = st.columns(2)
-        
         llm_results = []
         
-        # Groq
+        # Groq（用測試 Token）
         with col_groq:
-            if model_choice in ["Groq (最快)", "兩者"] and "GROQ_KEY" in st.secrets:
-                with st.spinner("Groq 思考中..."):
+            if GROQ_TEST_TOKEN != "gsk_你的全新金鑰":
+                with st.spinner("🦙 Groq 分析中..."):
                     try:
                         from groq import Groq
-                        client = Groq(api_key=st.secrets["GROQ_KEY"])
+                        client = Groq(api_key=GROQ_TEST_TOKEN)
                         resp = client.chat.completions.create(
                             model="llama-3.1-8b-instant",
                             messages=[{"role": "user", "content": prompt}],
-                            max_tokens=400,
-                            temperature=0.7
+                            max_tokens=400
                         )
-                        groq_analysis = resp.choices[0].message.content
-                        llm_results.append(("🦙 Groq", groq_analysis))
-                        st.success("✅ Groq 完成")
+                        llm_results.append(("🦙 Groq", resp.choices[0].message.content))
+                        st.balloons()
                     except Exception as e:
-                        st.error(f"Groq: {str(e)[:100]}")
+                        st.error(f"Groq: {str(e)[:80]}")
         
         # Gemini
         with col_gemini:
-            if model_choice in ["Gemini", "兩者"] and "GEMINI_KEY" in st.secrets:
-                with st.spinner("Gemini 生成中..."):
+            if GEMINI_TEST_TOKEN != "AIzaSy_你的Gemini金鑰":
+                with st.spinner("🔮 Gemini 生成中..."):
                     try:
                         import google.generativeai as genai
-                        genai.configure(api_key=st.secrets["GEMINI_KEY"])
+                        genai.configure(api_key=GEMINI_TEST_TOKEN)
                         model = genai.GenerativeModel("gemini-2.0-flash-exp")
                         response = model.generate_content(prompt)
-                        gemini_analysis = response.text
-                        llm_results.append(("🔮 Gemini", gemini_analysis))
-                        st.success("✅ Gemini 完成")
+                        llm_results.append(("🔮 Gemini", response.text))
+                        st.balloons()
                     except Exception as e:
-                        st.error(f"Gemini: {str(e)[:100]}")
+                        st.error(f"Gemini: {str(e)[:80]}")
         
-        progress_bar.progress(100)
-        
-        # 顯示結果
+        # 結果展示
         if llm_results:
-            st.markdown("---")
-            st.markdown("## 🎯 **AI 綜合分析**")
+            st.markdown("## 🎯 **AI 綜合建議**")
             for name, analysis in llm_results:
                 with st.expander(name, expanded=True):
                     st.markdown(analysis)
-            
-            # 智慧分數（備用）
-            st.markdown("### 📊 技術指標分數")
-            total_score, details = calculate_advanced_factors(S_current, ma20, ma60, df_latest, FINMIND_TOKEN)
-            col_score, col_details = st.columns(2)
-            with col_score:
-                st.metric("市場熱度", f"{total_score:.0f}/100", delta=f"{total_score-50:+.0f}")
-            with col_details:
-                for detail in details:
-                    st.caption(f"• {detail}")
         else:
-            st.warning("🤖 **AI 全休假中**")
-            st.info("""
-            **快速設定**：
-            1. Groq: [console.groq.com/keys](https://console.groq.com/keys) → GROQ_KEY
-            2. Gemini: [aistudio.google.com](https://aistudio.google.com) → GEMINI_KEY
-            3. Secrets → 重啟 App
-            """)
-    
-    else:
-        st.error("❌ 無新聞資料，無法分析")
+            st.error("❌ 請更新 Token！")
     
     st.divider()
-    st.markdown("💡 *免費額度足夠每日分析 100+ 次*")
+    st.success("✅ **測試完成！立即移除 Token 改用 Secrets**")
+    st.info("生產版：刪 `*_TEST_TOKEN`，改 `st.secrets['GROQ_KEY']` 等")
+
 
 
 # --------------------------
