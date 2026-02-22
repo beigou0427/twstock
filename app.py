@@ -1475,7 +1475,7 @@ with tabs[5]:
     st.success("🎉 **定投啟蒙完成！從 0050 開始！**")
 
 # --------------------------
-# Tab 5
+# TEST
 # --------------------------
 with tabs[0]:
     # ✅ 初始化 session_state（防止首次跳頁後資料消失）
@@ -1495,11 +1495,11 @@ with tabs[0]:
     background:linear-gradient(135deg, #141E30 0%, #243B55 100%); 
     color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.4);'>
         <h1 style='color:white; margin:0;'>🔗 全景產業鏈 AI 分析</h1>
-        <p style='color:white; opacity:0.9; margin:5px 0;'>FinMind 智能辨識 | 供應鏈上下游推導 | TAIEX <strong>{S_current:.0f}</strong></p>
+        <p style='color:white; opacity:0.9; margin:5px 0;'>FinMind 智能辨識 | 全網新聞大數據推導 | TAIEX <strong>{S_current:.0f}</strong></p>
     </div>
     """.format(S_current=S_current), unsafe_allow_html=True)
 
-    st.info("⚠️ 本分析報告僅供產業研究與學術討論，非投資建議。資料來自 FinMind 與全球隨機媒體抽樣。")
+    st.info("⚠️ 本分析報告僅供產業研究與學術討論，非投資建議。資料來自 FinMind 與全球全網媒體矩陣。")
 
     # 🎛️ 控制面板
     col1, col2, col3 = st.columns([1.5, 1, 1.5])
@@ -1520,7 +1520,7 @@ with tabs[0]:
 
     col_btn1, col_btn2 = st.columns([3, 1])
     with col_btn1:
-        run_btn = st.button("🚀 **啟動產業鏈掃描與分析**", type="primary", use_container_width=True)
+        run_btn = st.button("🚀 **啟動全網產業鏈掃描與分析**", type="primary", use_container_width=True)
     with col_btn2:
         clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
 
@@ -1577,12 +1577,11 @@ with tabs[0]:
         }
 
         import random
-        pool_keys = list(mega_rss_pool.keys())
-        selected_media_names = random.sample(pool_keys, min(10, len(pool_keys)))
-        selected_feeds = {k: mega_rss_pool[k] for k in selected_media_names}
+        # 🔓 改變1：不再限制10家，而是啟動所有媒體池
+        selected_feeds = mega_rss_pool 
 
         prog.progress(30)
-        status.info("🎲 隨機選定 10 家國際媒體，開始並行抓取...")
+        status.info(f"🌐 啟動全網搜羅，共 {len(selected_feeds)} 家國際媒體，開始並行抓取...")
 
         # 3️⃣ 【收集新聞】
         import feedparser
@@ -1595,27 +1594,32 @@ with tabs[0]:
                 feed = feedparser.parse(rss_url)
                 if feed.entries:
                     collected_sources.add(media_name)
-                for entry in feed.entries[:5]:
-                    title = entry.title[:80] + "..." if len(entry.title) > 80 else entry.title
+                # 🔓 改變2：從原本的 [:5] 擴大到 [:50]，盡可能抓取最新新聞
+                for entry in feed.entries[:50]:
+                    title = entry.title[:100] + "..." if len(entry.title) > 100 else entry.title
                     raw_news_pool.append({"media": media_name, "title": title, "date": entry.get('published', '即時')})
-                time.sleep(0.1)
+                time.sleep(0.05) # 稍微降低延遲以加快大量抓取速度
             except:
                 continue
 
         prog.progress(50)
-        status.info("📥 新聞抓取完畢，進行關聯性篩選...")
+        status.info(f"📥 成功抓取 {len(raw_news_pool)} 篇原始新聞，進行關聯性擴大篩選...")
 
-        keywords = [stock_code, stock_name, industry, "半導體", "AI", "供應鏈", "股市", "Tech"]
+        # 擴大關鍵字範圍
+        keywords = [stock_code, stock_name, industry, "半導體", "AI", "供應鏈", "股市", "Tech", "營收", "財報", "外資"]
         priority_news = [n for n in raw_news_pool if any(k.lower() in n['title'].lower() for k in keywords if k)]
 
-        if len(priority_news) >= 20:
-            final_20_news = random.sample(priority_news, 20)
+        # 🔓 改變3：動態提高最終分析數量，保留所有重點新聞，並將上限拉高到 150 篇 (避免 LLM 爆 Token)
+        max_news_limit = 150 
+        
+        if len(priority_news) >= max_news_limit:
+            final_news = priority_news[:max_news_limit]
         else:
-            remaining = 20 - len(priority_news)
+            remaining = max_news_limit - len(priority_news)
             other_news = [n for n in raw_news_pool if n not in priority_news]
-            final_20_news = priority_news + random.sample(other_news, min(remaining, len(other_news)))
+            final_news = priority_news + random.sample(other_news, min(remaining, len(other_news)))
 
-        news_texts_for_ai = [f"[{n['media']}] {n['title']}" for n in final_20_news]
+        news_texts_for_ai = [f"[{n['media']}] {n['title']}" for n in final_news]
         news_texts_for_ai.extend([
             f"大盤 TAIEX {S_current:.0f}，月線 {ma20:.0f}",
             f"{stock_code} {stock_name} 客觀技術動態"
@@ -1627,9 +1631,9 @@ with tabs[0]:
         ai_prompt = f"""
         你是一位中立客觀的資深產業鏈分析師。
         本次分析核心標的：【{stock_code} {stock_name}】(所屬產業：{industry})
-        請綜合以下 {len(final_20_news)} 篇抽樣新聞，進行 {days_period} 天的產業鏈趨勢剖析。
+        請綜合以下高達 {len(final_news)} 篇的全網大數據新聞，進行 {days_period} 天的產業鏈趨勢剖析。
 
-        🌍 情報資料庫（來自 {len(collected_sources)} 家媒體）：
+        🌍 全球情報資料庫（來自 {len(collected_sources)} 家媒體）：
         {news_summary}
         
         📊 客觀數據：TAIEX {S_current:.0f} | MA20:{ma20:.0f} | MA60:{ma60:.0f}
@@ -1639,14 +1643,14 @@ with tabs[0]:
         2. 內容必須符合台灣金管會法規。
 
         【請提供以下架構的深度分析】（繁體中文，600字內）：
-        1. 🎯 **核心企業定位**：{stock_name} 在 {industry} 中的競爭地位與近期新聞亮點。
-        2. ⬆️ **上游供應鏈觀測**：列出 {stock_name} 具代表性的上游供應商或原物料(至少3家)，分析近期供應鏈利弊。
+        1. 🎯 **核心企業定位**：{stock_name} 在 {industry} 中的競爭地位與近期新聞共識亮點。
+        2. ⬆️ **上游供應鏈觀測**：列出 {stock_name} 具代表性的上游供應商或原物料(至少3家)，分析近期供應鏈狀態。
         3. ⬇️ **下游客戶與應用**：列出 {stock_name} 具代表性的下游大客戶或終端應用(至少3家)，分析終端需求拉力。
-        4. 🌍 **全球媒體共識**：統整國際外媒與台媒對該產業鏈的綜合風向。
+        4. 🌍 **全球媒體共識**：統整大數據中外媒與台媒對該產業鏈的綜合風向。
         5. 📉 **客觀技術面狀態**：目前價格相對於均線的相對位置結構。
         """
 
-        status.info(f"🦙 正在自動推導 {stock_name} 上下游產業鏈並進行分析...")
+        status.info(f"🦙 正在運用 {len(final_news)} 篇新聞數據，推導 {stock_name} 上下游產業鏈...")
 
         # 🦙 Groq 分析
         groq_analysis = None
@@ -1670,34 +1674,34 @@ with tabs[0]:
         prog.progress(100)
         status.empty()
 
-        # ✅ 儲存結果到 session_state（跳頁後回來還在）
+        # ✅ 儲存結果到 session_state
         if groq_analysis:
             display_title = f"{stock_code} {stock_name}" if stock_name else stock_code
             st.session_state.t5_result = groq_analysis
             st.session_state.t5_stock_name = stock_name
             st.session_state.t5_industry = industry
-            st.session_state.t5_news = final_20_news
+            st.session_state.t5_news = final_news  # 儲存擴大後的新聞陣列
             st.session_state.t5_sources = collected_sources
             st.session_state.t5_display_title = display_title
             st.session_state.t5_gap_pct = (S_current - ma20) / ma20 * 100
 
-    # ✅ 只要 session_state 有結果，永遠顯示（不管有沒有跳頁）
+    # ✅ 顯示分析結果
     if st.session_state.t5_result:
         st.success(f"✅ 報告生成完畢（核心標的：{st.session_state.t5_display_title} | 產業：{st.session_state.t5_industry}）")
         st.markdown("---")
         st.markdown(f"## 🔗 **【{st.session_state.t5_display_title}】全景產業鏈報告**")
-        st.caption(f"所屬產業分類：`{st.session_state.t5_industry}` | 資料涵蓋：`{len(st.session_state.t5_news)} 篇新聞`")
+        st.caption(f"所屬產業分類：`{st.session_state.t5_industry}` | 數據基底：`擴大採樣 {len(st.session_state.t5_news)} 篇新聞`")
         st.markdown(st.session_state.t5_result)
 
         # 📰 底層數據
-        with st.expander(f"🔍 查看 AI 採樣的底層數據 (嚴選 {len(st.session_state.t5_news)} 篇，來自 {len(st.session_state.t5_sources)} 家媒體)"):
+        with st.expander(f"🔍 查看 AI 採樣的大數據池 (共 {len(st.session_state.t5_news)} 篇，來自 {len(st.session_state.t5_sources)} 家媒體)"):
             import pandas as pd
             if st.session_state.t5_news:
                 df_news = pd.DataFrame(st.session_state.t5_news)
                 df_news.index += 1
                 df_news.columns = ["媒體來源", "新聞標題", "發布時間"]
                 st.dataframe(df_news, use_container_width=True)
-                st.caption(f"**本次命中的媒體矩陣**：{', '.join(list(st.session_state.t5_sources))}")
+                st.caption(f"**本次掃描命中的全球媒體**：{', '.join(list(st.session_state.t5_sources))}")
 
         # 📊 大盤快照
         st.markdown("### 📊 **大盤客觀市場數據快照**")
@@ -1713,7 +1717,6 @@ with tabs[0]:
 
     st.markdown("---")
     st.caption("🔍 貝伊果屋 | 內建 FinMind 個股智能辨識 | 自動推導上下游供應鏈")
-
 
 
 
