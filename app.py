@@ -268,37 +268,7 @@ if not st.session_state.get('disclaimer_accepted', False):
         </ul>
     </div>
     """, unsafe_allow_html=True)
-    
-    # 功能導覽雙欄卡片
-    st.markdown("<h3 style='text-align: center; color: white; margin-bottom: 20px;'>🎯 貝伊果屋 6 大核心引擎</h3>", unsafe_allow_html=True)
-    
-    col_feat1, col_feat2 = st.columns(2)
-    with col_feat1:
-        st.markdown("""
-        <div style='background: linear-gradient(145deg, #1c2b23, #22382b); padding: 20px; border-radius: 12px; border-top: 4px solid #28a745; height: 100%;'>
-            <h4 style='color: #28a745; margin-top: 0;'>🌱 新手起手式（建議優先使用）</h4>
-            <ul style='color: #ddd; font-size: 15px; line-height: 1.7; padding-left: 20px;'>
-                <li><b>Tab 0 | 定投計畫</b>：設定每月自動買 ETF，靠複利致富</li>
-                <li><b>Tab 1 | 智能情報</b>：秒懂台股資金流向與大盤趨勢</li>
-                <li><b>Tab 4 | 戰情室</b>：追蹤市場熱門題材（如 AI、半導體）</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    with col_feat2:
-        st.markdown("""
-        <div style='background: linear-gradient(145deg, #2b241c, #382c22); padding: 20px; border-radius: 12px; border-top: 4px solid #ffc107; height: 100%;'>
-            <h4 style='color: #ffc107; margin-top: 0;'>🚀 進階兵器庫（熟悉後再挑戰）</h4>
-            <ul style='color: #ddd; font-size: 15px; line-height: 1.7; padding-left: 20px;'>
-                <li><b style='color:#ffc107;'>Tab 5 | AI 產業鏈</b>：輸入代碼，自動推導上下游與全球情報</li>
-                <li><b>Tab 2 | CALL獵人</b>：篩選半年以上到期的低成本槓桿選擇權</li>
-                <li><b>Tab 3 | 回測系統</b>：一鍵驗證投資策略過去 10 年的真實績效</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
+ 
     # =========================================
     # 超強視覺按鈕 CSS（注入全局樣式）
     # =========================================
@@ -337,13 +307,13 @@ if not st.session_state.get('disclaimer_accepted', False):
     _, btn_col1, btn_col2, _ = st.columns([1.5, 3, 3, 1.5])
     
     with btn_col1:
-        if st.button("✅ 我懂基礎，進入主系統", key="btn_main", use_container_width=True):
+        if st.button("🤖 直接體驗 AI 產業分析", key="btn_main", use_container_width=True):
             st.session_state.disclaimer_accepted = True
             st.balloons()
             st.rerun()
             
     with btn_col2:
-        if st.button("🤖 直接體驗 AI 產業分析", key="btn_ai", use_container_width=True):
+        if st.button("✅ 我懂基礎，進入主系統", key="btn_ai", use_container_width=True):
             st.session_state.disclaimer_accepted = True
             st.query_params["jump"] = "5"
             st.balloons()
@@ -418,7 +388,7 @@ if not st.session_state.get('disclaimer_accepted', False):
 # =========================================
 # 5. 建立 Tabs
 # =========================================
-tabnames = ["ETF", "大盤", "CALL獵人", "回測", "戰情室", "AI產業鏈"]
+tabnames = ["AI產業鏈", "大盤", "CALL獵人", "回測", "戰情室", "持續買進"]
 tabs = st.tabs(tabnames)
 
 # [此處以下銜接原本的 with tabs[0]: ]
@@ -480,246 +450,11 @@ def parse_pct(x) -> float:
     except:
         return np.nan
 
-# ========= Tab 0 =========
-with tabs[0]:
+#========= Tab 0 =========
 
-    st.markdown("## 🐢 ETF 定投")
 
-    open_now, status_text = is_market_open_tw()
+#        
 
-    top_l, top_r = st.columns([3, 1])
-    with top_l:
-        if open_now:
-            st.success(f"🟢 {status_text}｜每 60 秒更新")
-            st_autorefresh(interval=60 * 1000, limit=10000, key="tab0_autorefresh")
-        else:
-            st.info(f"🔴 {status_text}｜非開盤時段")
-    with top_r:
-        if st.button("🔄 立即刷新", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-
-    col1, col2 = st.columns(2)
-    with col1: st.markdown('<div style="padding:15px;border-radius:10px;background:#e8f5e8;border:1px solid #28a745;text-align:center;"><b style="color:#28a745;font-size:18px;">定投計畫</b></div>', unsafe_allow_html=True)
-    with col2: st.markdown('<div style="padding:15px;border-radius:10px;background:#2b0f0f;border:2px solid #ff4b4b;text-align:center;"><b style="color:#ff4b4b;font-size:18px;">進階戰室</b></div>', unsafe_allow_html=True)
-
-    import streamlit.components.v1 as components
-    components.html(
-        '<button style="width:100%;height:40px;background:#ff4b4b;color:white;border-radius:8px;font-weight:bold;" onclick="jumpToTab2()">🚀 進階戰室</button>'
-        '<script>function jumpToTab2(){try{var t=window.parent.document.querySelectorAll(\'button[data-baseweb="tab"]\');t[2]&&t[2].click()}catch(e){}}</script>',
-        height=50,
-    )
-
-    st.markdown("---")
-
-    # =========================
-    # 📡 即時報價 (FinMind/yfinance 混合)
-    # =========================
-    st.markdown("### 📡 即時報價")
-
-    @st.cache_data(ttl=60 if open_now else 600, show_spinner=False)
-    def get_realtime_quotes(etfs: list) -> pd.DataFrame:
-        out = []
-        try:
-            # 優先嘗試用 yfinance 抓取即時 (對 Tab0 來說足夠準確)
-            yf_tickers = [f"{x}.TW" for x in etfs]
-            data = yf.download(yf_tickers, period="5d", interval="1d", progress=False)['Close']
-            
-            for i, sid in enumerate(etfs):
-                ticker = f"{sid}.TW"
-                try:
-                    # 取最新價與前日價
-                    if ticker in data.columns:
-                        series = data[ticker].dropna()
-                    else:
-                        # 單一 ticker 時 data 可能是 Series
-                        series = data.dropna() if len(etfs) == 1 else pd.Series()
-                    
-                    if len(series) >= 1:
-                        price = float(series.iloc[-1])
-                        prev = float(series.iloc[-2]) if len(series) >= 2 else price
-                        chg = (price - prev) / prev * 100
-                        source = "🟢YF即時" if open_now else "🔴YF收盤"
-                        out.append([sid, ETF_META[sid]['name'], price, chg, source])
-                    else:
-                        # 備用：FinMind 最近日
-                        from FinMind.data import DataLoader
-                        dl = DataLoader()
-                        f_df = dl.taiwan_stock_daily(sid, (_today_tw()-timedelta(days=5)).strftime('%Y-%m-%d'))
-                        if len(f_df) > 0:
-                            last = f_df.iloc[-1]
-                            out.append([sid, ETF_META[sid]['name'], last['close'], 0.0, "🔵FM日結"])
-                        else:
-                             out.append([sid, ETF_META[sid]['name'], np.nan, np.nan, "❌無資料"])
-                except:
-                    out.append([sid, ETF_META[sid]['name'], np.nan, np.nan, "❌錯誤"])
-        except:
-             # 全掛時的靜態備用
-             return pd.DataFrame({
-                "ETF": etfs,
-                "名稱": [ETF_META[x]["name"] for x in etfs],
-                "價格": [192.5, 36.1, 45.3, 52.0, 28.4],
-                "漲跌幅(%)": [0.5, 0.3, 1.2, -0.1, 0.8],
-                "來源": ["⚠️靜態"] * 5
-            })
-
-        return pd.DataFrame(out, columns=["ETF", "名稱", "價格", "漲跌幅(%)", "來源"])
-
-    quote_df = get_realtime_quotes(ETF_LIST)
-    
-    # 顯示報價表
-    show_df = quote_df.copy()
-    show_df["價格"] = show_df["價格"].apply(lambda x: f"NT${x:,.1f}" if pd.notna(x) else "N/A")
-    show_df["漲跌幅(%)"] = show_df["漲跌幅(%)"].apply(lambda x: f"{x:+.2f}%" if pd.notna(x) else "N/A")
-    st.dataframe(show_df, use_container_width=True, hide_index=True)
-
-    # 快速 Metrics
-    cols = st.columns(len(ETF_LIST))
-    for i, sid in enumerate(ETF_LIST):
-        with cols[i]:
-            row = quote_df[quote_df['ETF'] == sid].iloc[0]
-            if pd.notna(row['價格']):
-                st.metric(f"{ETF_META[sid]['icon']} {sid}", f"{row['價格']:.1f}", f"{row['漲跌幅(%)']:.2f}%")
-            else:
-                st.metric(f"{sid}", "N/A")
-
-    st.markdown("---")
-
-    # =========================
-    # 📊 ETF 詳細 (摺疊)
-    # =========================
-    st.markdown("### 📊 ETF 詳細特色")
-    with st.expander("👆 點我展開 / 收起詳細資訊"):
-        pick = st.selectbox("查看詳情", ETF_LIST)
-        meta = ETF_META[pick]
-        
-        c1, c2 = st.columns([2, 3])
-        with c1:
-            st.markdown(f"#### {meta['icon']} {meta['name']}")
-            st.caption(f"代號：{pick} | 區域：{meta['region']}")
-            st.write(f"**追蹤**：{meta['track']}")
-            st.write(f"**風險**：{meta['risk']}")
-        with c2:
-            st.info(f"💡 **投資重點**\n{meta['hint']}")
-            st.success("❤️ **適合對象**\n長期定投、不想看盤、累積資產者")
-
-    st.markdown("---")
-
-    # =========================
-    # 📈 5年歷史績效 (改用 yfinance 解決 N/A)
-    # =========================
-    st.markdown("### 📈 5年歷史績效")
-
-    @st.cache_data(ttl=3600*12, show_spinner=False)
-    def get_history_performance(etfs: list) -> pd.DataFrame:
-        rows = []
-        try:
-            # 一次下載所有
-            tickers = [f"{x}.TW" for x in etfs]
-            # 抓 5 年 + 緩衝
-            data = yf.download(tickers, period="5y", interval="1d", progress=False)['Close']
-            
-            for sid in etfs:
-                t = f"{sid}.TW"
-                # 處理單一或多個 ticker 的 column 結構差異
-                if isinstance(data, pd.Series):
-                    # 只有一檔時
-                    s = data if len(etfs) == 1 else pd.Series()
-                else:
-                    s = data[t].dropna() if t in data.columns else pd.Series()
-
-                if len(s) > 200:
-                    first = float(s.iloc[0])
-                    last = float(s.iloc[-1])
-                    
-                    # 計算年數
-                    days = (s.index[-1] - s.index[0]).days
-                    years = days / 365.25
-                    
-                    # 總報酬 & 年化
-                    total_ret = (last - first) / first
-                    ann_ret = (1 + total_ret) ** (1 / years) - 1
-                    
-                    # 最大回撤
-                    cummax = s.cummax()
-                    drawdown = (s - cummax) / cummax
-                    max_dd = drawdown.min()
-                    
-                    rows.append([
-                        sid, 
-                        f"{total_ret*100:.1f}%", 
-                        f"{ann_ret*100:.1f}%", 
-                        f"{years:.1f}年", 
-                        f"{max_dd*100:.1f}%"
-                    ])
-                else:
-                    rows.append([sid, "N/A", "N/A", "N/A", "N/A"])
-        except Exception as e:
-            # 失敗時回傳靜態備用，避免全白
-            return pd.DataFrame({
-                "ETF": etfs,
-                "總報酬": ["+128.5%", "+130.2%", "+85.4%", "+210.5%", "+65.2%"],
-                "年化": ["15.2%", "15.4%", "11.2%", "25.5%", "9.5%"],
-                "年數": ["5.0年"] * 5,
-                "最大回撤": ["-28.5%", "-28.2%", "-35.4%", "-45.6%", "-22.1%"]
-            })
-            
-        return pd.DataFrame(rows, columns=["ETF", "總報酬", "年化", "年數", "最大回撤"])
-
-    perf_df = get_history_performance(ETF_LIST)
-    st.dataframe(perf_df, use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-
-    # =========================
-    # 💰 定投試算器
-    # =========================
-    st.markdown("### 💰 定投試算器")
-    
-    c1, c2, c3 = st.columns(3)
-    with c1: mon = st.number_input("每月投入", 1000, 100000, 10000, 1000)
-    with c2: yrs = st.slider("年數", 5, 30, 10)
-    with c3: 
-        sel = st.selectbox("參考標的", perf_df['ETF'].tolist())
-        # 解析年化
-        try:
-            r_str = perf_df.loc[perf_df['ETF']==sel, '年化'].values[0]
-            rate = parse_pct(r_str)
-            if np.isnan(rate): rate = 0.10
-        except: rate = 0.10
-
-    # 計算
-    total_cost = mon * 12 * yrs
-    final_val = mon * 12 * ((1+rate)**yrs - 1) / rate
-    profit = final_val - total_cost
-    
-    m1, m2 = st.columns(2)
-    with m1: st.metric(f"{yrs}年後資產", f"NT${final_val:,.0f}", delta=f"年化 {rate*100:.1f}%")
-    with m2: st.metric("總獲利", f"NT${profit:,.0f}", delta=f"本金 {total_cost:,.0f}")
-    
-    # 圖表
-    df_chart = pd.DataFrame({
-        "年": range(1, yrs+1),
-        "資產": [mon * 12 * ((1+rate)**y - 1) / rate for y in range(1, yrs+1)]
-    })
-    fig = px.line(df_chart, x="年", y="資產", title=f"定投成長模擬 ({sel})")
-    fig.update_traces(line_color="#28a745", line_width=3)
-    st.plotly_chart(fig, use_container_width=True, height=250)
-
-    st.markdown("---")
-    
-    # 堅持收益
-    st.markdown("### 🧠 堅持收益")
-    c_early, c_keep = st.columns(2)
-    stop_y = max(1, yrs // 2)
-    stop_v = mon * 12 * ((1+rate)**stop_y - 1) / rate
-    
-    with c_early: st.error(f"若第 {stop_y} 年放棄\nNT${stop_v:,.0f}")
-    with c_keep: st.success(f"堅持到底多賺\nNT${final_val - stop_v:,.0f}")
-
-    st.markdown("---")
-    st.caption("資料來源：Yahoo Finance / FinMind | 過去績效不代表未來表現")
-    st.success("🎉 **定投啟蒙完成！從 0050 開始！**")
 
 # --------------------------
 # Tab 1: 智能全球情報中心 (v6.7 全真實數據版)
@@ -1497,12 +1232,264 @@ with tabs[4]:
 # --------------------------
 # Tab 5
 # --------------------------
-# ======================================================
-# Tab 5: 全景產業鏈 AI 分析版 (v6.7)
-# 整合 FinMind 智能辨識 + 自動推導上下游 + 50家媒體隨機抽樣
-# 直接貼入 with tabs[5]: 即可運行
-# ======================================================
+
+
 with tabs[5]:
+
+    st.markdown("## 🐢 ETF 定投")
+
+    open_now, status_text = is_market_open_tw()
+
+    top_l, top_r = st.columns([3, 1])
+    with top_l:
+        if open_now:
+            st.success(f"🟢 {status_text}｜每 60 秒更新")
+            st_autorefresh(interval=60 * 1000, limit=10000, key="tab0_autorefresh")
+        else:
+            st.info(f"🔴 {status_text}｜非開盤時段")
+    with top_r:
+        if st.button("🔄 立即刷新", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+
+    col1, col2 = st.columns(2)
+    with col1: st.markdown('<div style="padding:15px;border-radius:10px;background:#e8f5e8;border:1px solid #28a745;text-align:center;"><b style="color:#28a745;font-size:18px;">定投計畫</b></div>', unsafe_allow_html=True)
+    with col2: st.markdown('<div style="padding:15px;border-radius:10px;background:#2b0f0f;border:2px solid #ff4b4b;text-align:center;"><b style="color:#ff4b4b;font-size:18px;">進階戰室</b></div>', unsafe_allow_html=True)
+
+    import streamlit.components.v1 as components
+    components.html(
+        '<button style="width:100%;height:40px;background:#ff4b4b;color:white;border-radius:8px;font-weight:bold;" onclick="jumpToTab2()">🚀 進階戰室</button>'
+        '<script>function jumpToTab2(){try{var t=window.parent.document.querySelectorAll(\'button[data-baseweb="tab"]\');t[2]&&t[2].click()}catch(e){}}</script>',
+        height=50,
+    )
+
+    st.markdown("---")
+
+    # =========================
+    # 📡 即時報價 (FinMind/yfinance 混合)
+    # =========================
+    st.markdown("### 📡 即時報價")
+
+    @st.cache_data(ttl=60 if open_now else 600, show_spinner=False)
+    def get_realtime_quotes(etfs: list) -> pd.DataFrame:
+        out = []
+        try:
+            # 優先嘗試用 yfinance 抓取即時 (對 Tab0 來說足夠準確)
+            yf_tickers = [f"{x}.TW" for x in etfs]
+            data = yf.download(yf_tickers, period="5d", interval="1d", progress=False)['Close']
+            
+            for i, sid in enumerate(etfs):
+                ticker = f"{sid}.TW"
+                try:
+                    # 取最新價與前日價
+                    if ticker in data.columns:
+                        series = data[ticker].dropna()
+                    else:
+                        # 單一 ticker 時 data 可能是 Series
+                        series = data.dropna() if len(etfs) == 1 else pd.Series()
+                    
+                    if len(series) >= 1:
+                        price = float(series.iloc[-1])
+                        prev = float(series.iloc[-2]) if len(series) >= 2 else price
+                        chg = (price - prev) / prev * 100
+                        source = "🟢YF即時" if open_now else "🔴YF收盤"
+                        out.append([sid, ETF_META[sid]['name'], price, chg, source])
+                    else:
+                        # 備用：FinMind 最近日
+                        from FinMind.data import DataLoader
+                        dl = DataLoader()
+                        f_df = dl.taiwan_stock_daily(sid, (_today_tw()-timedelta(days=5)).strftime('%Y-%m-%d'))
+                        if len(f_df) > 0:
+                            last = f_df.iloc[-1]
+                            out.append([sid, ETF_META[sid]['name'], last['close'], 0.0, "🔵FM日結"])
+                        else:
+                             out.append([sid, ETF_META[sid]['name'], np.nan, np.nan, "❌無資料"])
+                except:
+                    out.append([sid, ETF_META[sid]['name'], np.nan, np.nan, "❌錯誤"])
+        except:
+             # 全掛時的靜態備用
+             return pd.DataFrame({
+                "ETF": etfs,
+                "名稱": [ETF_META[x]["name"] for x in etfs],
+                "價格": [192.5, 36.1, 45.3, 52.0, 28.4],
+                "漲跌幅(%)": [0.5, 0.3, 1.2, -0.1, 0.8],
+                "來源": ["⚠️靜態"] * 5
+            })
+
+        return pd.DataFrame(out, columns=["ETF", "名稱", "價格", "漲跌幅(%)", "來源"])
+
+    quote_df = get_realtime_quotes(ETF_LIST)
+    
+    # 顯示報價表
+    show_df = quote_df.copy()
+    show_df["價格"] = show_df["價格"].apply(lambda x: f"NT${x:,.1f}" if pd.notna(x) else "N/A")
+    show_df["漲跌幅(%)"] = show_df["漲跌幅(%)"].apply(lambda x: f"{x:+.2f}%" if pd.notna(x) else "N/A")
+    st.dataframe(show_df, use_container_width=True, hide_index=True)
+
+    # 快速 Metrics
+    cols = st.columns(len(ETF_LIST))
+    for i, sid in enumerate(ETF_LIST):
+        with cols[i]:
+            row = quote_df[quote_df['ETF'] == sid].iloc[0]
+            if pd.notna(row['價格']):
+                st.metric(f"{ETF_META[sid]['icon']} {sid}", f"{row['價格']:.1f}", f"{row['漲跌幅(%)']:.2f}%")
+            else:
+                st.metric(f"{sid}", "N/A")
+
+    st.markdown("---")
+
+    # =========================
+    # 📊 ETF 詳細 (摺疊)
+    # =========================
+    st.markdown("### 📊 ETF 詳細特色")
+    with st.expander("👆 點我展開 / 收起詳細資訊"):
+        pick = st.selectbox("查看詳情", ETF_LIST)
+        meta = ETF_META[pick]
+        
+        c1, c2 = st.columns([2, 3])
+        with c1:
+            st.markdown(f"#### {meta['icon']} {meta['name']}")
+            st.caption(f"代號：{pick} | 區域：{meta['region']}")
+            st.write(f"**追蹤**：{meta['track']}")
+            st.write(f"**風險**：{meta['risk']}")
+        with c2:
+            st.info(f"💡 **投資重點**\n{meta['hint']}")
+            st.success("❤️ **適合對象**\n長期定投、不想看盤、累積資產者")
+
+    st.markdown("---")
+
+    # =========================
+    # 📈 5年歷史績效 (改用 yfinance 解決 N/A)
+    # =========================
+    st.markdown("### 📈 5年歷史績效")
+
+    @st.cache_data(ttl=3600*12, show_spinner=False)
+    def get_history_performance(etfs: list) -> pd.DataFrame:
+        rows = []
+        try:
+            # 一次下載所有
+            tickers = [f"{x}.TW" for x in etfs]
+            # 抓 5 年 + 緩衝
+            data = yf.download(tickers, period="5y", interval="1d", progress=False)['Close']
+            
+            for sid in etfs:
+                t = f"{sid}.TW"
+                # 處理單一或多個 ticker 的 column 結構差異
+                if isinstance(data, pd.Series):
+                    # 只有一檔時
+                    s = data if len(etfs) == 1 else pd.Series()
+                else:
+                    s = data[t].dropna() if t in data.columns else pd.Series()
+
+                if len(s) > 200:
+                    first = float(s.iloc[0])
+                    last = float(s.iloc[-1])
+                    
+                    # 計算年數
+                    days = (s.index[-1] - s.index[0]).days
+                    years = days / 365.25
+                    
+                    # 總報酬 & 年化
+                    total_ret = (last - first) / first
+                    ann_ret = (1 + total_ret) ** (1 / years) - 1
+                    
+                    # 最大回撤
+                    cummax = s.cummax()
+                    drawdown = (s - cummax) / cummax
+                    max_dd = drawdown.min()
+                    
+                    rows.append([
+                        sid, 
+                        f"{total_ret*100:.1f}%", 
+                        f"{ann_ret*100:.1f}%", 
+                        f"{years:.1f}年", 
+                        f"{max_dd*100:.1f}%"
+                    ])
+                else:
+                    rows.append([sid, "N/A", "N/A", "N/A", "N/A"])
+        except Exception as e:
+            # 失敗時回傳靜態備用，避免全白
+            return pd.DataFrame({
+                "ETF": etfs,
+                "總報酬": ["+128.5%", "+130.2%", "+85.4%", "+210.5%", "+65.2%"],
+                "年化": ["15.2%", "15.4%", "11.2%", "25.5%", "9.5%"],
+                "年數": ["5.0年"] * 5,
+                "最大回撤": ["-28.5%", "-28.2%", "-35.4%", "-45.6%", "-22.1%"]
+            })
+            
+        return pd.DataFrame(rows, columns=["ETF", "總報酬", "年化", "年數", "最大回撤"])
+
+    perf_df = get_history_performance(ETF_LIST)
+    st.dataframe(perf_df, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # =========================
+    # 💰 定投試算器
+    # =========================
+    st.markdown("### 💰 定投試算器")
+    
+    c1, c2, c3 = st.columns(3)
+    with c1: mon = st.number_input("每月投入", 1000, 100000, 10000, 1000)
+    with c2: yrs = st.slider("年數", 5, 30, 10)
+    with c3: 
+        sel = st.selectbox("參考標的", perf_df['ETF'].tolist())
+        # 解析年化
+        try:
+            r_str = perf_df.loc[perf_df['ETF']==sel, '年化'].values[0]
+            rate = parse_pct(r_str)
+            if np.isnan(rate): rate = 0.10
+        except: rate = 0.10
+
+    # 計算
+    total_cost = mon * 12 * yrs
+    final_val = mon * 12 * ((1+rate)**yrs - 1) / rate
+    profit = final_val - total_cost
+    
+    m1, m2 = st.columns(2)
+    with m1: st.metric(f"{yrs}年後資產", f"NT${final_val:,.0f}", delta=f"年化 {rate*100:.1f}%")
+    with m2: st.metric("總獲利", f"NT${profit:,.0f}", delta=f"本金 {total_cost:,.0f}")
+    
+    # 圖表
+    df_chart = pd.DataFrame({
+        "年": range(1, yrs+1),
+        "資產": [mon * 12 * ((1+rate)**y - 1) / rate for y in range(1, yrs+1)]
+    })
+    fig = px.line(df_chart, x="年", y="資產", title=f"定投成長模擬 ({sel})")
+    fig.update_traces(line_color="#28a745", line_width=3)
+    st.plotly_chart(fig, use_container_width=True, height=250)
+
+    st.markdown("---")
+    
+    # 堅持收益
+    st.markdown("### 🧠 堅持收益")
+    c_early, c_keep = st.columns(2)
+    stop_y = max(1, yrs // 2)
+    stop_v = mon * 12 * ((1+rate)**stop_y - 1) / rate
+    
+    with c_early: st.error(f"若第 {stop_y} 年放棄\nNT${stop_v:,.0f}")
+    with c_keep: st.success(f"堅持到底多賺\nNT${final_val - stop_v:,.0f}")
+
+    st.markdown("---")
+    st.caption("資料來源：Yahoo Finance / FinMind | 過去績效不代表未來表現")
+    st.success("🎉 **定投啟蒙完成！從 0050 開始！**")
+
+# --------------------------
+# Tab 5
+# --------------------------
+with tabs[0]:
+    # ✅ 初始化 session_state（防止首次跳頁後資料消失）
+    if "t5_result" not in st.session_state:
+        st.session_state.t5_result = None
+    if "t5_stock_name" not in st.session_state:
+        st.session_state.t5_stock_name = ""
+    if "t5_industry" not in st.session_state:
+        st.session_state.t5_industry = "未知產業"
+    if "t5_news" not in st.session_state:
+        st.session_state.t5_news = []
+    if "t5_sources" not in st.session_state:
+        st.session_state.t5_sources = set()
+
     st.markdown("""
     <div style='text-align:center; padding:20px; 
     background:linear-gradient(135deg, #141E30 0%, #243B55 100%); 
@@ -1511,9 +1498,9 @@ with tabs[5]:
         <p style='color:white; opacity:0.9; margin:5px 0;'>FinMind 智能辨識 | 供應鏈上下游推導 | TAIEX <strong>{S_current:.0f}</strong></p>
     </div>
     """.format(S_current=S_current), unsafe_allow_html=True)
-    
+
     st.info("⚠️ 本分析報告僅供產業研究與學術討論，非投資建議。資料來自 FinMind 與全球隨機媒體抽樣。")
-    
+
     # 🎛️ 控制面板
     col1, col2, col3 = st.columns([1.5, 1, 1.5])
     with col1:
@@ -1522,21 +1509,32 @@ with tabs[5]:
         days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
     with col3:
         focus_region = st.selectbox("🌐 新聞權重傾斜", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
-    
+
     # 🔑 金鑰檢查
     groq_key = st.secrets.get("GROQ_KEY", "")
     finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
-    
+
     if not groq_key:
         st.error("❌ **GROQ_KEY 遺失**！請至 Settings → Secrets 設定")
         st.stop()
-    
-    if st.button("🚀 **啟動產業鏈掃描與分析**", type="primary", use_container_width=True):
-        
+
+    col_btn1, col_btn2 = st.columns([3, 1])
+    with col_btn1:
+        run_btn = st.button("🚀 **啟動產業鏈掃描與分析**", type="primary", use_container_width=True)
+    with col_btn2:
+        clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
+
+    if clear_btn:
+        st.session_state.t5_result = None
+        st.session_state.t5_news = []
+        st.session_state.t5_sources = set()
+        st.rerun()
+
+    if run_btn:
         prog = st.progress(0)
         status = st.empty()
-        
-        # 1️⃣ 【FinMind 智能辨識】取得個股名稱與產業
+
+        # 1️⃣ 【FinMind 智能辨識】
         status.info(f"🔍 正在連接 FinMind 辨識代碼 {stock_code}...")
         stock_name = ""
         industry = "未知產業"
@@ -1545,10 +1543,8 @@ with tabs[5]:
             dl = DataLoader()
             if finmind_key:
                 dl.login_by_token(api_token=finmind_key)
-            
             df_info = dl.taiwan_stock_info()
             stock_data = df_info[df_info['stock_id'] == stock_code]
-            
             if not stock_data.empty:
                 stock_name = stock_data['stock_name'].iloc[0]
                 industry = stock_data['industry_category'].iloc[0]
@@ -1557,10 +1553,10 @@ with tabs[5]:
                 status.warning(f"⚠️ 無法辨識代碼 {stock_code}，將以純代碼進行分析")
         except Exception as e:
             st.caption(f"FinMind 查詢失敗: {e}")
-        
+
         prog.progress(15)
-        
-        # 2️⃣ 【全球媒體矩陣】50 家全球財經 RSS 池
+
+        # 2️⃣ 【全球媒體矩陣】
         mega_rss_pool = {
             "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
             "工商時報": "https://ctee.com.tw/rss/all_news.xml",
@@ -1579,19 +1575,21 @@ with tabs[5]:
             "SemiEngineering": "https://semiengineering.com/feed/",
             "TechCrunch": "https://techcrunch.com/feed/"
         }
-        
+
         import random
         pool_keys = list(mega_rss_pool.keys())
         selected_media_names = random.sample(pool_keys, min(10, len(pool_keys)))
         selected_feeds = {k: mega_rss_pool[k] for k in selected_media_names}
-        
+
         prog.progress(30)
         status.info("🎲 隨機選定 10 家國際媒體，開始並行抓取...")
-        
+
         # 3️⃣ 【收集新聞】
+        import feedparser
+        import time
         raw_news_pool = []
         collected_sources = set()
-        
+
         for media_name, rss_url in selected_feeds.items():
             try:
                 feed = feedparser.parse(rss_url)
@@ -1603,37 +1601,32 @@ with tabs[5]:
                 time.sleep(0.1)
             except:
                 continue
-                
+
         prog.progress(50)
         status.info("📥 新聞抓取完畢，進行關聯性篩選...")
-        
-        # 優先保留與標的或產業相關的新聞
+
         keywords = [stock_code, stock_name, industry, "半導體", "AI", "供應鏈", "股市", "Tech"]
         priority_news = [n for n in raw_news_pool if any(k.lower() in n['title'].lower() for k in keywords if k)]
-        
+
         if len(priority_news) >= 20:
             final_20_news = random.sample(priority_news, 20)
         else:
             remaining = 20 - len(priority_news)
             other_news = [n for n in raw_news_pool if n not in priority_news]
             final_20_news = priority_news + random.sample(other_news, min(remaining, len(other_news)))
-            
+
         news_texts_for_ai = [f"[{n['media']}] {n['title']}" for n in final_20_news]
-        
-        # 補充客觀市場數據
         news_texts_for_ai.extend([
             f"大盤 TAIEX {S_current:.0f}，月線 {ma20:.0f}",
             f"{stock_code} {stock_name} 客觀技術動態"
         ])
-        
         news_summary = " | ".join(news_texts_for_ai)
         prog.progress(65)
-        
-        # 4️⃣ 【大腦推理】AI Prompt (引入上下游推導機制)
+
+        # 4️⃣ 【AI Prompt】
         ai_prompt = f"""
         你是一位中立客觀的資深產業鏈分析師。
         本次分析核心標的：【{stock_code} {stock_name}】(所屬產業：{industry})
-
         請綜合以下 {len(final_20_news)} 篇抽樣新聞，進行 {days_period} 天的產業鏈趨勢剖析。
 
         🌍 情報資料庫（來自 {len(collected_sources)} 家媒體）：
@@ -1647,75 +1640,80 @@ with tabs[5]:
 
         【請提供以下架構的深度分析】（繁體中文，600字內）：
         1. 🎯 **核心企業定位**：{stock_name} 在 {industry} 中的競爭地位與近期新聞亮點。
-        2. ⬆️ **上游供應鏈觀測**：請你自動盤點並列出 {stock_name} 具代表性的「上游供應商或原物料」(至少3家公司/領域)，並分析近期的供應鏈利弊。
-        3. ⬇️ **下游客戶與應用**：請你自動盤點並列出 {stock_name} 具代表性的「下游大客戶或終端應用」(至少3家公司/領域)，分析終端需求拉力。
+        2. ⬆️ **上游供應鏈觀測**：列出 {stock_name} 具代表性的上游供應商或原物料(至少3家)，分析近期供應鏈利弊。
+        3. ⬇️ **下游客戶與應用**：列出 {stock_name} 具代表性的下游大客戶或終端應用(至少3家)，分析終端需求拉力。
         4. 🌍 **全球媒體共識**：統整國際外媒與台媒對該產業鏈的綜合風向。
         5. 📉 **客觀技術面狀態**：目前價格相對於均線的相對位置結構。
         """
-        
+
         status.info(f"🦙 正在自動推導 {stock_name} 上下游產業鏈並進行分析...")
-        
+
         # 🦙 Groq 分析
+        groq_analysis = None
         try:
             from groq import Groq
             import httpx
             client = Groq(api_key=groq_key, http_client=httpx.Client())
-            
             groq_resp = client.chat.completions.create(
-                model="llama-3.1-8b-instant",  
+                model="llama-3.1-8b-instant",
                 messages=[
                     {"role": "system", "content": "你是一個不提供投資建議、專注於推導產業鏈上下游關聯的研究員。"},
                     {"role": "user", "content": ai_prompt}
                 ],
                 max_tokens=800,
-                temperature=0.2 
+                temperature=0.2
             )
             groq_analysis = groq_resp.choices[0].message.content
-            
-            display_title = f"{stock_code} {stock_name}" if stock_name else stock_code
-            st.success(f"✅ 報告生成完畢（核心標的：{display_title} | 產業：{industry}）")
         except Exception as e:
-            st.error("🦙 AI 引擎暫時無法連線")
-            groq_analysis = None
-        
+            st.error(f"🦙 AI 引擎暫時無法連線：{e}")
+
         prog.progress(100)
         status.empty()
-        
-        # 📋 結果展示
-        if groq_analysis:
-            st.markdown("---")
-            st.markdown(f"## 🔗 **【{display_title}】全景產業鏈報告**")
-            st.caption(f"所屬產業分類：`{industry}` | 資料涵蓋：`{len(final_20_news)} 篇新聞`")
-            st.markdown(groq_analysis)
-            
-            # 📰 揭露底層數據
-            with st.expander(f"🔍 查看 AI 採樣的底層數據 (嚴選 {len(final_20_news)} 篇，來自 {len(collected_sources)} 家媒體)"):
-                import pandas as pd
-                if final_20_news:
-                    df_news = pd.DataFrame(final_20_news)
-                    df_news.index += 1
-                    df_news.columns = ["媒體來源", "新聞標題", "發布時間"]
-                    st.dataframe(df_news, use_container_width=True)
-                    st.caption(f"**本次命中的媒體矩陣**：{', '.join(list(collected_sources))}")
-                else:
-                    st.warning("無有效新聞數據")
 
-            # 📈 客觀數據面板
-            st.markdown("### 📊 **大盤客觀市場數據快照**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                trend = "均線之上" if S_current > ma20 else "均線之下"
-                st.metric("大盤與月線位階", trend)
-            with col2:
-                gap_pct = (S_current - ma20) / ma20 * 100
-                st.metric("大盤月線乖離率", f"{gap_pct:+.2f}%")
-            with col3:
-                volatility = "擴大" if abs(gap_pct) > 2 else "收斂"
-                st.metric("近期波動度觀察", volatility)
-        else:
-            st.error("❌ 報告生成失敗，請檢查 API 金鑰或網路狀態。")
-    
+        # ✅ 儲存結果到 session_state（跳頁後回來還在）
+        if groq_analysis:
+            display_title = f"{stock_code} {stock_name}" if stock_name else stock_code
+            st.session_state.t5_result = groq_analysis
+            st.session_state.t5_stock_name = stock_name
+            st.session_state.t5_industry = industry
+            st.session_state.t5_news = final_20_news
+            st.session_state.t5_sources = collected_sources
+            st.session_state.t5_display_title = display_title
+            st.session_state.t5_gap_pct = (S_current - ma20) / ma20 * 100
+
+    # ✅ 只要 session_state 有結果，永遠顯示（不管有沒有跳頁）
+    if st.session_state.t5_result:
+        st.success(f"✅ 報告生成完畢（核心標的：{st.session_state.t5_display_title} | 產業：{st.session_state.t5_industry}）")
+        st.markdown("---")
+        st.markdown(f"## 🔗 **【{st.session_state.t5_display_title}】全景產業鏈報告**")
+        st.caption(f"所屬產業分類：`{st.session_state.t5_industry}` | 資料涵蓋：`{len(st.session_state.t5_news)} 篇新聞`")
+        st.markdown(st.session_state.t5_result)
+
+        # 📰 底層數據
+        with st.expander(f"🔍 查看 AI 採樣的底層數據 (嚴選 {len(st.session_state.t5_news)} 篇，來自 {len(st.session_state.t5_sources)} 家媒體)"):
+            import pandas as pd
+            if st.session_state.t5_news:
+                df_news = pd.DataFrame(st.session_state.t5_news)
+                df_news.index += 1
+                df_news.columns = ["媒體來源", "新聞標題", "發布時間"]
+                st.dataframe(df_news, use_container_width=True)
+                st.caption(f"**本次命中的媒體矩陣**：{', '.join(list(st.session_state.t5_sources))}")
+
+        # 📊 大盤快照
+        st.markdown("### 📊 **大盤客觀市場數據快照**")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            trend = "均線之上" if S_current > ma20 else "均線之下"
+            st.metric("大盤與月線位階", trend)
+        with c2:
+            st.metric("大盤月線乖離率", f"{st.session_state.t5_gap_pct:+.2f}%")
+        with c3:
+            volatility = "擴大" if abs(st.session_state.t5_gap_pct) > 2 else "收斂"
+            st.metric("近期波動度觀察", volatility)
+
     st.markdown("---")
     st.caption("🔍 貝伊果屋 | 內建 FinMind 個股智能辨識 | 自動推導上下游供應鏈")
+
+
 
 
