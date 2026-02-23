@@ -1482,6 +1482,7 @@ import random
 import time
 import feedparser
 import pandas as pd
+from datetime import datetime, timedelta
 
 with tabs[0]:
     # ✅ 初始化 session_state（防止首次跳頁後資料消失）
@@ -1495,13 +1496,17 @@ with tabs[0]:
         st.session_state.t5_news = []
     if "t5_sources" not in st.session_state:
         st.session_state.t5_sources = set()
+    if "t5_dividend_info" not in st.session_state:
+        st.session_state.t5_dividend_info = {}
+    if "t5_latest_price" not in st.session_state:
+        st.session_state.t5_latest_price = None
 
     st.markdown("""
     <div style='text-align:center; padding:20px; 
     background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); 
     color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.4);'>
         <h1 style='color:white; margin:0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;'>🏛️ Institutional Research Hub</h1>
-        <p style='color:white; opacity:0.9; margin:5px 0;'>外資級全網產業鏈推導系統 | TAIEX <strong>{S_current:.0f}</strong></p>
+        <p style='color:white; opacity:0.9; margin:5px 0;'>外資級全網產業鏈推導系統 | 基本面與籌碼共識 | TAIEX <strong>{S_current:.0f}</strong></p>
     </div>
     """.format(S_current=S_current), unsafe_allow_html=True)
 
@@ -1510,7 +1515,7 @@ with tabs[0]:
     # 🎛️ 控制面板
     col1, col2, col3 = st.columns([1.5, 1, 1.5])
     with col1:
-        stock_code = st.text_input("🏭 產業指標股代碼 (Ticker)", value="2330", max_chars=6, help="輸入代碼，系統將自動辨識公司名稱與產業")
+        stock_code = st.text_input("🏭 產業指標股代碼 (Ticker)", value="2330", max_chars=6, help="輸入代碼，系統將自動辨識公司名稱、產業與除權息")
     with col2:
         days_period = st.selectbox("⏳ 觀察期 (Horizon)", [7, 14, 30, 90], index=1)
     with col3:
@@ -1534,33 +1539,73 @@ with tabs[0]:
         st.session_state.t5_result = None
         st.session_state.t5_news = []
         st.session_state.t5_sources = set()
+        st.session_state.t5_dividend_info = {}
+        st.session_state.t5_latest_price = None
         st.rerun()
 
     if run_btn:
         prog = st.progress(0)
         status = st.empty()
 
-        # 1️⃣ 【FinMind 智能辨識】
-        status.info(f"🔍 正在連接 FinMind 辨識代碼 {stock_code}...")
+        # 1️⃣ 【FinMind 智能辨識與基本面抓取】
+        status.info(f"🔍 正在連接 FinMind 辨識代碼 {stock_code} 並獲取財務數據...")
         stock_name = ""
         industry = "未知產業"
+        dividend_info = {}
+        latest_price = None
+        
         try:
             from FinMind.data import DataLoader
             dl = DataLoader()
             if finmind_key:
                 dl.login_by_token(api_token=finmind_key)
+            
+            # 獲取個股基本資訊
             df_info = dl.taiwan_stock_info()
             stock_data = df_info[df_info['stock_id'] == stock_code]
             if not stock_data.empty:
                 stock_name = stock_data['stock_name'].iloc[0]
                 industry = stock_data['industry_category'].iloc[0]
-                status.success(f"✅ 成功辨識：{stock_code} {stock_name} ({industry})")
+                
+                # 獲取最新股價 (為了計算殖利率)
+                try:
+                    start_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
+                    df_price = dl.taiwan_stock_daily(stock_id=stock_code, start_date=start_date)
+                    if not df_price.empty:
+                        latest_price = df_price['close'].iloc[-1]
+                except Exception as e:
+                    pass
+                
+                # 獲取最新除權息資訊
+                try:
+                    df_div = dl.taiwan_stock_dividend(stock_id=stock_code)
+                    if not df_div.empty:
+                        df_div = df_div.sort_values('date', ascending=False)
+                        latest_div = df_div.iloc[0]
+                        cash_div = latest_div.get('CashEarningsDistribution', 0.0)
+                        if pd.isna(cash_div): cash_div = 0.0
+                        
+                        ex_date = latest_div.get('CashExDividendTradingDate', '尚未公布')
+                        if pd.isna(ex_date): ex_date = '尚未公布'
+                        
+                        dividend_info = {
+                            'year': str(latest_div.get('year', '最新')),
+                            'cash_dividend': float(cash_div),
+                            'ex_dividend_date': str(ex_date)
+                        }
+                except Exception as e:
+                    pass
+                
+                msg = f"✅ 成功辨識：{stock_code} {stock_name} ({industry})"
+                if dividend_info:
+                    msg += f" | 最新配息：{dividend_info['cash_dividend']}元"
+                status.success(msg)
             else:
                 status.warning(f"⚠️ 無法辨識代碼 {stock_code}，將以純代碼進行分析")
         except Exception as e:
             st.caption(f"FinMind 查詢失敗: {e}")
 
-        prog.progress(15)
+        prog.progress(20)
 
         # 2️⃣ 【全球媒體矩陣】
         mega_rss_pool = {
@@ -1576,16 +1621,13 @@ with tabs[0]:
             "Reuters": "https://feeds.reuters.com/reuters/businessNews",
             "MarketWatch": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
             "日經亞洲": "https://www.nikkei.com/rss/en/business.xml",
-            "彭博亞洲": "https://feeds.bloomberg.com/markets/asia/news.rss",
-            "EE Times": "https://www.eetimes.com/feed/",
-            "SemiEngineering": "https://semiengineering.com/feed/",
-            "TechCrunch": "https://techcrunch.com/feed/"
+            "彭博亞洲": "https://feeds.bloomberg.com/markets/asia/news.rss"
         }
 
         # 啟動所有媒體池
         selected_feeds = mega_rss_pool 
 
-        prog.progress(30)
+        prog.progress(35)
         status.info(f"🌐 啟動全網搜羅，共 {len(selected_feeds)} 家國際媒體，開始並行抓取...")
 
         # 3️⃣ 【收集大數據新聞】
@@ -1605,11 +1647,11 @@ with tabs[0]:
             except:
                 continue
 
-        prog.progress(50)
+        prog.progress(55)
         status.info(f"📥 成功抓取 {len(raw_news_pool)} 篇原始新聞，進行關聯性擴大篩選...")
 
-        # 擴大關鍵字範圍
-        keywords = [stock_code, stock_name, industry, "半導體", "AI", "供應鏈", "股市", "Tech", "營收", "財報", "外資", "預估"]
+        # 擴大關鍵字範圍，包含除權息與基本面字眼
+        keywords = [stock_code, stock_name, industry, "半導體", "AI", "供應鏈", "股市", "營收", "財報", "外資", "預估", "股息", "除息", "配息"]
         priority_news = [n for n in raw_news_pool if any(k.lower() in n['title'].lower() for k in keywords if k)]
 
         # 動態提高最終分析數量，保留所有重點新聞，上限 150 篇
@@ -1628,17 +1670,28 @@ with tabs[0]:
             f"{stock_code} {stock_name} 客觀技術動態"
         ])
         news_summary = " | ".join(news_texts_for_ai)
-        prog.progress(65)
+        
+        prog.progress(70)
 
-        # 4️⃣ 【AI Prompt：外資券商頂級分析師框架】(使用 textwrap 解決縮排報錯)
+        # 動態生成除權息文字給 AI 參考
+        if dividend_info and latest_price:
+            yield_pct = (dividend_info['cash_dividend'] / latest_price) * 100
+            dividend_text = f"最新公告配息：{dividend_info['year']}年度現金股利 {dividend_info['cash_dividend']}元 (依近期股價估算單期殖利率約 {yield_pct:.2f}%) | 除權息日：{dividend_info['ex_dividend_date']}"
+        elif dividend_info:
+            dividend_text = f"最新公告配息：{dividend_info['year']}年度現金股利 {dividend_info['cash_dividend']}元 | 除權息日：{dividend_info['ex_dividend_date']}"
+        else:
+            dividend_text = "目前無近期配息紀錄或尚未公告"
+
+        # 4️⃣ 【AI Prompt：外資券商頂級分析師框架】
         ai_prompt_base = """
         【角色設定】
-        你是一位全球頂級投資銀行（如 Morgan Stanley、JPMorgan）的資深亞洲科技與產業鏈首席分析師。你的文筆極度專業、冷靜客觀、邏輯嚴密，善用金融與半導體產業的專業術語（如：滲透率、庫存去化、資本支出、拉貨動能、良率、供需結構、終端需求等）。
+        你是一位全球頂級投資銀行（如 Morgan Stanley、JPMorgan）的資深亞洲科技與產業鏈首席分析師。你的文筆極度專業、冷靜客觀、邏輯嚴密，善用金融與半導體產業的專業術語（如：滲透率、庫存去化、資本支出、拉貨動能、良率、供需結構、填息動能等）。
 
         【分析標的與數據池】
         - 核心追蹤標的：{stock_code} {stock_name} (產業分類：{industry})
         - 觀察週期：近 {days_period} 天
         - 總體經濟與大盤位階：TAIEX {S_current:.0f} | 月線(MA20): {ma20:.0f} | 季線(MA60): {ma60:.0f}
+        - **基本面與籌碼數據**：{dividend_text}
         
         【全球新聞大數據池】(共 {news_count} 篇)：
         {news_summary}
@@ -1646,12 +1699,15 @@ with tabs[0]:
         【嚴格合規規範】
         1. 絕對禁止給出任何「買進、賣出、中立」等投資評等 (Rating)。
         2. 絕對禁止給出「目標價 (Target Price)」。
-        3. 你的報告定調為「產業趨勢中性探討 (Industry & Supply Chain Update)」。
+        3. 你的報告定調為「產業趨勢與基本面中性探討 (Industry & Fundamental Update)」。
 
         【輸出格式規範】（請嚴格遵守以下 Markdown 標題與結構，不要自我介紹，直接給出報告）：
 
         ### 🎯 Executive Summary | 核心論點摘要
         (請用 3 到 4 個 Bullet points，精煉總結這百篇新聞中，對該企業最具影響力的基本面變化或市場共識。語氣要像券商報告的摘要，一針見血。)
+
+        ### 💰 Dividend Policy & Fundamentals | 配息政策與基本面連動
+        (分析該公司最新的配息政策，並推演歷史填息難易度與市場對此股息水準的預期心理，評估其作為高股息或成長股的資金吸引力。)
 
         ### 🔗 Supply Chain Dynamics | 產業鏈供需結構剖析
         *   **⬆️ Upstream (上游供應與成本端)：** (列出至少3家上游供應商或關鍵原物料，並分析目前的產能、報價、庫存或供應瓶頸狀況。)
@@ -1661,7 +1717,7 @@ with tabs[0]:
         (基於新聞數據，列出未來一到兩個季度內，可能推升該公司營運的「正向催化劑」，以及可能壓抑毛利率或營收的「總經/產業風險」。)
 
         ### 🌐 Market Sentiment & Macro Context | 市場共識與大盤連動位階
-        (綜合外資與國內媒體風向，說明市場目前對該公司的預期是「過度樂觀」、「悲觀」還是「分歧」？並結合目前 TAIEX {S_current:.0f} 與均線的相對位階，客觀點評其在整體大盤中的資金輪動狀態。)
+        (綜合外資與國內媒體風向，說明市場目前對該公司的預期是「過度樂觀」、「悲觀」還是「分歧」？並結合目前大盤位階，客觀點評其資金輪動狀態。)
         """
 
         # 動態格式化字串
@@ -1673,11 +1729,12 @@ with tabs[0]:
             S_current=S_current,
             ma20=ma20,
             ma60=ma60,
+            dividend_text=dividend_text,
             news_count=len(final_news),
             news_summary=news_summary
         )
 
-        status.info(f"🏛️ 啟動機構級 AI 運算模型：正在以券商研報規格重構 {stock_name} 產業鏈報告...")
+        status.info(f"🏛️ 啟動機構級 AI 運算模型：正在以券商研報規格重構 {stock_name} 產業鏈與基本面報告...")
 
         # 🦙 Groq 分析
         groq_analysis = None
@@ -1688,11 +1745,11 @@ with tabs[0]:
             groq_resp = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "你是一位華爾街頂級外資分析師，精通科技股與供應鏈推演。請完全按照用戶提供的 Markdown 框架輸出，不講廢話，文風冷靜、數據導向、使用大量外資研報專業術語。"},
+                    {"role": "system", "content": "你是一位華爾街頂級外資分析師，精通科技股、供應鏈推演與股息政策評估。請完全按照用戶提供的 Markdown 框架輸出，不講廢話，文風冷靜、數據導向、使用大量外資研報專業術語。"},
                     {"role": "user", "content": ai_prompt}
                 ],
-                max_tokens=1500,  # 提高 Token 讓報告內容完整
-                temperature=0.3   # 降低溫度，維持外資報告的嚴謹性
+                max_tokens=1800,  # 再次提高 Token 以確保報告不會被截斷
+                temperature=0.3
             )
             groq_analysis = groq_resp.choices[0].message.content
         except Exception as e:
@@ -1709,10 +1766,14 @@ with tabs[0]:
             st.session_state.t5_industry = industry
             st.session_state.t5_news = final_news
             st.session_state.t5_sources = collected_sources
+            st.session_state.t5_dividend_info = dividend_info
+            st.session_state.t5_latest_price = latest_price
             st.session_state.t5_display_title = display_title
             st.session_state.t5_gap_pct = (S_current - ma20) / ma20 * 100
 
-    # ✅ 顯示分析結果
+    # ==========================================
+    # ✅ 顯示分析結果與 UI
+    # ==========================================
     if st.session_state.t5_result:
         st.success(f"🏛️ 機構級報告生成完畢（Ticker: {st.session_state.t5_display_title} | Sector: {st.session_state.t5_industry}）")
         st.markdown("---")
@@ -1733,6 +1794,26 @@ with tabs[0]:
         st.markdown(st.session_state.t5_result)
 
         st.markdown("---")
+
+        # 🏦 除權息快照 (專業排版)
+        div_info = st.session_state.t5_dividend_info
+        if div_info:
+            st.markdown("#### 🏦 Dividend Policy Snapshot (基本面配息快照)")
+            col_d1, col_d2, col_d3, col_d4 = st.columns(4)
+            with col_d1:
+                st.metric("宣告年度 (Year)", f"{div_info['year']}年")
+            with col_d2:
+                st.metric("現金股利 (DPS)", f"{div_info['cash_dividend']:.2f} 元")
+            with col_d3:
+                st.metric("除權息日 (Ex-Date)", div_info['ex_dividend_date'])
+            with col_d4:
+                if st.session_state.t5_latest_price and st.session_state.t5_latest_price > 0:
+                    yield_rate = (div_info['cash_dividend'] / st.session_state.t5_latest_price) * 100
+                    st.metric("單期殖利率 (Est. Yield)", f"{yield_rate:.2f}%", help="依據近14日最新收盤價估算之單期殖利率")
+                else:
+                    st.metric("單期殖利率 (Est. Yield)", "無報價數據")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
 
         # 📊 大盤快照 (專業排版)
         st.markdown("#### 📉 Macro & Technical Snapshot (總體與技術面快照)")
@@ -1756,6 +1837,3 @@ with tabs[0]:
                 df_news.columns = ["Source", "Headline", "Timestamp"]
                 st.dataframe(df_news, use_container_width=True)
                 st.caption(f"**Global Sources Tracked:** {', '.join(list(st.session_state.t5_sources))}")
-
-
-
