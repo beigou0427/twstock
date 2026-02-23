@@ -1483,78 +1483,59 @@ import random
 import time
 import feedparser
 import pandas as pd
+import requests
 from datetime import datetime
 import yfinance as yf
 import streamlit as st
 
 with tabs[0]:
     # =========================================================
-    # 0) Typography CSS（只調排版；不使用任何 background 色）
+    # 0) Typography CSS（高質感排版，無背景色）
     # =========================================================
     st.markdown("""
     <style>
     div.block-container { max-width: 1100px; padding-top: 1.2rem; }
-
-    /* Markdown typography */
     div[data-testid="stMarkdownContainer"] p {
-      line-height: 1.85;
-      font-size: 16px;
-      margin: 0.35rem 0 0.85rem 0;
-      letter-spacing: -0.1px;
+      line-height: 1.85; font-size: 16px; margin: 0.35rem 0 0.85rem 0; letter-spacing: -0.1px;
     }
-    div[data-testid="stMarkdownContainer"] h1,
-    div[data-testid="stMarkdownContainer"] h2,
+    div[data-testid="stMarkdownContainer"] h2 {
+      margin: 1.4rem 0 0.6rem 0; letter-spacing: -0.3px; font-weight: 700;
+    }
     div[data-testid="stMarkdownContainer"] h3 {
-      margin: 1.1rem 0 0.55rem 0;
-      letter-spacing: -0.2px;
+      margin: 1.1rem 0 0.5rem 0; font-weight: 700; color: #1e3a8a;
     }
-    div[data-testid="stMarkdownContainer"] h3 { font-weight: 700; }
     div[data-testid="stMarkdownContainer"] ul,
     div[data-testid="stMarkdownContainer"] ol {
-      margin: 0.15rem 0 0.9rem 0;
-      padding-left: 1.2rem;
+      margin: 0.15rem 0 0.9rem 0; padding-left: 1.2rem;
     }
-    div[data-testid="stMarkdownContainer"] li { margin: 0.22rem 0; line-height: 1.70; }
+    div[data-testid="stMarkdownContainer"] li { margin: 0.25rem 0; line-height: 1.70; }
     div[data-testid="stMarkdownContainer"] hr {
-      border: none;
-      border-top: 1px solid rgba(148,163,184,0.35);
-      margin: 1.1rem 0;
+      border: none; border-top: 1px solid rgba(148,163,184,0.35); margin: 1.2rem 0;
     }
     div[data-testid="stMarkdownContainer"] blockquote {
-      margin: 0.8rem 0;
-      padding-left: 0.9rem;
-      border-left: 4px solid rgba(59,130,246,0.85);
+      margin: 0.8rem 0; padding-left: 1rem; border-left: 4px solid rgba(59,130,246,0.85); color: #334155;
     }
-
-    /* Make metrics a bit tighter */
     [data-testid="stMetricValue"] { font-size: 22px; }
     [data-testid="stMetricLabel"] { font-size: 13px; opacity: 0.85; }
     </style>
     """, unsafe_allow_html=True)
 
     # =========================================================
-    # 1) Session State
+    # 1) Session State 初始化 (徹底清潔機制)
     # =========================================================
     defaults = {
-        "t5_result": None,
-        "t5_stock_name": "",
-        "t5_industry": "未知產業",
-        "t5_news": [],
-        "t5_sources": set(),
-        "t5_dividend_metrics": {},
-        "t5_dividend_history": [],
-        "t5_display_title": "",
-        "t5_is_etf": False,
-        "t5_gap_pct": 0.0,
-        "t5_valuation": {},          # NEW
-        "t5_price_snapshot": {},     # NEW
+        "t5_result": None, "t5_stock_name": "", "t5_industry": "未知產業",
+        "t5_news_priority": [], "t5_news_macro": [], "t5_sources": set(),
+        "t5_dividend_metrics": {}, "t5_dividend_history": [],
+        "t5_display_title": "", "t5_is_etf": False, "t5_gap_pct": 0.0,
+        "t5_valuation": {}, "t5_price_snapshot": {}
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
     # =========================================================
-    # 2) Header + Controls（無背景色）
+    # 2) Header + Controls
     # =========================================================
     st.markdown("""
     <div style="padding-bottom:14px; margin-bottom:18px; border-bottom:2px solid rgba(59,130,246,0.55);">
@@ -1567,25 +1548,16 @@ with tabs[0]:
             Beigu AI Desk · Deep-Dive Thesis Engine · No-investment-advice
           </div>
         </div>
-        <div style="text-align:right; opacity:0.65; font-family:monospace; font-size:12px;">
-          {ts}
-        </div>
       </div>
     </div>
-    """.format(ts=datetime.now().strftime("%Y-%m-%d %H:%M CST")), unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-    st.info(
-        f"⚠️ 本分析為研究用途之 AI 模擬報告，非投資建議。"
-        f"　TAIEX **{S_current:,.0f}**　｜　MA20 **{ma20:,.0f}**"
-    )
+    st.info(f"⚠️ 本分析為研究用途之 AI 模擬報告，非投資建議。　TAIEX **{S_current:,.0f}** ｜ MA20 **{ma20:,.0f}**")
 
     c1, c2, c3 = st.columns([1.5, 1, 1.5])
-    with c1:
-        stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="2330", max_chars=6)
-    with c2:
-        days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
-    with c3:
-        focus_region = st.selectbox("🌐 數據權重", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
+    with c1: stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="2330", max_chars=6)
+    with c2: days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
+    with c3: focus_region = st.selectbox("🌐 數據權重", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
 
     groq_key = st.secrets.get("GROQ_KEY", "")
     finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
@@ -1594,534 +1566,295 @@ with tabs[0]:
         st.stop()
 
     b1, b2 = st.columns([3, 1])
-    with b1:
-        run_btn = st.button("🚀 啟動全網掃描與深度研究報告", type="primary", use_container_width=True)
-    with b2:
-        clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
+    run_btn = b1.button("🚀 啟動全網掃描與深度研究報告", type="primary", use_container_width=True)
+    clear_btn = b2.button("🗑️ 清除報告", use_container_width=True)
 
     if clear_btn:
-        for k, v in defaults.items():
-            st.session_state[k] = v
+        for k in list(st.session_state.keys()):
+            if k.startswith("t5_"): del st.session_state[k]
         st.rerun()
 
-    # =========================================================
-    # helpers
-    # =========================================================
-    def clean_md(text: str) -> str:
-        if not text:
-            return ""
-        text = text.replace("\r\n", "\n")
-        text = re.sub(r"\n{3,}", "\n\n", text).strip()
-        # ensure spacing before headers
-        text = re.sub(r"(?m)^(#{2,4} )", r"\n\1", text)
-        return text.strip()
-
+    # Helpers
     def safe_num(x, nd=2):
         try:
-            if x is None:
-                return None
-            v = float(x)
-            if pd.isna(v):
-                return None
-            return round(v, nd)
-        except Exception:
-            return None
-
-    def safe_int(x):
-        try:
-            if x is None:
-                return None
-            v = int(float(x))
-            return v
-        except Exception:
-            return None
+            return round(float(x), nd) if not pd.isna(float(x)) else None
+        except: return None
 
     # =========================================================
-    # 3) Core run
+    # 3) Core Run Logic (防呆與資料升級)
     # =========================================================
     if run_btn:
         prog = st.progress(0)
         status = st.empty()
 
-        # -----------------------------
-        # Step A: Identify + dividends + valuation + price snapshot
-        # -----------------------------
-        status.info(f"🔍 雙引擎辨識標的與估值/配息：{stock_code}")
+        # --- A. 雙引擎辨識與安全 yfinance 抓取 ---
+        status.info(f"🔍 雙引擎辨識與估值/配息計算...")
         stock_name, industry = "", "未知產業"
         dividend_metrics, dividend_history = {}, []
         is_etf = False
 
-        # A1) FinMind (name/industry/ETF hint)
+        # FinMind
         try:
             from FinMind.data import DataLoader
             dl = DataLoader()
-            if finmind_key:
-                dl.login_by_token(api_token=finmind_key)
+            if finmind_key: dl.login_by_token(api_token=finmind_key)
             df_info = dl.taiwan_stock_info()
             row = df_info[df_info["stock_id"] == stock_code]
             if not row.empty:
                 stock_name = str(row["stock_name"].iloc[0])
                 industry = str(row["industry_category"].iloc[0])
-
                 etf_kw = ["etf", "ETF", "指數股票型", "基金", "債券", "期信"]
-                is_etf = (
-                    any(k.lower() in industry.lower() for k in etf_kw)
-                    or any(k.lower() in stock_name.lower() for k in etf_kw)
-                    or stock_code.startswith("0")
-                )
+                is_etf = any(k.lower() in industry.lower() for k in etf_kw) or stock_code.startswith("0")
         except Exception as e:
             status.warning(f"FinMind 略過：{e}")
 
-        # A2) yfinance (history/dividends/info)
-        valuation = {}
-        price_snapshot = {}
-        yf_ticker = None
-        hist = pd.DataFrame()
-
+        # yfinance (加入 Session 防 Cloud 封鎖)
+        valuation, price_snapshot = {}, {}
         try:
-            # try TW then TWO
-            yf_ticker = yf.Ticker(f"{stock_code}.TW")
+            session = requests.Session()
+            session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'})
+            yf_ticker = yf.Ticker(f"{stock_code}.TW", session=session)
             hist = yf_ticker.history(period="5y", auto_adjust=False)
             if hist.empty:
-                yf_ticker = yf.Ticker(f"{stock_code}.TWO")
+                yf_ticker = yf.Ticker(f"{stock_code}.TWO", session=session)
                 hist = yf_ticker.history(period="5y", auto_adjust=False)
 
-            # price snapshot
             if not hist.empty:
                 hist.index = hist.index.tz_localize(None)
                 close = hist["Close"].dropna()
                 if len(close) >= 2:
                     last_px = float(close.iloc[-1])
-                    px_7d = float(close.iloc[-min(len(close), 6)]) if len(close) >= 6 else float(close.iloc[0])
-                    ret_approx = (last_px / px_7d - 1.0) * 100 if px_7d else None
+                    px_7d = float(close.iloc[-min(len(close), 6)])
                     price_snapshot = {
-                        "last_price": safe_num(last_px, 2),
-                        "ret_approx_pct": safe_num(ret_approx, 2),
-                        "hist_points": int(len(close)),
+                        "last_price": safe_num(last_px),
+                        "ret_approx_pct": safe_num((last_px/px_7d - 1)*100),
                     }
 
-            # dividends + fillback
-            if yf_ticker is not None and not hist.empty:
+                # 配息與填息計算 (ETF 跳過填息計算)
                 divs = yf_ticker.dividends
-                if not divs.empty:
+                if not divs.empty and not is_etf:
                     divs.index = divs.index.tz_localize(None)
                     today = pd.Timestamp(datetime.now().date())
-
-                    future_divs = divs[divs.index > today].sort_index()
                     past_divs = divs[divs.index <= today].sort_index(ascending=False)
-
-                    next_ex_date_str = "尚未公告"
-                    next_cash_str = "-"
-                    if not future_divs.empty:
-                        next_ex_date_str = f"已公告：{future_divs.index[0].strftime('%Y-%m-%d')}"
-                        next_cash_str = f"{float(future_divs.iloc[0]):.2f} 元"
-
+                    
                     valid = []
                     for ex_date, cash_div in past_divs.head(10).items():
-                        if cash_div <= 0:
-                            continue
-
-                        ex_date_str = ex_date.strftime("%Y-%m-%d")
-                        fillback_days = -1
-                        yield_rate = 0.0
-
+                        if cash_div <= 0: continue
+                        fillback_days, yield_rate = -1, 0.0
                         pre_ex_df = hist[hist.index < ex_date]
                         if not pre_ex_df.empty:
                             ref_price = float(pre_ex_df["Close"].iloc[-1])
-                            if ref_price > 0:
-                                yield_rate = (float(cash_div) / ref_price) * 100
-
+                            yield_rate = (float(cash_div) / ref_price) * 100 if ref_price > 0 else 0
                             post_ex_df = hist[hist.index >= ex_date]
                             fill_df = post_ex_df[post_ex_df["Close"] >= ref_price]
                             if not fill_df.empty:
                                 fillback_days = int((fill_df.index[0] - ex_date).days)
-
-                        valid.append({
-                            "year": str(ex_date.year),
-                            "ex_date": ex_date_str,
-                            "cash_dividend": float(cash_div),
-                            "yield_rate": float(yield_rate),
-                            "fillback_days": int(fillback_days),
-                            "month": int(ex_date.month),
-                        })
+                        valid.append({"ex_date": ex_date.strftime("%Y-%m-%d"), "cash_dividend": float(cash_div), 
+                                      "yield_rate": yield_rate, "fillback_days": fillback_days})
 
                     if valid:
-                        latest = valid[0]
-                        days_since = (datetime.now().date() - pd.to_datetime(latest["ex_date"]).date()).days
-                        months_pattern = sorted(set(d["month"] for d in valid))
-
-                        if next_ex_date_str == "尚未公告" and months_pattern:
-                            cur_m = datetime.now().month
-                            future_m = [m for m in months_pattern if m > cur_m]
-                            next_m = future_m[0] if future_m else months_pattern[0]
-                            next_ex_date_str = f"歷史預估：{next_m} 月"
-
-                        filled_list = [d["fillback_days"] for d in valid if d["fillback_days"] != -1]
-                        yields_list = [d["yield_rate"] for d in valid if d["yield_rate"] > 0]
-
+                        filled = [d["fillback_days"] for d in valid if d["fillback_days"] != -1]
+                        yields = [d["yield_rate"] for d in valid if d["yield_rate"] > 0]
                         dividend_metrics = {
-                            "last_ex_date": latest["ex_date"],
-                            "days_since_last_ex": int(days_since),
-                            "last_cash": float(latest["cash_dividend"]),
-                            "next_ex_date": next_ex_date_str,
-                            "next_cash": next_cash_str,
-                            "avg_fillback": (sum(filled_list) / len(filled_list)) if filled_list else -1,
-                            "avg_yield": (sum(yields_list) / len(yields_list)) if yields_list else 0.0,
-                            "total_divs": int(len(valid)),
-                            "months_pattern": months_pattern,
+                            "last_ex_date": valid[0]["ex_date"],
+                            "avg_fillback": sum(filled)/len(filled) if filled else -1,
+                            "avg_yield": sum(yields)/len(yields) if yields else 0.0,
                         }
                         dividend_history = valid
 
-            # valuation from info (may be missing for TW tickers)
-            if yf_ticker is not None:
-                info = yf_ticker.info or {}
-                valuation = {
-                    "marketCap": safe_int(info.get("marketCap")),
-                    "beta": safe_num(info.get("beta"), 2),
-                    "trailingPE": safe_num(info.get("trailingPE"), 2),
-                    "forwardPE": safe_num(info.get("forwardPE"), 2),
-                    "pegRatio": safe_num(info.get("pegRatio"), 2),
-                    "priceToBook": safe_num(info.get("priceToBook"), 2),
-                    "recommendationKey": (info.get("recommendationKey") or ""),
-                    "targetMeanPrice": safe_num(info.get("targetMeanPrice"), 2),
-                    "targetLowPrice": safe_num(info.get("targetLowPrice"), 2),
-                    "targetHighPrice": safe_num(info.get("targetHighPrice"), 2),
-                }
+            info = yf_ticker.info or {}
+            valuation = {
+                "marketCap": info.get("marketCap"),
+                "forwardPE": safe_num(info.get("forwardPE")),
+                "pegRatio": safe_num(info.get("pegRatio")),
+                "recommendationKey": info.get("recommendationKey", ""),
+                "targetMeanPrice": safe_num(info.get("targetMeanPrice")),
+            }
         except Exception as e:
-            status.warning(f"yfinance 略過：{e}")
+            status.warning(f"yfinance 抓取受限：{e}")
+        prog.progress(25)
 
-        prog.progress(22)
-
-        # -----------------------------
-        # Step B: News pool
-        # -----------------------------
-        status.info("🌐 全網新聞矩陣抓取中...")
-        mega_rss_pool = {
+        # --- B. RSS 新聞池 (安全解析與分層過濾) ---
+        status.info("🌐 全網矩陣抓取中 (加強抗阻擋)...")
+        rss_pool = {
             "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
             "工商時報": "https://ctee.com.tw/rss/all_news.xml",
-            "經濟日報": "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
-            "科技新報": "https://www.digitimes.com.tw/rss/rss.xml",
-            "鉅亨網": "https://www.moneydj.com/rss/allnews.xml",
-            "CNBC": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-            "Yahoo Finance": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW,QQQ",
-            "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
+            "鉅亨網": "https://www.moneydj.com/rss/allnews.xml"
         }
-
-        raw_news_pool = []
+        raw_news = []
         collected_sources = set()
-        for media_name, rss_url in mega_rss_pool.items():
+        for media, url in rss_pool.items():
             try:
-                feed = feedparser.parse(rss_url)
-                if getattr(feed, "entries", None):
-                    if len(feed.entries) > 0:
-                        collected_sources.add(media_name)
-                for entry in getattr(feed, "entries", [])[:50]:
-                    title = entry.title.strip() if hasattr(entry, "title") else ""
-                    if not title:
-                        continue
-                    if len(title) > 120:
-                        title = title[:120] + "..."
-                    raw_news_pool.append({
-                        "media": media_name,
-                        "title": title,
-                        "date": entry.get("published", "即時"),
-                    })
-                time.sleep(0.05)
-            except Exception:
-                continue
-
+                # 加上 Header 避免被擋
+                feed = feedparser.parse(url, request_headers={'User-Agent': 'Mozilla/5.0'})
+                if feed.entries: collected_sources.add(media)
+                for entry in feed.entries[:40]:
+                    raw_news.append({"media": media, "title": entry.title.strip()[:100]})
+                time.sleep(0.1)
+            except: continue
         prog.progress(50)
 
-        status.info(f"📥 抓取 {len(raw_news_pool)} 篇，開始篩選關聯性...")
-        keywords = [
-            stock_code, stock_name, industry,
-            "半導體", "AI", "供應鏈", "營收", "財報", "外資",
-            "股息", "除息", "配息", "殖利率",
-        ]
-        def hit(title: str) -> bool:
-            t = (title or "").lower()
-            for k in keywords:
-                if not k:
-                    continue
-                if str(k).lower() in t:
-                    return True
-            return False
-
-        priority_news = [n for n in raw_news_pool if hit(n["title"])]
-        max_news_limit = 150
-        if len(priority_news) >= max_news_limit:
-            final_news = priority_news[:max_news_limit]
-        else:
-            other = [n for n in raw_news_pool if n not in priority_news]
-            remaining = max_news_limit - len(priority_news)
-            final_news = priority_news + random.sample(other, min(remaining, len(other)))
-
-        news_texts = [f"[{n['media']}] {n['title']}" for n in final_news]
-        news_summary = " | ".join(news_texts)
-
+        # 新聞池分層：避免 Lost in the Middle
+        industry_kw = [stock_code, stock_name, "半導體", "AI", "營收", "配息", "外資", "法說"]
+        priority_news = [n for n in raw_news if any(k in n['title'] for k in industry_kw if k)]
+        other_news = [n for n in raw_news if n not in priority_news]
+        
+        final_priority = priority_news[:15]  # 核心相關 15 篇
+        final_macro = random.sample(other_news, min(5, len(other_news))) # 宏觀背景 5 篇
+        
+        news_block = "【核心相關新聞】\n" + "\n".join([f"- [{n['media']}] {n['title']}" for n in final_priority]) + \
+                     "\n\n【總體宏觀動態】\n" + "\n".join([f"- [{n['media']}] {n['title']}" for n in final_macro])
         prog.progress(65)
 
-        # -----------------------------
-        # Step C: Deep-dive prompt (content first)
-        # -----------------------------
-        # Dividend block for AI
-        if dividend_metrics:
-            avg_f = dividend_metrics.get("avg_fillback", -1)
-            avg_f_str = f"{avg_f:.0f} 天" if isinstance(avg_f, (int, float)) and avg_f != -1 else "樣本不足/未填息樣本不足"
-            mp = dividend_metrics.get("months_pattern", [])
-            dividend_ai_text = f"""
-【配息/填息（yfinance）】
-- 上次除息日：{dividend_metrics.get('last_ex_date','無資料')}（距今 {dividend_metrics.get('days_since_last_ex',0)} 天）
-- 上次現金股利：{dividend_metrics.get('last_cash','無資料')}
-- 下次配息：{dividend_metrics.get('next_ex_date','尚未公告')}（預估：{dividend_metrics.get('next_cash','-')}）
-- 平均填息天數：{avg_f_str}
-- 平均單期殖利率：{dividend_metrics.get('avg_yield',0):.2f}%
-- 配息旺季：{', '.join([str(m)+'月' for m in mp]) if mp else '無明顯季節性/樣本不足'}
-"""
-        else:
-            dividend_ai_text = "【配息/填息（yfinance）】無足夠資料（可能為成長型或資料缺漏），請在報告中明確標註。"
-
-        # Valuation block for AI
-        def fmt(v, fallback="無資料"):
-            return fallback if (v is None or v == "" or (isinstance(v, float) and pd.isna(v))) else str(v)
-
-        valuation_text = f"""
-【估值/共識（yfinance info，若缺漏請明確寫『無資料』）】
-- 市值(Market Cap)：{fmt(valuation.get('marketCap'))}
-- Beta：{fmt(valuation.get('beta'))}
-- Trailing P/E：{fmt(valuation.get('trailingPE'))}
-- Forward P/E：{fmt(valuation.get('forwardPE'))}
-- PEG：{fmt(valuation.get('pegRatio'))}
-- P/B：{fmt(valuation.get('priceToBook'))}
-- 華爾街共識(Recommendation)：{fmt(valuation.get('recommendationKey')).upper() if fmt(valuation.get('recommendationKey'))!='無資料' else '無資料'}
-- 目標價均值/區間：mean={fmt(valuation.get('targetMeanPrice'))}, low={fmt(valuation.get('targetLowPrice'))}, high={fmt(valuation.get('targetHighPrice'))}
-"""
-
-        # Price snapshot for AI
-        price_text = f"""
-【價格快照（yfinance history）】
-- 最新收盤：{fmt(price_snapshot.get('last_price'))}
-- 近似短期報酬（粗略，非精準）：{fmt(price_snapshot.get('ret_approx_pct'))}%
-- 歷史樣本點數：{fmt(price_snapshot.get('hist_points'))}
-"""
-
-        supply_chain_section = (
-            """
-### 🧩 Portfolio & Exposure Analysis｜ETF 成分股結構與曝險
-- 成分股集中度：若資料不足，請說明需要成分股權重資料（不要臆測）。
-- 產業曝險：以新聞池與產業分類推導「可能」方向，但要標註不確定性。
-- Beta/波動特性：可引用 yfinance beta（若無資料則略過）。
-            """.strip()
-            if is_etf else
-            """
-### 🔗 Supply Chain Dynamics｜產業鏈供需（嚴格規範）
-- 只有在新聞池中「明確出現」公司/客戶/供應商名稱時，才可列出。
-- 若新聞未提及具體上游/下游客戶，請直接省略該段（不要寫猜測性公司名）。
-            """.strip()
-        )
-
-        # gap_pct (market context)
+        # --- C. Deep-Dive Prompt Engineering ---
         gap_pct = (S_current - ma20) / ma20 * 100 if ma20 else 0.0
 
+        # 動態構建 ETF vs 個股的 Thesis 框架
+        if is_etf:
+            thesis_section = """
+            ### 1) ETF Investment Thesis
+            - 核心曝險分析：此 ETF 主打什麼因子/產業？與大盤的本質差異？
+            - Variant Perception：市場對此 ETF 成分股的共識是什麼？為何你認為市場太樂觀/悲觀？
+            """
+            supply_section = """
+            ### 3) Portfolio & Tracking Analysis
+            - 依據新聞，推測其前大成分股目前的產業順/逆風。
+            - 點出追蹤此類主題可能遇到的總經風險。
+            """
+            div_text = "【ETF 提示】ETF 填息受成分股除息與市場波動雙重影響，請著重分析其配息穩定性與成分股殖利率變化，而非單純討論填息天數。"
+        else:
+            thesis_section = """
+            ### 1) Investment Thesis (The "Why Now?")
+            - 核心論點：用一句話定義目前的交易邏輯（例如：「披著AI外皮的景氣循環股」）。
+            - Variant Perception：明確指出「華爾街共識目標價」背後的假設是什麼？你為何反對或強烈同意？
+            """
+            supply_section = """
+            ### 3) Supply Chain Dynamics
+            【強制規範】：先列出新聞池中「明確出現」的上下游公司名，才能基於該名單進行供應鏈推論。若新聞未提，直接寫「新聞無具體廠商資訊」。
+            """
+            div_text = f"【yfinance 歷史配息】平均填息 {dividend_metrics.get('avg_fillback', 'N/A'):.0f} 天，均殖利率 {dividend_metrics.get('avg_yield', 0):.2f}%"
+
+        val_text = f"Target Mean: {valuation.get('targetMeanPrice','N/A')} | Fwd P/E: {valuation.get('forwardPE','N/A')} | PEG: {valuation.get('pegRatio','N/A')}"
+
         ai_prompt = textwrap.dedent(f"""
-        你是一位頂級投行（Morgan Stanley/JPMorgan 等級）的資深產業與股票研究分析師。
-        請以「機構研究報告」寫法產出深度內容：重點是論點、證據、反證與情境推演，不要停留在新聞摘要。
+        【思考步驟（請在心中完成，不要輸出在報告中）】
+        Step 1: 確認 {stock_name} 的估值 ({val_text}) 是否偏高/低？
+        Step 2: 從新聞池中找出 2 個支撐論點的證據。
+        Step 3: 構思 Bull/Bear 兩個極端情境的具體觸發條件。
 
-        【標的】
-        - 標的：{stock_code} {stock_name if stock_name else ''}
-        - 類型：{"ETF" if is_etf else "個股"}｜產業：{industry}
-        - 觀察期：近 {days_period} 天
-        - 大盤：TAIEX {S_current:.0f}｜MA20 {ma20:.0f}｜乖離 {gap_pct:+.2f}%
+        【撰寫規範】
+        你是一位對沖基金資深研究員，為 Portfolio Manager 寫 Deep-Dive 分析。
+        - 語氣：冷靜客觀、具批判性。
+        - 每個論點後強制加上信心標注：[High Confidence] (有數據支撐) 或 [Low Confidence] (純推測)。
+        
+        【數據輸入】
+        - 價格位階：TAIEX 乖離 {gap_pct:+.2f}% | 近期報酬 {price_snapshot.get('ret_approx_pct','N/A')}%
+        - 估值共識：{val_text}
+        - 股息：{div_text}
+        
+        【新聞池】
+        {news_block}
 
-        【輸入資料（只能引用下列數字；沒有就寫『無資料/有待驗證』）】
-        {price_text}
-        {valuation_text}
-        {dividend_ai_text}
+        【強制輸出框架（只輸出以下 Markdown）】
+        {thesis_section}
 
-        【全球新聞池】（{len(final_news)} 篇，僅可依標題推導，避免杜撰細節）：
-        {news_summary}
+        ### 2) Valuation & Scenario Analysis
+        - 估值評價：目前的 Fwd P/E 與 PEG 是否合理反映了風險？
+        - 🟢 Bull Case（樂觀情境）：強制寫出「具體觸發條件」（例：Q3毛利率突破X%）及影響。
+        - 🔴 Bear Case（悲觀情境）：強制寫出「具體觸發條件」（例：需求遞延至下半年）及風險擴散路徑。
 
-        【輸出框架（嚴格遵守，繁體中文，禁止自我介紹）】
+        {supply_section}
 
-        ### 1) Investment Thesis｜投資論述（Why now?）
-        - 核心一句話（明確、可被反駁）
-        - Variant Perception（市場可能忽略/誤判了什麼？）
-        - 關鍵變數（只選 1 個最重要的 driver）
-
-        ### 2) Evidence & Counter-evidence｜證據與反證
-        - 用「輸入資料」與「新聞池」做 3–5 點證據鏈（每點要可驗證）
-        - 列 2 點最強反證（如果反證成立，你的論述會怎麼改？）
-
-        ### 3) Valuation & Risk/Reward｜估值與風險報酬
-        - 估值解讀：P/E、PEG、P/B、Beta、共識評級（無資料就直說）
-        - 風險報酬框架：上行/下行來源（不用給精準目標價，避免亂編）
-
-        ### 4) Scenario Analysis｜情境分析（務必寫）
-        - 🟢 Bull：什麼條件成立？可能對估值/情緒造成什麼影響？
-        - 🟡 Base：目前最合理路徑
-        - 🔴 Bear：什麼條件惡化？風險如何擴散？
-
-        ### 5) Catalysts & Monitoring Checklist｜催化劑與監測清單
-        - 2–4 個可監測事件（例如：法說會、月營收、產業展會、政策/出口管制）
-        - 每個事件給「監測指標」與「判讀方式」（若資料不足就說需要什麼）
-
-        {supply_chain_section}
-
-        ### 6) Action Plan｜行動方案（非投資建議，但要有策略框架）
-        - 適用的風險控管思路（例：等待回檔、分批、事件前後策略）
-        - 適合的投資者類型（收益型/成長型/波段）
+        ### 4) Catalysts & Action Plan
+        - 近期催化劑：列出 2 個即將發生的事件及其監測指標。
+        - 資金行動方案：這份報告的邏輯適合哪種操作？（例：若 Bear Case 觸發應停損；若乖離收斂可建倉）。
         """)
 
-        # -----------------------------
-        # Step D: Groq call (with fallback model)
-        # -----------------------------
-        status.info("🧠 深度研究推演中（LLM）...")
+        # --- D. AI 呼叫 (多模型 Fallback) ---
+        status.info("🧠 啟動深度推演引擎 (CoT Enabled)...")
         groq_analysis = None
-        groq_error = None
-
         try:
             from groq import Groq
             import httpx
             client = Groq(api_key=groq_key, http_client=httpx.Client())
-            # try stronger model first; fallback to 8b if unavailable
+            # 優先用 70B 確保邏輯，若失敗退回 8B
             for model_name in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"]:
                 try:
                     resp = client.chat.completions.create(
                         model=model_name,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": (
-                                    "你是極度嚴謹的機構研究分析師。"
-                                    "不確定的數字一律寫『無資料/有待驗證』，禁止杜撰。"
-                                    "禁止列出未在新聞池標題中出現的公司/客戶/供應商。"
-                                    "語氣：冷靜、結構化、可驗證。"
-                                ),
-                            },
-                            {"role": "user", "content": ai_prompt},
-                        ],
-                        max_tokens=2400,
-                        temperature=0.25,
+                        messages=[{"role": "user", "content": ai_prompt}],
+                        max_tokens=2200, temperature=0.3
                     )
                     groq_analysis = resp.choices[0].message.content
                     break
-                except Exception as e:
-                    groq_error = str(e)
-                    continue
+                except: continue
         except Exception as e:
-            groq_error = str(e)
+            st.error(f"AI 連線失敗：{e}")
 
         prog.progress(100)
         status.empty()
 
         if groq_analysis:
             st.session_state.update({
-                "t5_result": clean_md(groq_analysis),
-                "t5_stock_name": stock_name,
-                "t5_industry": industry,
-                "t5_news": final_news,
-                "t5_sources": collected_sources,
-                "t5_dividend_metrics": dividend_metrics,
-                "t5_dividend_history": dividend_history,
+                "t5_result": groq_analysis.strip(),
+                "t5_stock_name": stock_name, "t5_industry": industry,
+                "t5_news_priority": final_priority, "t5_news_macro": final_macro,
+                "t5_sources": collected_sources, "t5_is_etf": is_etf,
+                "t5_dividend_metrics": dividend_metrics, "t5_dividend_history": dividend_history,
+                "t5_valuation": valuation, "t5_price_snapshot": price_snapshot,
                 "t5_display_title": f"{stock_code} {stock_name}" if stock_name else stock_code,
-                "t5_is_etf": is_etf,
-                "t5_gap_pct": gap_pct,
-                "t5_valuation": valuation,
-                "t5_price_snapshot": price_snapshot,
+                "t5_gap_pct": gap_pct
             })
-        else:
-            st.error("❌ AI 報告生成失敗（請查看錯誤訊息）")
-            if groq_error:
-                st.caption(f"Error: {groq_error}")
 
     # =========================================================
-    # 4) Display (content-oriented; no background blocks)
+    # 4) 展示區 (安全取值 + 乾淨排版)
     # =========================================================
     if st.session_state.t5_result:
-        metrics = st.session_state.get("t5_dividend_metrics", {}) or {}
-        history = st.session_state.get("t5_dividend_history", []) or []
-        valuation = st.session_state.get("t5_valuation", {}) or {}
-        px = st.session_state.get("t5_price_snapshot", {}) or {}
+        metrics = st.session_state.get("t5_dividend_metrics", {})
+        hist_div = st.session_state.get("t5_dividend_history", [])
+        val = st.session_state.get("t5_valuation", {})
+        px = st.session_state.get("t5_price_snapshot", {})
         is_etf_d = st.session_state.get("t5_is_etf", False)
-        gap_pct = st.session_state.get("t5_gap_pct", 0.0)
 
-        # Title line (no background)
-        st.markdown(
-            f"""
-            <div style="padding-bottom:10px; margin:26px 0 14px 0; border-bottom:1px solid rgba(148,163,184,0.35);">
-              <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
-                <div>
-                  <div style="font-size:22px; font-weight:700; letter-spacing:-0.4px;">
-                    Institutional Research Update
-                  </div>
-                  <div style="opacity:0.65; font-family:monospace; font-size:12px; margin-top:6px;">
-                    {st.session_state.get("t5_display_title","")}
-                    · {st.session_state.get("t5_industry","")}
-                    · {"🧩 ETF" if is_etf_d else "🏭 個股"}
-                    · inputs={len(st.session_state.get("t5_news",[]))} headlines
-                  </div>
-                </div>
-                <div style="opacity:0.65; font-family:monospace; font-size:12px; text-align:right;">
-                  Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}
-                </div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown(f"""
+        <div style="margin:26px 0 14px 0; border-bottom:1px solid rgba(148,163,184,0.35); padding-bottom:10px;">
+          <div style="font-size:22px; font-weight:700;">Deep Dive Research Update</div>
+          <div style="opacity:0.65; font-family:monospace; font-size:13px; margin-top:4px;">
+            {st.session_state.get('t5_display_title')} · {"🧩 ETF" if is_etf_d else "🏭 個股"} · {st.session_state.get('t5_industry')}
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # Quick facts row (content assist)
+        # 估值與價格快照列
         q1, q2, q3, q4 = st.columns(4)
-        q1.metric("最新收盤", f"{px.get('last_price','—')}")
-        q2.metric("短期報酬(粗)", f"{px.get('ret_approx_pct','—')}%")
-        q3.metric("Beta", f"{valuation.get('beta','—')}")
-        q4.metric("MA20乖離", f"{gap_pct:+.2f}%")
-
+        q1.metric("近一週報酬", f"{px.get('ret_approx_pct','—')}%")
+        q2.metric("Target Mean", val.get("targetMeanPrice", "—"))
+        q3.metric("Forward P/E", val.get("forwardPE", "—"))
+        q4.metric("PEG Ratio", val.get("pegRatio", "—"))
         st.divider()
 
-        # Report (pure markdown)
-        st.markdown(clean_md(st.session_state.t5_result))
-
+        # 渲染 AI 報告
+        st.markdown(st.session_state.t5_result)
         st.divider()
 
-        # Dividend block (only if present; safe .get)
-        if metrics and history and isinstance(metrics, dict):
-            st.markdown("#### 🏦 Dividend & Fill-back")
-            d1, d2, d3, d4, d5 = st.columns(5)
-            d1.metric("上次除息", metrics.get("last_ex_date", "—"))
-            d2.metric("距今", f"{metrics.get('days_since_last_ex', 0)} 天")
-            d3.metric("下次配息", metrics.get("next_ex_date", "—"), delta=metrics.get("next_cash", None))
+        # ETF 跳過填息展示，只顯示個股配息
+        if not is_etf_d and metrics and hist_div:
+            st.markdown("#### 🏦 Dividend Check")
+            d1, d2, d3 = st.columns(3)
+            d1.metric("上次除息日", metrics.get("last_ex_date", "—"))
             avg_fill = metrics.get("avg_fillback", -1)
-            d4.metric("平均填息", (f"{avg_fill:.0f} 天" if isinstance(avg_fill, (int, float)) and avg_fill != -1 else "樣本不足"))
-            d5.metric("平均殖利率", (f"{metrics.get('avg_yield', 0):.2f}%" if metrics.get("avg_yield", 0) else "—"))
-
-            # Table (no styling background)
-            df_h = pd.DataFrame(history)
-            if not df_h.empty:
-                df_h["fillback_days"] = df_h["fillback_days"].apply(lambda x: f"{x} 天" if isinstance(x, (int, float)) and x != -1 else "未填息")
-                df_h["yield_rate"] = df_h["yield_rate"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) and x > 0 else "—")
-                df_h = df_h[["year", "ex_date", "cash_dividend", "yield_rate", "fillback_days"]]
-                df_h.columns = ["年度", "除息日", "現金股利(元)", "殖利率", "填息天數"]
-                st.dataframe(df_h, use_container_width=True, hide_index=True)
-
+            d2.metric("歷史均填息", f"{avg_fill:.0f} 天" if avg_fill != -1 else "樣本不足")
+            d3.metric("平均殖利率", f"{metrics.get('avg_yield', 0):.2f}%")
+            
+            df_h = pd.DataFrame(hist_div)[["ex_date", "cash_dividend", "yield_rate", "fillback_days"]]
+            df_h.columns = ["除息日", "現金股利", "殖利率(%)", "填息天數"]
+            st.dataframe(df_h.head(5), use_container_width=True, hide_index=True)
             st.divider()
 
-        # Valuation snapshot (only if any)
-        if any(v not in (None, "", 0) for v in valuation.values()):
-            st.markdown("#### 📌 Valuation & Consensus (yfinance)")
-            v1, v2, v3, v4, v5 = st.columns(5)
-            v1.metric("市值", f"{valuation.get('marketCap','—')}")
-            v2.metric("Trailing P/E", f"{valuation.get('trailingPE','—')}")
-            v3.metric("Forward P/E", f"{valuation.get('forwardPE','—')}")
-            v4.metric("PEG", f"{valuation.get('pegRatio','—')}")
-            v5.metric("共識", (valuation.get("recommendationKey","") or "—").upper())
-            st.caption("註：yfinance 的 TW 標的估值/共識欄位可能缺漏；缺資料時請以報告中的『無資料/有待驗證』為準。")
-
-        # Raw data
-        with st.expander(f"🗃️ Raw Intelligence Matrix（{len(st.session_state.get('t5_news', []))} 篇）"):
-            if st.session_state.get("t5_news"):
-                df_news = pd.DataFrame(st.session_state["t5_news"])
+        # Raw Data Expander
+        total_news = len(st.session_state.get('t5_news_priority', [])) + len(st.session_state.get('t5_news_macro', []))
+        with st.expander(f"🗃️ Raw Intelligence Matrix ({total_news} 篇精選)"):
+            if total_news > 0:
+                df_news = pd.DataFrame(st.session_state['t5_news_priority'] + st.session_state['t5_news_macro'])
                 df_news.index += 1
-                df_news = df_news.rename(columns={"media": "媒體", "title": "標題", "date": "時間"})
-                st.dataframe(df_news, use_container_width=True)
-                st.caption("Sources: " + ", ".join(sorted(list(st.session_state.get("t5_sources", set())))))
+                st.dataframe(df_news[["media", "title"]], use_container_width=True)
