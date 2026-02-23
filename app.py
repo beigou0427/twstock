@@ -1483,6 +1483,7 @@ import time
 import feedparser
 import pandas as pd
 from datetime import datetime, timedelta
+import yfinance as yf  # 新增導入 yfinance
 
 with tabs[0]:
     # ==========================================
@@ -1504,11 +1505,11 @@ with tabs[0]:
     background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); 
     color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.4);'>
         <h1 style='color:white; margin:0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;'>🏛️ Institutional Research Hub</h1>
-        <p style='color:white; opacity:0.9; margin:5px 0;'>外資級全網產業鏈推導 | 歷史填息與籌碼共識 | TAIEX <strong>{S_current:.0f}</strong></p>
+        <p style='color:white; opacity:0.9; margin:5px 0;'>雙引擎資料庫 | yfinance 填息追蹤 | TAIEX <strong>{S_current:.0f}</strong></p>
     </div>
     """.format(S_current=S_current), unsafe_allow_html=True)
 
-    st.info("⚠️ 本分析報告由 AI 模擬機構級分析師生成，僅供產業研究與學術討論，絕對非投資建議。資料底層來自 FinMind 與全球媒體矩陣。")
+    st.info("⚠️ 本分析報告由 AI 模擬機構級分析師生成，僅供產業研究與學術討論，絕對非投資建議。")
 
     col1, col2, col3 = st.columns([1.5, 1, 1.5])
     with col1:
@@ -1544,124 +1545,98 @@ with tabs[0]:
         status = st.empty()
 
         # ------------------------------------------
-        # 🔍 步驟 A: FinMind 終極容錯版除權息推算
+        # 🔍 步驟 A: 混合架構 (FinMind 辨識 + yfinance 股息推算)
         # ------------------------------------------
-        status.info(f"🔍 正在透過多重 API 推算 {stock_code} 的歷史配息與填息動能...")
+        status.info(f"🔍 正在啟動 yfinance 國際金融資料庫，推算 {stock_code} 的歷史配息與填息動能...")
         stock_name, industry = "", "未知產業"
         dividend_metrics = {}
         dividend_history = []
         
         try:
+            # 1. 用 FinMind 抓取公司基本名與產業
             from FinMind.data import DataLoader
             dl = DataLoader()
             if finmind_key: dl.login_by_token(api_token=finmind_key)
             
-            # 基本資料
             df_info = dl.taiwan_stock_info()
             stock_data = df_info[df_info['stock_id'] == stock_code]
             if not stock_data.empty:
                 stock_name = stock_data['stock_name'].iloc[0]
                 industry = stock_data['industry_category'].iloc[0]
+
+            # 2. 用 yfinance 抓取「未還原股價」與「歷史配息」
+            # 自動判斷是上市 (.TW) 還是上櫃 (.TWO)
+            yf_ticker = yf.Ticker(f"{stock_code}.TW")
+            hist = yf_ticker.history(period="5y", auto_adjust=False)
+            
+            if hist.empty:
+                yf_ticker = yf.Ticker(f"{stock_code}.TWO")
+                hist = yf_ticker.history(period="5y", auto_adjust=False)
+
+            if not hist.empty:
+                divs = yf_ticker.dividends
                 
-                # 📈 獲取近3年股價 (用於計算填息)
-                try:
-                    start_date = (datetime.now() - timedelta(days=365*3)).strftime("%Y-%m-%d")
-                    df_price = dl.taiwan_stock_daily(stock_id=stock_code, start_date=start_date)
-                    if not df_price.empty:
-                        df_price['date'] = pd.to_datetime(df_price['date'])
-                except:
-                    df_price = pd.DataFrame()
-
-                # 💰 多重 API 備援抓取除權息
-                raw_dividend_data = []
-                try:
-                    df_div_main = dl.taiwan_stock_dividend(stock_id=stock_code)
-                    if not df_div_main.empty: raw_dividend_data = df_div_main.to_dict('records')
-                except: pass
-
-                if not raw_dividend_data:
-                    try:
-                        df_div_fallback = dl.taiwan_dividend() # 舊版 API 備援
-                        df_div_fallback = df_div_fallback[df_div_fallback['stock_id'] == stock_code]
-                        if not df_div_fallback.empty: raw_dividend_data = df_div_fallback.to_dict('records')
-                    except: pass
-
-                # 🔬 解析資料與計算填息
-                valid_dividends = []
-                if raw_dividend_data and not df_price.empty:
-                    for div in raw_dividend_data:
-                        # 兼容不同 API 版本的欄位名稱
-                        cash_div = 0.0
-                        for field in ['CashEarningsDistribution', 'cash_dividend', 'cash_dividend_per_share']:
-                            if field in div and pd.notna(div[field]):
-                                try:
-                                    if float(div[field]) > 0: cash_div = float(div[field])
-                                except: pass
-                        
-                        ex_date_str = ''
-                        for field in ['CashExDividendTradingDate', 'ex_dividend_date', 'date']:
-                            if field in div and pd.notna(div[field]):
-                                val = str(div[field]).strip()
-                                if val.startswith('20'): # 確保是年份
-                                    ex_date_str = val[:10]
-                                    break
-                        
-                        if cash_div > 0 and ex_date_str:
-                            try:
-                                ex_date = pd.to_datetime(ex_date_str)
-                                year = str(div.get('year', ex_date.year))
-                                
-                                fillback_days = -1
-                                yield_rate = 0.0
-                                
-                                # 除息前股價
-                                pre_ex_prices = df_price[df_price['date'] < ex_date]
-                                if not pre_ex_prices.empty:
-                                    ref_price = pre_ex_prices.iloc[-1]['close']
-                                    yield_rate = (cash_div / ref_price) * 100
-                                    
-                                    # 尋找填息日
-                                    post_ex_prices = df_price[df_price['date'] >= ex_date]
-                                    fill_prices = post_ex_prices[post_ex_prices['close'] >= ref_price]
-                                    if not fill_prices.empty:
-                                        fill_date = fill_prices.iloc[0]['date']
-                                        fillback_days = (fill_date - ex_date).days
-                                
-                                valid_dividends.append({
-                                    'year': year,
-                                    'ex_date': ex_date_str,
-                                    'cash_dividend': cash_div,
-                                    'yield_rate': yield_rate,
-                                    'fillback_days': fillback_days,
-                                    'month': ex_date.month
-                                })
-                            except: continue
-
-                # 排序並取近 10 次配息
-                if valid_dividends:
-                    valid_dividends = sorted(valid_dividends, key=lambda x: x['ex_date'], reverse=True)[:10]
-                    latest_div = valid_dividends[0]
-                    days_since = (datetime.now().date() - pd.to_datetime(latest_div['ex_date']).date()).days
+                if not divs.empty:
+                    # 去除時區，方便 Pandas 時間比對
+                    hist.index = hist.index.tz_localize(None)
+                    divs.index = divs.index.tz_localize(None)
                     
-                    filled_days_list = [d['fillback_days'] for d in valid_dividends if d['fillback_days'] != -1]
-                    yields_list = [d['yield_rate'] for d in valid_dividends if d['yield_rate'] > 0]
+                    # 時間反向排序，從最新的配息開始算
+                    divs = divs.sort_index(ascending=False)
+                    valid_dividends = []
                     
-                    dividend_metrics = {
-                        'last_ex_date': latest_div['ex_date'],
-                        'days_since_last_ex': days_since,
-                        'last_cash': latest_div['cash_dividend'],
-                        'avg_fillback': sum(filled_days_list)/len(filled_days_list) if filled_days_list else -1,
-                        'avg_yield': sum(yields_list)/len(yields_list) if yields_list else 0.0,
-                        'total_divs': len(valid_dividends),
-                        'months_pattern': sorted(list(set([d['month'] for d in valid_dividends])))
-                    }
-                    dividend_history = valid_dividends
+                    for ex_date, cash_div in divs.head(10).items():
+                        if cash_div <= 0: continue
+                        
+                        ex_date_str = ex_date.strftime('%Y-%m-%d')
+                        year = str(ex_date.year)
+                        fillback_days = -1
+                        yield_rate = 0.0
+                        
+                        # 尋找除息「前一天」的收盤價作為基準價
+                        pre_ex_df = hist[hist.index < ex_date]
+                        if not pre_ex_df.empty:
+                            ref_price = pre_ex_df['Close'].iloc[-1]
+                            yield_rate = (cash_div / ref_price) * 100
+                            
+                            # 尋找填息日 (除息日後的收盤價 >= 除息前收盤價)
+                            post_ex_df = hist[hist.index >= ex_date]
+                            fill_df = post_ex_df[post_ex_df['Close'] >= ref_price]
+                            if not fill_df.empty:
+                                fill_date = fill_df.index[0]
+                                fillback_days = (fill_date - ex_date).days
+                        
+                        valid_dividends.append({
+                            'year': year,
+                            'ex_date': ex_date_str,
+                            'cash_dividend': float(cash_div),
+                            'yield_rate': yield_rate,
+                            'fillback_days': fillback_days,
+                            'month': ex_date.month
+                        })
 
-                status.success(f"✅ 辨識完成：{stock_code} {stock_name} | 歷史配息紀錄 {dividend_metrics.get('total_divs', 0)} 次")
-            else:
-                status.warning(f"⚠️ 無法辨識代碼 {stock_code}")
+                    # 彙整給 AI 的量化指標
+                    if valid_dividends:
+                        latest_div = valid_dividends[0]
+                        days_since = (datetime.now().date() - pd.to_datetime(latest_div['ex_date']).date()).days
+                        
+                        filled_days_list = [d['fillback_days'] for d in valid_dividends if d['fillback_days'] != -1]
+                        yields_list = [d['yield_rate'] for d in valid_dividends if d['yield_rate'] > 0]
+                        
+                        dividend_metrics = {
+                            'last_ex_date': latest_div['ex_date'],
+                            'days_since_last_ex': days_since,
+                            'last_cash': latest_div['cash_dividend'],
+                            'avg_fillback': sum(filled_days_list)/len(filled_days_list) if filled_days_list else -1,
+                            'avg_yield': sum(yields_list)/len(yields_list) if yields_list else 0.0,
+                            'total_divs': len(valid_dividends),
+                            'months_pattern': sorted(list(set([d['month'] for d in valid_dividends])))
+                        }
+                        dividend_history = valid_dividends
+
+            status.success(f"✅ 雙引擎辨識完成：{stock_code} {stock_name} | yfinance 成功抓取配息紀錄 {dividend_metrics.get('total_divs', 0)} 次")
         except Exception as e:
-            status.error(f"FinMind 連線異常: {e}")
+            status.error(f"資料庫連線異常: {e}")
 
         prog.progress(20)
 
@@ -1696,7 +1671,7 @@ with tabs[0]:
         prog.progress(50)
         status.info(f"📥 成功抓取 {len(raw_news_pool)} 篇原始新聞，進行關聯性篩選...")
 
-        keywords = [stock_code, stock_name, industry, "半導體", "AI", "供應鏈", "股市", "營收", "財報", "外資", "股息", "除息", "配息", "殖利率"]
+        keywords = [stock_code, stock_name, industry, "半導體", "AI", "供應鏈", "營收", "財報", "外資", "股息", "除息", "配息", "殖利率"]
         priority_news = [n for n in raw_news_pool if any(k.lower() in n['title'].lower() for k in keywords if k)]
 
         max_news_limit = 150 
@@ -1713,12 +1688,12 @@ with tabs[0]:
         prog.progress(65)
 
         # ------------------------------------------
-        # 🧠 步驟 C: 構建外資級 Prompt (注入精準數據)
+        # 🧠 步驟 C: 構建外資級 Prompt (注入 yfinance 精準數據)
         # ------------------------------------------
         if dividend_metrics:
             avg_f_str = f"{dividend_metrics['avg_fillback']:.0f} 天" if dividend_metrics['avg_fillback'] != -1 else "樣本不足/尚未填息"
             dividend_ai_text = f"""
-            **【歷史配息與填息精準數據】**(務必將此數據寫入報告中)
+            **【yfinance 歷史配息與填息精準數據】**(務必將此數據寫入報告中)
             - 🎯 上次除權息日：{dividend_metrics['last_ex_date']} **(距今 {dividend_metrics['days_since_last_ex']} 天)**
             - 💰 上次現金股利：{dividend_metrics['last_cash']} 元
             - ⏳ 近期平均填息天數：{avg_f_str}
@@ -1726,7 +1701,7 @@ with tabs[0]:
             - 🗓️ 歷年配息旺季集中於：{', '.join([str(m)+'月' for m in dividend_metrics['months_pattern']])}
             """
         else:
-            dividend_ai_text = "**【歷史配息狀態】** 目前無歷史配息紀錄，請直接指出該公司為無配息政策或新上市公司。"
+            dividend_ai_text = "**【歷史配息狀態】** 該公司目前無歷史配息紀錄，可能為成長型科技股、新上市公司或無配息政策。"
 
         ai_prompt_base = """
         【角色設定】
@@ -1747,7 +1722,7 @@ with tabs[0]:
         (用 3-4 個 Bullet points 精煉總結企業基本面變化、市場共識與資金動能。)
 
         ### 💰 Dividend Policy & Fundamentals | 配息政策與填息動能分析
-        (必須直接引用我提供的【歷史配息與填息精準數據】，具體寫出「上次除息日距今的天數」、「平均填息天數」與「殖利率」。並結合現況分析其填息動能與對價值型資金的吸引力。)
+        (直接引用我提供的【yfinance 歷史配息數據】，具體寫出「上次除息日距今的天數」、「平均填息天數」與「殖利率」。並結合現況分析其填息動能與價值型資金的吸引力。)
 
         ### 🔗 Supply Chain Dynamics | 產業鏈供需結構剖析
         *   **⬆️ Upstream (上游供應與成本端)：** (列出至少3家上游供應商/原物料，分析產能或報價現況。)
@@ -1766,7 +1741,7 @@ with tabs[0]:
             dividend_ai_text=dividend_ai_text, news_count=len(final_news), news_summary=news_summary
         )
 
-        status.info(f"🏛️ 啟動機構級 AI：正在融合真實填息數據與 {len(final_news)} 篇新聞進行推演...")
+        status.info(f"🏛️ 啟動機構級 AI：正在融合 yfinance 填息數據與 {len(final_news)} 篇新聞進行推演...")
 
         # 🦙 Groq 分析
         groq_analysis = None
@@ -1829,7 +1804,7 @@ with tabs[0]:
         history = st.session_state.t5_dividend_history
         
         if metrics and history:
-            st.markdown("#### 🏦 Dividend & Fill-back Analytics (配息與填息動能追蹤)")
+            st.markdown("#### 🏦 Dividend & Fill-back Analytics (yfinance 填息動能追蹤)")
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("上次除息日", metrics['last_ex_date'])
