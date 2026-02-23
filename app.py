@@ -1483,11 +1483,11 @@ import time
 import feedparser
 import pandas as pd
 from datetime import datetime, timedelta
-import yfinance as yf  # 新增導入 yfinance
+import yfinance as yf
 
 with tabs[0]:
     # ==========================================
-    # ✅ 1. 初始化 Session State (防止跳頁資料遺失)
+    # ✅ 1. 初始化 Session State
     # ==========================================
     if "t5_result" not in st.session_state: st.session_state.t5_result = None
     if "t5_stock_name" not in st.session_state: st.session_state.t5_stock_name = ""
@@ -1505,7 +1505,7 @@ with tabs[0]:
     background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); 
     color:white; border-radius:15px; box-shadow:0 8px 25px rgba(0,0,0,0.4);'>
         <h1 style='color:white; margin:0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;'>🏛️ Institutional Research Hub</h1>
-        <p style='color:white; opacity:0.9; margin:5px 0;'>雙引擎資料庫 | yfinance 填息追蹤 | TAIEX <strong>{S_current:.0f}</strong></p>
+        <p style='color:white; opacity:0.9; margin:5px 0;'>雙引擎資料庫 | yfinance 填息追蹤與預估 | TAIEX <strong>{S_current:.0f}</strong></p>
     </div>
     """.format(S_current=S_current), unsafe_allow_html=True)
 
@@ -1513,13 +1513,12 @@ with tabs[0]:
 
     col1, col2, col3 = st.columns([1.5, 1, 1.5])
     with col1:
-        stock_code = st.text_input("🏭 產業指標股代碼 (Ticker)", value="2330", max_chars=6, help="輸入代碼，系統將自動辨識並推算歷史配息")
+        stock_code = st.text_input("🏭 產業指標股代碼 (Ticker)", value="2330", max_chars=6, help="輸入代碼，系統將自動辨識並推算配息")
     with col2:
         days_period = st.selectbox("⏳ 觀察期 (Horizon)", [7, 14, 30, 90], index=1)
     with col3:
         focus_region = st.selectbox("🌐 數據權重 (Weighting)", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
 
-    # 金鑰檢查
     groq_key = st.secrets.get("GROQ_KEY", "")
     finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
     if not groq_key:
@@ -1545,15 +1544,14 @@ with tabs[0]:
         status = st.empty()
 
         # ------------------------------------------
-        # 🔍 步驟 A: 混合架構 (FinMind 辨識 + yfinance 股息推算)
+        # 🔍 步驟 A: yfinance 股息推算與「下一次配息」偵測
         # ------------------------------------------
-        status.info(f"🔍 正在啟動 yfinance 國際金融資料庫，推算 {stock_code} 的歷史配息與填息動能...")
+        status.info(f"🔍 正在啟動 yfinance 國際金融資料庫，推算 {stock_code} 的歷史配息與未來預估...")
         stock_name, industry = "", "未知產業"
         dividend_metrics = {}
         dividend_history = []
         
         try:
-            # 1. 用 FinMind 抓取公司基本名與產業
             from FinMind.data import DataLoader
             dl = DataLoader()
             if finmind_key: dl.login_by_token(api_token=finmind_key)
@@ -1564,8 +1562,6 @@ with tabs[0]:
                 stock_name = stock_data['stock_name'].iloc[0]
                 industry = stock_data['industry_category'].iloc[0]
 
-            # 2. 用 yfinance 抓取「未還原股價」與「歷史配息」
-            # 自動判斷是上市 (.TW) 還是上櫃 (.TWO)
             yf_ticker = yf.Ticker(f"{stock_code}.TW")
             hist = yf_ticker.history(period="5y", auto_adjust=False)
             
@@ -1575,17 +1571,26 @@ with tabs[0]:
 
             if not hist.empty:
                 divs = yf_ticker.dividends
-                
                 if not divs.empty:
-                    # 去除時區，方便 Pandas 時間比對
                     hist.index = hist.index.tz_localize(None)
                     divs.index = divs.index.tz_localize(None)
                     
-                    # 時間反向排序，從最新的配息開始算
-                    divs = divs.sort_index(ascending=False)
-                    valid_dividends = []
+                    today = pd.Timestamp(datetime.now().date())
                     
-                    for ex_date, cash_div in divs.head(10).items():
+                    # 💡 切分未來已公告配息 vs 過去歷史配息
+                    future_divs = divs[divs.index > today].sort_index()
+                    past_divs = divs[divs.index <= today].sort_index(ascending=False)
+                    
+                    next_ex_date_str = "尚未公告"
+                    next_cash_str = "-"
+                    
+                    # 如果有已經公告的未來配息
+                    if not future_divs.empty:
+                        next_ex_date_str = f"已公告: {future_divs.index[0].strftime('%Y-%m-%d')}"
+                        next_cash_str = f"{float(future_divs.iloc[0]):.2f} 元"
+
+                    valid_dividends = []
+                    for ex_date, cash_div in past_divs.head(10).items():
                         if cash_div <= 0: continue
                         
                         ex_date_str = ex_date.strftime('%Y-%m-%d')
@@ -1593,13 +1598,11 @@ with tabs[0]:
                         fillback_days = -1
                         yield_rate = 0.0
                         
-                        # 尋找除息「前一天」的收盤價作為基準價
                         pre_ex_df = hist[hist.index < ex_date]
                         if not pre_ex_df.empty:
                             ref_price = pre_ex_df['Close'].iloc[-1]
                             yield_rate = (cash_div / ref_price) * 100
                             
-                            # 尋找填息日 (除息日後的收盤價 >= 除息前收盤價)
                             post_ex_df = hist[hist.index >= ex_date]
                             fill_df = post_ex_df[post_ex_df['Close'] >= ref_price]
                             if not fill_df.empty:
@@ -1615,11 +1618,19 @@ with tabs[0]:
                             'month': ex_date.month
                         })
 
-                    # 彙整給 AI 的量化指標
                     if valid_dividends:
                         latest_div = valid_dividends[0]
                         days_since = (datetime.now().date() - pd.to_datetime(latest_div['ex_date']).date()).days
+                        months_pattern = sorted(list(set([d['month'] for d in valid_dividends])))
                         
+                        # 💡 如果還沒公告，依照歷史慣性預估下一次月份
+                        if next_ex_date_str == "尚未公告" and months_pattern:
+                            current_m = datetime.now().month
+                            future_m = [m for m in months_pattern if m > current_m]
+                            next_m = future_m[0] if future_m else months_pattern[0]
+                            next_ex_date_str = f"歷史預估: {next_m} 月"
+                            next_cash_str = "尚未公告"
+
                         filled_days_list = [d['fillback_days'] for d in valid_dividends if d['fillback_days'] != -1]
                         yields_list = [d['yield_rate'] for d in valid_dividends if d['yield_rate'] > 0]
                         
@@ -1627,14 +1638,16 @@ with tabs[0]:
                             'last_ex_date': latest_div['ex_date'],
                             'days_since_last_ex': days_since,
                             'last_cash': latest_div['cash_dividend'],
+                            'next_ex_date': next_ex_date_str,    # 新增: 下次預估日
+                            'next_cash': next_cash_str,          # 新增: 下次預估金額
                             'avg_fillback': sum(filled_days_list)/len(filled_days_list) if filled_days_list else -1,
                             'avg_yield': sum(yields_list)/len(yields_list) if yields_list else 0.0,
                             'total_divs': len(valid_dividends),
-                            'months_pattern': sorted(list(set([d['month'] for d in valid_dividends])))
+                            'months_pattern': months_pattern
                         }
                         dividend_history = valid_dividends
 
-            status.success(f"✅ 雙引擎辨識完成：{stock_code} {stock_name} | yfinance 成功抓取配息紀錄 {dividend_metrics.get('total_divs', 0)} 次")
+            status.success(f"✅ 雙引擎辨識完成：{stock_code} {stock_name} | yfinance 預估下次配息: {dividend_metrics.get('next_ex_date', '無資料')}")
         except Exception as e:
             status.error(f"資料庫連線異常: {e}")
 
@@ -1688,14 +1701,14 @@ with tabs[0]:
         prog.progress(65)
 
         # ------------------------------------------
-        # 🧠 步驟 C: 構建外資級 Prompt (注入 yfinance 精準數據)
+        # 🧠 步驟 C: 構建外資級 Prompt (注入下一次預估)
         # ------------------------------------------
         if dividend_metrics:
-            avg_f_str = f"{dividend_metrics['avg_fillback']:.0f} 天" if dividend_metrics['avg_fillback'] != -1 else "樣本不足/尚未填息"
+            avg_f_str = f"{dividend_metrics['avg_fillback']:.0f} 天" if dividend_metrics['avg_fillback'] != -1 else "樣本不足"
             dividend_ai_text = f"""
-            **【yfinance 歷史配息與填息精準數據】**(務必將此數據寫入報告中)
-            - 🎯 上次除權息日：{dividend_metrics['last_ex_date']} **(距今 {dividend_metrics['days_since_last_ex']} 天)**
-            - 💰 上次現金股利：{dividend_metrics['last_cash']} 元
+            **【yfinance 歷史配息與預估數據】**(務必將此數據寫入報告中)
+            - 🎯 上次除權息日：{dividend_metrics['last_ex_date']} (距今 {dividend_metrics['days_since_last_ex']} 天)
+            - 🔮 **下一次配息預估/公告：{dividend_metrics['next_ex_date']}** (預估股利: {dividend_metrics['next_cash']})
             - ⏳ 近期平均填息天數：{avg_f_str}
             - 📈 近期平均單期殖利率：{dividend_metrics['avg_yield']:.2f}%
             - 🗓️ 歷年配息旺季集中於：{', '.join([str(m)+'月' for m in dividend_metrics['months_pattern']])}
@@ -1721,8 +1734,8 @@ with tabs[0]:
         ### 🎯 Executive Summary | 核心論點摘要
         (用 3-4 個 Bullet points 精煉總結企業基本面變化、市場共識與資金動能。)
 
-        ### 💰 Dividend Policy & Fundamentals | 配息政策與填息動能分析
-        (直接引用我提供的【yfinance 歷史配息數據】，具體寫出「上次除息日距今的天數」、「平均填息天數」與「殖利率」。並結合現況分析其填息動能與價值型資金的吸引力。)
+        ### 💰 Dividend Policy & Expected Catalysts | 配息政策與未來填息預估
+        (直接引用我提供的【yfinance 配息預估數據】，具體寫出「下一次預估配息落在何時」、「平均填息天數」與「殖利率」。並結合現況分析市場是否會為了參與除息而提前卡位佈局。)
 
         ### 🔗 Supply Chain Dynamics | 產業鏈供需結構剖析
         *   **⬆️ Upstream (上游供應與成本端)：** (列出至少3家上游供應商/原物料，分析產能或報價現況。)
@@ -1741,7 +1754,7 @@ with tabs[0]:
             dividend_ai_text=dividend_ai_text, news_count=len(final_news), news_summary=news_summary
         )
 
-        status.info(f"🏛️ 啟動機構級 AI：正在融合 yfinance 填息數據與 {len(final_news)} 篇新聞進行推演...")
+        status.info(f"🏛️ 啟動機構級 AI：正在融合 yfinance 填息預估數據與 {len(final_news)} 篇新聞進行推演...")
 
         # 🦙 Groq 分析
         groq_analysis = None
@@ -1752,7 +1765,7 @@ with tabs[0]:
             groq_resp = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "你是一位華爾街頂級分析師。請嚴格遵守 Markdown 框架輸出，務必將提供的真實除權息數據（距今天數、填息天數等）寫入分析中，文風冷靜數據導向。"},
+                    {"role": "system", "content": "你是一位華爾街頂級分析師。請嚴格遵守 Markdown 框架輸出，務必將提供的真實除權息預估時間寫入分析中，文風冷靜數據導向。"},
                     {"role": "user", "content": ai_prompt}
                 ],
                 max_tokens=1800, temperature=0.2
@@ -1798,20 +1811,24 @@ with tabs[0]:
         st.markdown("---")
 
         # ------------------------------------------
-        # 🏦 歷史配息與填息儀表板
+        # 🏦 歷史配息與未來預估儀表板
         # ------------------------------------------
         metrics = st.session_state.t5_dividend_metrics
         history = st.session_state.t5_dividend_history
         
         if metrics and history:
-            st.markdown("#### 🏦 Dividend & Fill-back Analytics (yfinance 填息動能追蹤)")
+            st.markdown("#### 🏦 Dividend & Fill-back Projection (配息預估與填息動能)")
             
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4, c5 = st.columns([1, 1, 1.2, 1, 1])
             c1.metric("上次除息日", metrics['last_ex_date'])
             c2.metric("上次距今天數", f"{metrics['days_since_last_ex']} 天")
+            
+            # 🔮 新增：下次配息預估顯示
+            c3.metric("🔮 下次配息時間", metrics['next_ex_date'], delta=metrics['next_cash'], delta_color="off")
+            
             avg_f = f"{metrics['avg_fillback']:.0f} 天" if metrics['avg_fillback'] != -1 else "未填息"
-            c3.metric("歷史平均填息", avg_f)
-            c4.metric("歷史平均殖利率", f"{metrics['avg_yield']:.2f}%")
+            c4.metric("歷史平均填息", avg_f)
+            c5.metric("歷史平均殖利率", f"{metrics['avg_yield']:.2f}%")
             
             st.markdown("<br>", unsafe_allow_html=True)
             
@@ -1845,5 +1862,6 @@ with tabs[0]:
                 df_news.columns = ["Source", "Headline", "Timestamp"]
                 st.dataframe(df_news, use_container_width=True)
                 st.caption(f"**Global Sources Tracked:** {', '.join(list(st.session_state.t5_sources))}")
+
 
 
