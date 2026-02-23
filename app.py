@@ -1513,7 +1513,7 @@ with tabs[0]:
 
     col1, col2, col3 = st.columns([1.5, 1, 1.5])
     with col1:
-        stock_code = st.text_input("🏭 產業指標股代碼 (Ticker)", value="2330", max_chars=6, help="輸入代碼，系統將自動辨識並推算配息")
+        stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="2330", max_chars=6, help="個股或 ETF 皆可，系統自動切換分析模板")
     with col2:
         days_period = st.selectbox("⏳ 觀察期 (Horizon)", [7, 14, 30, 90], index=1)
     with col3:
@@ -1527,7 +1527,7 @@ with tabs[0]:
 
     col_btn1, col_btn2 = st.columns([3, 1])
     with col_btn1:
-        run_btn = st.button("🚀 **啟動全網產業鏈掃描與機構級分析**", type="primary", use_container_width=True)
+        run_btn = st.button("🚀 **啟動全網掃描與機構級分析**", type="primary", use_container_width=True)
     with col_btn2:
         clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
 
@@ -1544,13 +1544,14 @@ with tabs[0]:
         status = st.empty()
 
         # ------------------------------------------
-        # 🔍 步驟 A: yfinance 股息推算與「下一次配息」偵測
+        # 🔍 步驟 A: FinMind + yfinance 雙引擎
         # ------------------------------------------
-        status.info(f"🔍 正在啟動 yfinance 國際金融資料庫，推算 {stock_code} 的歷史配息與未來預估...")
+        status.info(f"🔍 正在啟動雙引擎資料庫，識別 {stock_code} 類型與歷史配息...")
         stock_name, industry = "", "未知產業"
         dividend_metrics = {}
         dividend_history = []
-        
+        is_etf = False  # ETF 偵測旗標
+
         try:
             from FinMind.data import DataLoader
             dl = DataLoader()
@@ -1561,10 +1562,18 @@ with tabs[0]:
             if not stock_data.empty:
                 stock_name = stock_data['stock_name'].iloc[0]
                 industry = stock_data['industry_category'].iloc[0]
+                
+                # 🎯 ETF 自動偵測 (FinMind 產業分類 + 代碼規律雙重判斷)
+                etf_keywords = ['etf', 'ETF', '指數股票型', '基金', '債券', '期信']
+                is_etf = (
+                    any(k.lower() in str(industry).lower() for k in etf_keywords) or
+                    any(k.lower() in str(stock_name).lower() for k in etf_keywords) or
+                    stock_code.startswith('0')  # 台灣 ETF 代碼通常以 0 開頭
+                )
 
+            # yfinance 股息資料
             yf_ticker = yf.Ticker(f"{stock_code}.TW")
             hist = yf_ticker.history(period="5y", auto_adjust=False)
-            
             if hist.empty:
                 yf_ticker = yf.Ticker(f"{stock_code}.TWO")
                 hist = yf_ticker.history(period="5y", auto_adjust=False)
@@ -1574,7 +1583,6 @@ with tabs[0]:
                 if not divs.empty:
                     hist.index = hist.index.tz_localize(None)
                     divs.index = divs.index.tz_localize(None)
-                    
                     today = pd.Timestamp(datetime.now().date())
                     
                     future_divs = divs[divs.index > today].sort_index()
@@ -1582,7 +1590,6 @@ with tabs[0]:
                     
                     next_ex_date_str = "尚未公告"
                     next_cash_str = "-"
-                    
                     if not future_divs.empty:
                         next_ex_date_str = f"已公告: {future_divs.index[0].strftime('%Y-%m-%d')}"
                         next_cash_str = f"{float(future_divs.iloc[0]):.2f} 元"
@@ -1590,47 +1597,34 @@ with tabs[0]:
                     valid_dividends = []
                     for ex_date, cash_div in past_divs.head(10).items():
                         if cash_div <= 0: continue
-                        
                         ex_date_str = ex_date.strftime('%Y-%m-%d')
-                        year = str(ex_date.year)
                         fillback_days = -1
                         yield_rate = 0.0
-                        
                         pre_ex_df = hist[hist.index < ex_date]
                         if not pre_ex_df.empty:
                             ref_price = pre_ex_df['Close'].iloc[-1]
                             yield_rate = (cash_div / ref_price) * 100
-                            
                             post_ex_df = hist[hist.index >= ex_date]
                             fill_df = post_ex_df[post_ex_df['Close'] >= ref_price]
                             if not fill_df.empty:
-                                fill_date = fill_df.index[0]
-                                fillback_days = (fill_date - ex_date).days
-                        
+                                fillback_days = (fill_df.index[0] - ex_date).days
                         valid_dividends.append({
-                            'year': year,
-                            'ex_date': ex_date_str,
-                            'cash_dividend': float(cash_div),
-                            'yield_rate': yield_rate,
-                            'fillback_days': fillback_days,
-                            'month': ex_date.month
+                            'year': str(ex_date.year), 'ex_date': ex_date_str,
+                            'cash_dividend': float(cash_div), 'yield_rate': yield_rate,
+                            'fillback_days': fillback_days, 'month': ex_date.month
                         })
 
                     if valid_dividends:
                         latest_div = valid_dividends[0]
                         days_since = (datetime.now().date() - pd.to_datetime(latest_div['ex_date']).date()).days
                         months_pattern = sorted(list(set([d['month'] for d in valid_dividends])))
-                        
                         if next_ex_date_str == "尚未公告" and months_pattern:
                             current_m = datetime.now().month
                             future_m = [m for m in months_pattern if m > current_m]
                             next_m = future_m[0] if future_m else months_pattern[0]
                             next_ex_date_str = f"歷史預估: {next_m} 月"
-                            next_cash_str = "尚未公告"
-
                         filled_days_list = [d['fillback_days'] for d in valid_dividends if d['fillback_days'] != -1]
                         yields_list = [d['yield_rate'] for d in valid_dividends if d['yield_rate'] > 0]
-                        
                         dividend_metrics = {
                             'last_ex_date': latest_div['ex_date'],
                             'days_since_last_ex': days_since,
@@ -1644,7 +1638,8 @@ with tabs[0]:
                         }
                         dividend_history = valid_dividends
 
-            status.success(f"✅ 雙引擎辨識完成：{stock_code} {stock_name} | yfinance 預估下次配息: {dividend_metrics.get('next_ex_date', '無資料')}")
+            etf_tag = "【ETF】" if is_etf else "【個股】"
+            status.success(f"✅ 辨識完成 {etf_tag}：{stock_code} {stock_name} | 下次預估配息: {dividend_metrics.get('next_ex_date', '無資料')}")
         except Exception as e:
             status.error(f"資料庫連線異常: {e}")
 
@@ -1683,7 +1678,6 @@ with tabs[0]:
 
         keywords = [stock_code, stock_name, industry, "半導體", "AI", "供應鏈", "營收", "財報", "外資", "股息", "除息", "配息", "殖利率"]
         priority_news = [n for n in raw_news_pool if any(k.lower() in n['title'].lower() for k in keywords if k)]
-
         max_news_limit = 150 
         if len(priority_news) >= max_news_limit:
             final_news = priority_news[:max_news_limit]
@@ -1694,65 +1688,84 @@ with tabs[0]:
 
         news_texts_for_ai = [f"[{n['media']}] {n['title']}" for n in final_news]
         news_summary = " | ".join(news_texts_for_ai)
-        
         prog.progress(65)
 
         # ------------------------------------------
-        # 🧠 步驟 C: 構建外資級 Prompt (優化產業鏈描述)
+        # 🧠 步驟 C: 動態 Prompt (ETF vs 個股 自動切換)
         # ------------------------------------------
         if dividend_metrics:
             avg_f_str = f"{dividend_metrics['avg_fillback']:.0f} 天" if dividend_metrics['avg_fillback'] != -1 else "樣本不足"
             dividend_ai_text = f"""
-            **【yfinance 歷史配息與預估數據】**(務必將此數據寫入報告中)
-            - 🎯 上次除權息日：{dividend_metrics['last_ex_date']} (距今 {dividend_metrics['days_since_last_ex']} 天)
-            - 🔮 **下一次配息預估/公告：{dividend_metrics['next_ex_date']}** (預估股利: {dividend_metrics['next_cash']})
-            - ⏳ 近期平均填息天數：{avg_f_str}
-            - 📈 近期平均單期殖利率：{dividend_metrics['avg_yield']:.2f}%
-            - 🗓️ 歷年配息旺季集中於：{', '.join([str(m)+'月' for m in dividend_metrics['months_pattern']])}
+            **【yfinance 配息精準數據】**(務必引用)
+            - 上次除權息日：{dividend_metrics['last_ex_date']} (距今 {dividend_metrics['days_since_last_ex']} 天)
+            - 🔮 下一次配息：{dividend_metrics['next_ex_date']} (預估: {dividend_metrics['next_cash']})
+            - 平均填息天數：{avg_f_str}
+            - 平均單期殖利率：{dividend_metrics['avg_yield']:.2f}%
+            - 配息旺季：{', '.join([str(m)+'月' for m in dividend_metrics['months_pattern']])}
             """
         else:
-            dividend_ai_text = "**【歷史配息狀態】** 該公司目前無歷史配息紀錄，可能為成長型科技股、新上市公司或無配息政策。"
+            dividend_ai_text = "**【配息狀態】** 無歷史配息紀錄，請點出其為成長型或無配息政策標的。"
+
+        # 🎯 ETF 專屬 Prompt (移除供應鏈，改為持股結構分析)
+        if is_etf:
+            supply_chain_section = """
+        ### 🧩 Portfolio & Exposure Analysis | 成分股結構與曝險分析
+        (請基於新聞分析此 ETF 的核心持股曝險集中度，例如：某一產業佔比過高、前幾大成分股的近期基本面動態，以及該 ETF 對整體台股大盤的 Beta 值高低特性。)
+            """
+        # 🎯 個股專屬 Prompt (有高度確信才寫，否則省略)
+        else:
+            supply_chain_section = """
+        ### 🔗 Supply Chain Dynamics | 產業鏈供需結構剖析
+        【極重要規範】：
+        - 只有在新聞池中**明確出現**特定廠商名稱時，才可以列出該廠商。
+        - 如果新聞未提及任何具體上游廠商，**請直接省略上游段落**，不要填入任何猜測或模糊描述。
+        - 如果新聞未提及任何具體下游客戶，**請直接省略下游段落**，不要填入任何猜測或模糊描述。
+        - 寧可整個 Section 只寫一段話，也不要硬塞不確定的資訊。
+        *   **⬆️ Upstream：** (僅當新聞明確提及上游廠商/原物料價格波動時才撰寫，否則省略)
+        *   **⬇️ Downstream：** (僅當新聞明確提及下游客戶/應用領域拉貨動態時才撰寫，否則省略)
+            """
 
         ai_prompt_base = """
         【角色設定】
         你是一位全球頂級投資銀行（如 Morgan Stanley、JPMorgan）的資深亞洲科技與產業鏈首席分析師。你的文筆極度專業、冷靜客觀、邏輯嚴密，善用金融專業術語。
 
-        【分析標的與量化數據池】
-        - 核心追蹤標的：{stock_code} {stock_name} (產業分類：{industry})
+        【分析標的】
+        - 標的：{stock_code} {stock_name} (類型：{asset_type} | 產業：{industry})
         - 觀察週期：近 {days_period} 天
-        - 大盤客觀數據：TAIEX {S_current:.0f} | 月線 {ma20:.0f}
+        - 大盤數據：TAIEX {S_current:.0f} | 月線 {ma20:.0f}
         {dividend_ai_text}
-        
+
         【全球大數據新聞池】(共 {news_count} 篇)：
         {news_summary}
 
-        【輸出格式規範】（請嚴格遵守以下 Markdown 標題與結構，不要自我介紹）：
+        【輸出格式規範】（嚴格遵守，不要自我介紹）：
 
         ### 🎯 Executive Summary | 核心論點摘要
-        (用 3-4 個 Bullet points 精煉總結企業基本面變化、市場共識與資金動能。)
+        (用 3-4 個 Bullet points，精煉總結基本面變化、市場共識與資金動能。)
 
-        ### 💰 Dividend Policy & Expected Catalysts | 配息政策與未來填息預估
-        (直接引用我提供的【yfinance 配息預估數據】，具體寫出「下一次預估配息落在何時」、「平均填息天數」與「殖利率」。並結合現況分析市場是否會為了參與除息而提前卡位佈局。)
+        ### 💰 Dividend Policy & Expected Catalysts | 配息政策與填息預估
+        (直接引用【yfinance 配息數據】，寫出「下一次預估時間」、「平均填息天數」、「殖利率」，分析市場是否提前佈局除息行情。)
 
-        ### 🔗 Supply Chain Dynamics | 產業鏈供需結構剖析
-        (請基於大數據新聞池與產業邏輯，流暢且自然地分析上下游動態。切勿生硬條列佔位符，如果新聞未提及特定廠商，請針對大環境的「成本、產能、拉貨動能」進行論述即可)：
-        *   **⬆️ Upstream (供應與成本端)：** 點評關鍵原物料成本趨勢、供應鏈瓶頸或產能稼動率現況。
-        *   **⬇️ Downstream (終端與需求拉力)：** 點評核心應用領域的滲透率、客戶拉貨動能與整體訂單能見度。
+        {supply_chain_section}
 
-        ### 💡 Catalysts & Risks | 潛在催化劑與產業阻力
-        (列出未來1-2季度的正向營收催化劑與總經/產業風險。)
+        ### 💡 Catalysts & Risks | 潛在催化劑與阻力
+        (列出未來 1-2 季度的正向催化劑與總經/產業風險。)
 
-        ### 🌐 Market Sentiment | 市場共識與大盤連動位階
-        (綜合媒體風向，說明市場預期是樂觀、悲觀或分歧，並結合大盤位階點評資金輪動狀態。)
+        ### 🌐 Market Sentiment | 市場共識與大盤連動
+        (綜合媒體風向，說明市場預期樂觀/悲觀/分歧，並結合大盤位階點評資金輪動。)
         """
 
         ai_prompt = textwrap.dedent(ai_prompt_base).format(
-            stock_code=stock_code, stock_name=stock_name, industry=industry,
-            days_period=days_period, S_current=S_current, ma20=ma20,
-            dividend_ai_text=dividend_ai_text, news_count=len(final_news), news_summary=news_summary
+            stock_code=stock_code, stock_name=stock_name,
+            asset_type="ETF 指數型基金" if is_etf else "上市個股",
+            industry=industry, days_period=days_period,
+            S_current=S_current, ma20=ma20,
+            dividend_ai_text=dividend_ai_text,
+            supply_chain_section=supply_chain_section,
+            news_count=len(final_news), news_summary=news_summary
         )
 
-        status.info(f"🏛️ 啟動機構級 AI：正在融合 yfinance 填息預估數據與 {len(final_news)} 篇新聞進行推演...")
+        status.info(f"🏛️ 啟動機構級 AI ({'ETF 模板' if is_etf else '個股模板'})：正在融合 {len(final_news)} 篇新聞進行推演...")
 
         # 🦙 Groq 分析
         groq_analysis = None
@@ -1763,7 +1776,7 @@ with tabs[0]:
             groq_resp = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "你是一位華爾街頂級分析師。請嚴格遵守 Markdown 框架輸出，務必將提供的真實除權息預估時間寫入分析中，文風冷靜數據導向。嚴禁輸出 A、B、C 等無意義佔位符或生硬模板。"},
+                    {"role": "system", "content": "你是一位華爾街頂級分析師。嚴格遵守 Markdown 框架，務必引用真實除權息數據。嚴禁輸出任何不確定的廠商名稱、佔位符（如 A、B、C）或模糊的總體描述。如果沒有具體數據支撐，直接省略該段落。"},
                     {"role": "user", "content": ai_prompt}
                 ],
                 max_tokens=1800, temperature=0.2
@@ -1786,12 +1799,16 @@ with tabs[0]:
             st.session_state.t5_dividend_history = dividend_history
             st.session_state.t5_display_title = f"{stock_code} {stock_name}" if stock_name else stock_code
             st.session_state.t5_gap_pct = (S_current - ma20) / ma20 * 100
+            st.session_state.t5_is_etf = is_etf
 
     # ==========================================
     # 📊 4. 顯示分析結果與進階儀表板
     # ==========================================
     if st.session_state.t5_result:
-        st.success(f"🏛️ 機構級報告生成完畢（Ticker: {st.session_state.t5_display_title} | Sector: {st.session_state.t5_industry}）")
+        is_etf_display = st.session_state.get("t5_is_etf", False)
+        asset_badge = "🧩 ETF" if is_etf_display else "🏭 個股"
+
+        st.success(f"🏛️ 機構級報告生成完畢（{asset_badge} | Ticker: {st.session_state.t5_display_title} | Sector: {st.session_state.t5_industry}）")
         st.markdown("---")
         
         st.markdown(f"""
@@ -1800,7 +1817,7 @@ with tabs[0]:
                 Institutional Research Update: {st.session_state.t5_display_title}
             </h2>
             <p style='margin:0; color:#475569; font-size:14px; margin-top:5px;'>
-                <b>Sector:</b> {st.session_state.t5_industry} | <b>Data Sample:</b> {len(st.session_state.t5_news)} news inputs | <b>Analyst:</b> Beigu AI Desk
+                <b>Type:</b> {asset_badge} | <b>Sector:</b> {st.session_state.t5_industry} | <b>Data Sample:</b> {len(st.session_state.t5_news)} news inputs | <b>Analyst:</b> Beigu AI Desk
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -1808,27 +1825,21 @@ with tabs[0]:
         st.markdown(st.session_state.t5_result)
         st.markdown("---")
 
-        # ------------------------------------------
         # 🏦 歷史配息與未來預估儀表板
-        # ------------------------------------------
         metrics = st.session_state.t5_dividend_metrics
         history = st.session_state.t5_dividend_history
         
         if metrics and history:
             st.markdown("#### 🏦 Dividend & Fill-back Projection (配息預估與填息動能)")
-            
             c1, c2, c3, c4, c5 = st.columns([1, 1, 1.2, 1, 1])
             c1.metric("上次除息日", metrics['last_ex_date'])
             c2.metric("上次距今天數", f"{metrics['days_since_last_ex']} 天")
-            
             c3.metric("🔮 下次配息時間", metrics['next_ex_date'], delta=metrics['next_cash'], delta_color="off")
-            
             avg_f = f"{metrics['avg_fillback']:.0f} 天" if metrics['avg_fillback'] != -1 else "未填息"
             c4.metric("歷史平均填息", avg_f)
             c5.metric("歷史平均殖利率", f"{metrics['avg_yield']:.2f}%")
             
             st.markdown("<br>", unsafe_allow_html=True)
-            
             df_hist = pd.DataFrame(history)
             if not df_hist.empty:
                 df_hist['fillback_days'] = df_hist['fillback_days'].apply(lambda x: f"{x} 天" if x != -1 else "尚未填息")
@@ -1836,14 +1847,14 @@ with tabs[0]:
                 df_hist = df_hist[['year', 'cash_dividend', 'ex_date', 'yield_rate', 'fillback_days']]
                 df_hist.columns = ['所屬年度', '現金股利(元)', '除息交易日', '除息前殖利率', '填息花費天數']
                 st.dataframe(df_hist, use_container_width=True, hide_index=True)
-            
             st.markdown("---")
 
+        # 大盤快照
         st.markdown("#### 📉 Macro & Technical Snapshot (大盤技術面快照)")
         c_m1, c_m2, c_m3 = st.columns(3)
         with c_m1:
             trend = "Above MA20 (多方結構)" if S_current > ma20 else "Below MA20 (空方結構)"
-            st.metric("TAIEX Trend (大盤月線位階)", trend)
+            st.metric("TAIEX Trend", trend)
         with c_m2:
             st.metric("MA20 Bias (月線乖離率)", f"{st.session_state.t5_gap_pct:+.2f}%")
         with c_m3:
@@ -1859,7 +1870,6 @@ with tabs[0]:
                 df_news.columns = ["Source", "Headline", "Timestamp"]
                 st.dataframe(df_news, use_container_width=True)
                 st.caption(f"**Global Sources Tracked:** {', '.join(list(st.session_state.t5_sources))}")
-
 
 
 
