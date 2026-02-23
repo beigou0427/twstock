@@ -1806,71 +1806,72 @@ with tabs[0]:
     # ==========================================
     # 5. 無背景色展示區
     # ==========================================
-    if st.session_state.t5_result:
-        is_etf_d = st.session_state.get("t5_is_etf", False)
-        metrics  = st.session_state.t5_dividend_metrics
-        history  = st.session_state.t5_dividend_history
-        gap_pct  = st.session_state.get("t5_gap_pct", 0)
 
-        # 1. 頁首分隔線 + 標題
-        st.markdown(f"""
-        <div style='border-bottom:2px solid rgba(59,130,246,0.5); padding-bottom:14px; margin:32px 0 20px 0;'>
-            <div style='display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px;'>
-                <div>
-                    <h2 style='margin:0; font-weight:300; font-size:28px; letter-spacing:-0.8px;'>
-                        Institutional Research Update
-                    </h2>
-                    <p style='margin:4px 0 0 0; opacity:0.65; font-size:14px; font-family:monospace;'>
-                        {st.session_state.t5_display_title} &nbsp;·&nbsp; {st.session_state.t5_industry} &nbsp;·&nbsp; 
-                        {"🧩 ETF" if is_etf_d else "🏭 個股"} &nbsp;·&nbsp; {len(st.session_state.t5_news)} sources &nbsp;·&nbsp; Beigu AI Desk
-                    </p>
-                </div>
-                <div style='text-align:right;'>
-                    <span style='border:1.5px solid rgba(16,185,129,0.8); color:#10b981; 
-                    padding:6px 18px; border-radius:20px; font-weight:600; font-size:15px;'>
-                        {random.choice(["Overweight","Outperform","Neutral"])}
-                    </span>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # 2. 直接渲染 Markdown (不包任何 div)
-        def _clean_md(text: str) -> str:
-            text = re.sub(r"\r\n", "\n", text)
-            text = re.sub(r"\n{3,}", "\n\n", text)
-            text = re.sub(r"(?m)^(#{2,3} )", r"\n\1", text)
-            return text.strip()
-
-        st.markdown(_clean_md(st.session_state.t5_result))
-        st.divider()
-
-        # 3. Dividend Intelligence
-      
 if metrics and history:
     st.markdown("#### 🏦 Dividend Intelligence")
     k1, k2, k3, k4, k5 = st.columns(5)
-    
-    # 🔥 安全存取：用 .get() + 預設值
-    k1.metric("上次除息", 
-              metrics.get('last_ex_date', '無資料'))
-    
-    k2.metric("距今天數", 
-              f"{metrics.get('days_since_last_ex', 0)} 天")
-    
-    k3.metric("🔮 下次配息", 
-              metrics.get('next_ex_date', '尚未公告'),
-              delta=f"{metrics.get('next_cash', 0)}" if metrics.get('next_cash') else None)
-    
-    avg_fill = metrics.get('avg_fillback')
-    avg_fill_str = f"{avg_fill:.0f} 天" if isinstance(avg_fill, (int, float)) and avg_fill != -1 else "樣本不足"
-    k4.metric("平均填息", avg_fill_str)
-    
-    avg_yield = metrics.get('avg_yield', 0)
-    k5.metric("平均殖利率", 
-              f"{avg_yield:.2f}%" if avg_yield else "—")
 
-    # 表格也安全化
+    k1.metric("上次除息", metrics.get('last_ex_date', '無資料'))
+    k2.metric("距今天數", f"{metrics.get('days_since_last_ex', 0)} 天")
+
+    next_cash = metrics.get('next_cash', None)
+    k3.metric("🔮 下次配息",
+              metrics.get('next_ex_date', '尚未公告'),
+              delta=next_cash if next_cash and next_cash != "-" else None)
+
+    avg_fill = metrics.get('avg_fillback', -1)
+    avg_fill_str = f"{avg_fill:.0f} 天" if isinstance(avg_fill, float) and avg_fill != -1 else "樣本不足"
+    k4.metric("平均填息", avg_fill_str)
+
+    avg_yield = metrics.get('avg_yield', 0)
+    k5.metric("平均殖利率", f"{avg_yield:.2f}%" if avg_yield else "—")
+
+    # Plotly 圖表
+    if len(history) >= 2:
+        try:
+            import plotly.graph_objects as go
+            df_plot = pd.DataFrame(history[-8:][::-1])
+            fillback_y = df_plot['fillback_days'].replace(-1, None)
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=df_plot['ex_date'],
+                y=df_plot['cash_dividend'],
+                name="現金股利",
+                marker_color='rgba(59,130,246,0.75)',
+                opacity=0.9
+            ))
+            fig.add_trace(go.Scatter(
+                x=df_plot['ex_date'],
+                y=fillback_y,
+                mode='lines+markers',
+                name="填息天數",
+                yaxis='y2',
+                line=dict(color='#f59e0b', width=3.5),
+                marker=dict(size=9)
+            ))
+            fig.update_layout(
+                template="plotly_white",
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                title=dict(text="歷史配息 × 填息天數", font=dict(size=17), x=0),
+                height=360,
+                margin=dict(t=50, b=30, l=50, r=50),
+                yaxis=dict(title="股利 (元)", gridcolor="rgba(148,163,184,0.2)"),
+                yaxis2=dict(
+                    title="填息天數",
+                    overlaying='y',
+                    side='right',
+                    showgrid=False,
+                    rangemode='tozero'
+                ),
+                legend=dict(y=0.99, x=0.01)
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        except Exception as e:
+            st.caption(f"圖表略過：{e}")
+
+    # 歷史表格
     if len(history) > 0:
         df_h = pd.DataFrame(history)
         df_h['fillback_days'] = df_h['fillback_days'].apply(
@@ -1879,25 +1880,6 @@ if metrics and history:
         df_h['yield_rate'] = df_h['yield_rate'].apply(
             lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) and x > 0 else "—"
         )
-        df_display = df_h[['year', 'ex_date', 'cash_dividend', 'yield_rate', 'fillback_days']]
-        df_display.columns = ['年度', '除息日', '股利(元)', '殖利率', '填息結果']
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
-
-    # Plotly 也加安全檢查
-    if len(history) >= 2:
-        try:
-            import plotly.graph_objects as go
-            df_plot = pd.DataFrame(history[-8:][::-1])
-            if len(df_plot) > 0:
-                fig = go.Figure()
-                fig.add_trace(go.Bar(x=df_plot['ex_date'], y=df_plot['cash_dividend'],
-                                   name="現金股利", marker_color='rgba(59,130,246,0.75)', opacity=0.9))
-                fillback_y = df_plot['fillback_days'].replace(-1, None).fillna(method='ffill')
-                fig.add_trace(go.Scatter(x=df_plot['ex_date'], y=fillback_y,
-                                       mode='lines+markers', name="填息天數", yaxis='y2',
-                                       line=dict(color='#f59e0b', width=3.5),
-                                       marker=dict(size=9)))
-                fig.update_layout(
-                    template="plotly_white", height=360, 
-                    plot_bgcolor='rgba(0
-
+        df_h = df_h[['year', 'ex_date', 'cash_dividend', 'yield_rate', 'fillback_days']]
+        df_h.columns = ['年度', '除息日', '股利(元)', '殖利率', '填息結果']
+        st.dataframe(df_h, use_container_width=True, hide_index=True)
