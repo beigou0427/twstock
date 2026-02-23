@@ -1577,14 +1577,12 @@ with tabs[0]:
                     
                     today = pd.Timestamp(datetime.now().date())
                     
-                    # 💡 切分未來已公告配息 vs 過去歷史配息
                     future_divs = divs[divs.index > today].sort_index()
                     past_divs = divs[divs.index <= today].sort_index(ascending=False)
                     
                     next_ex_date_str = "尚未公告"
                     next_cash_str = "-"
                     
-                    # 如果有已經公告的未來配息
                     if not future_divs.empty:
                         next_ex_date_str = f"已公告: {future_divs.index[0].strftime('%Y-%m-%d')}"
                         next_cash_str = f"{float(future_divs.iloc[0]):.2f} 元"
@@ -1623,7 +1621,6 @@ with tabs[0]:
                         days_since = (datetime.now().date() - pd.to_datetime(latest_div['ex_date']).date()).days
                         months_pattern = sorted(list(set([d['month'] for d in valid_dividends])))
                         
-                        # 💡 如果還沒公告，依照歷史慣性預估下一次月份
                         if next_ex_date_str == "尚未公告" and months_pattern:
                             current_m = datetime.now().month
                             future_m = [m for m in months_pattern if m > current_m]
@@ -1638,8 +1635,8 @@ with tabs[0]:
                             'last_ex_date': latest_div['ex_date'],
                             'days_since_last_ex': days_since,
                             'last_cash': latest_div['cash_dividend'],
-                            'next_ex_date': next_ex_date_str,    # 新增: 下次預估日
-                            'next_cash': next_cash_str,          # 新增: 下次預估金額
+                            'next_ex_date': next_ex_date_str,
+                            'next_cash': next_cash_str,
                             'avg_fillback': sum(filled_days_list)/len(filled_days_list) if filled_days_list else -1,
                             'avg_yield': sum(yields_list)/len(yields_list) if yields_list else 0.0,
                             'total_divs': len(valid_dividends),
@@ -1701,7 +1698,7 @@ with tabs[0]:
         prog.progress(65)
 
         # ------------------------------------------
-        # 🧠 步驟 C: 構建外資級 Prompt (注入下一次預估)
+        # 🧠 步驟 C: 構建外資級 Prompt (優化產業鏈描述)
         # ------------------------------------------
         if dividend_metrics:
             avg_f_str = f"{dividend_metrics['avg_fillback']:.0f} 天" if dividend_metrics['avg_fillback'] != -1 else "樣本不足"
@@ -1738,8 +1735,9 @@ with tabs[0]:
         (直接引用我提供的【yfinance 配息預估數據】，具體寫出「下一次預估配息落在何時」、「平均填息天數」與「殖利率」。並結合現況分析市場是否會為了參與除息而提前卡位佈局。)
 
         ### 🔗 Supply Chain Dynamics | 產業鏈供需結構剖析
-        *   **⬆️ Upstream (上游供應與成本端)：** (列出至少3家上游供應商/原物料，分析產能或報價現況。)
-        *   **⬇️ Downstream (下游終端與需求拉力)：** (列出至少3家大客戶/應用，分析滲透率與訂單能見度。)
+        (請基於大數據新聞池與產業邏輯，流暢且自然地分析上下游動態。切勿生硬條列佔位符，如果新聞未提及特定廠商，請針對大環境的「成本、產能、拉貨動能」進行論述即可)：
+        *   **⬆️ Upstream (供應與成本端)：** 點評關鍵原物料成本趨勢、供應鏈瓶頸或產能稼動率現況。
+        *   **⬇️ Downstream (終端與需求拉力)：** 點評核心應用領域的滲透率、客戶拉貨動能與整體訂單能見度。
 
         ### 💡 Catalysts & Risks | 潛在催化劑與產業阻力
         (列出未來1-2季度的正向營收催化劑與總經/產業風險。)
@@ -1765,7 +1763,7 @@ with tabs[0]:
             groq_resp = client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "你是一位華爾街頂級分析師。請嚴格遵守 Markdown 框架輸出，務必將提供的真實除權息預估時間寫入分析中，文風冷靜數據導向。"},
+                    {"role": "system", "content": "你是一位華爾街頂級分析師。請嚴格遵守 Markdown 框架輸出，務必將提供的真實除權息預估時間寫入分析中，文風冷靜數據導向。嚴禁輸出 A、B、C 等無意義佔位符或生硬模板。"},
                     {"role": "user", "content": ai_prompt}
                 ],
                 max_tokens=1800, temperature=0.2
@@ -1823,7 +1821,6 @@ with tabs[0]:
             c1.metric("上次除息日", metrics['last_ex_date'])
             c2.metric("上次距今天數", f"{metrics['days_since_last_ex']} 天")
             
-            # 🔮 新增：下次配息預估顯示
             c3.metric("🔮 下次配息時間", metrics['next_ex_date'], delta=metrics['next_cash'], delta_color="off")
             
             avg_f = f"{metrics['avg_fillback']:.0f} 天" if metrics['avg_fillback'] != -1 else "未填息"
@@ -1862,6 +1859,7 @@ with tabs[0]:
                 df_news.columns = ["Source", "Headline", "Timestamp"]
                 st.dataframe(df_news, use_container_width=True)
                 st.caption(f"**Global Sources Tracked:** {', '.join(list(st.session_state.t5_sources))}")
+
 
 
 
