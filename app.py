@@ -1579,7 +1579,7 @@ with tabs[0]:
                     if not df_div_main.empty: raw_dividend_data = df_div_main.to_dict('records')
                 except: pass
 
-                if not raw_dividend_
+                if not raw_dividend_data:
                     try:
                         df_div_fallback = dl.taiwan_dividend() # 舊版 API 備援
                         df_div_fallback = df_div_fallback[df_div_fallback['stock_id'] == stock_code]
@@ -1589,7 +1589,7 @@ with tabs[0]:
                 # 🔬 解析資料與計算填息
                 valid_dividends = []
                 if raw_dividend_data and not df_price.empty:
-                    for div in raw_dividend_
+                    for div in raw_dividend_data:
                         # 兼容不同 API 版本的欄位名稱
                         cash_div = 0.0
                         for field in ['CashEarningsDistribution', 'cash_dividend', 'cash_dividend_per_share']:
@@ -1657,7 +1657,7 @@ with tabs[0]:
                     }
                     dividend_history = valid_dividends
 
-                status.success(f"✅ 辨識完成：{stock_code} {stock_name} | 歷史配息 {dividend_metrics.get('total_divs', 0)} 次")
+                status.success(f"✅ 辨識完成：{stock_code} {stock_name} | 歷史配息紀錄 {dividend_metrics.get('total_divs', 0)} 次")
             else:
                 status.warning(f"⚠️ 無法辨識代碼 {stock_code}")
         except Exception as e:
