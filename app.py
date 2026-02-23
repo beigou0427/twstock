@@ -1484,7 +1484,7 @@ import time
 import feedparser
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import yfinance as yf
 import streamlit as st
 
@@ -1521,9 +1521,9 @@ with tabs[0]:
     """, unsafe_allow_html=True)
 
     # =========================================================
-    # 1) Helpers (防呆全域函數，防 ValueError/KeyError)
+    # 1) Helpers (防呆全域函數)
     # =========================================================
-    def safe_format_num(val, default=0, decimals=2):
+    def safe_format_num(val, default=0.0, decimals=2):
         """安全將變數轉換為數字，失敗回傳 default，防 ValueError"""
         try:
             if val is None or val == "" or val == "N/A":
@@ -1575,7 +1575,7 @@ with tabs[0]:
     </div>
     """, unsafe_allow_html=True)
 
-    # 確保 S_current 與 ma20 變數存在，防 NameError
+    # 確保 S_current 與 ma20 變數存在 (假設主程式有傳入)
     _S_current = locals().get("S_current", 0)
     _ma20 = locals().get("ma20", 0)
     
@@ -1614,7 +1614,7 @@ with tabs[0]:
         dividend_metrics, dividend_history = {}, []
         is_etf = False
 
-        # FinMind
+        # FinMind (抓取產業與 ETF 辨識)
         try:
             from FinMind.data import DataLoader
             dl = DataLoader()
@@ -1633,7 +1633,7 @@ with tabs[0]:
         valuation, price_snapshot = {}, {}
         try:
             session = requests.Session()
-            session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'})
             yf_ticker = yf.Ticker(f"{stock_code}.TW", session=session)
             hist = yf_ticker.history(period="5y", auto_adjust=False)
             if hist.empty:
@@ -1651,13 +1651,20 @@ with tabs[0]:
                         "ret_approx_pct": safe_format_num((last_px/px_7d - 1)*100),
                     }
 
-                # 配息與填息計算 (ETF 跳過填息計算)
+                # 配息與填息計算 (ETF 跳過填息計算，避免追蹤誤差干擾)
                 divs = yf_ticker.dividends
                 if not divs.empty and not is_etf:
                     divs.index = divs.index.tz_localize(None)
                     today = pd.Timestamp(datetime.now().date())
                     past_divs = divs[divs.index <= today].sort_index(ascending=False)
                     
+                    future_divs = divs[divs.index > today].sort_index()
+                    next_ex_date_str = "尚未公告"
+                    next_cash_str = "-"
+                    if not future_divs.empty:
+                        next_ex_date_str = f"已公告：{future_divs.index[0].strftime('%Y-%m-%d')}"
+                        next_cash_str = f"{float(future_divs.iloc[0]):.2f} 元"
+
                     valid = []
                     for ex_date, cash_div in past_divs.head(10).items():
                         if cash_div <= 0: continue
@@ -1670,14 +1677,29 @@ with tabs[0]:
                             fill_df = post_ex_df[post_ex_df["Close"] >= ref_price]
                             if not fill_df.empty:
                                 fillback_days = int((fill_df.index[0] - ex_date).days)
-                        valid.append({"ex_date": ex_date.strftime("%Y-%m-%d"), "cash_dividend": float(cash_div), 
-                                      "yield_rate": yield_rate, "fillback_days": fillback_days})
+                        valid.append({
+                            "ex_date": ex_date.strftime("%Y-%m-%d"), 
+                            "cash_dividend": float(cash_div), 
+                            "yield_rate": yield_rate, 
+                            "fillback_days": fillback_days,
+                            "month": ex_date.month
+                        })
 
                     if valid:
                         filled = [d["fillback_days"] for d in valid if d["fillback_days"] != -1]
                         yields = [d["yield_rate"] for d in valid if d["yield_rate"] > 0]
+                        
+                        months_pattern = sorted(list(set([d['month'] for d in valid])))
+                        if next_ex_date_str == "尚未公告" and months_pattern:
+                            current_m = datetime.now().month
+                            future_m = [m for m in months_pattern if m > current_m]
+                            next_m = future_m[0] if future_m else months_pattern[0]
+                            next_ex_date_str = f"歷史預估：{next_m} 月"
+
                         dividend_metrics = {
                             "last_ex_date": valid[0]["ex_date"],
+                            "next_ex_date": next_ex_date_str,
+                            "next_cash": next_cash_str,
                             "avg_fillback": sum(filled)/len(filled) if filled else -1,
                             "avg_yield": sum(yields)/len(yields) if yields else 0.0,
                         }
@@ -1700,7 +1722,8 @@ with tabs[0]:
         rss_pool = {
             "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
             "工商時報": "https://ctee.com.tw/rss/all_news.xml",
-            "鉅亨網": "https://www.moneydj.com/rss/allnews.xml"
+            "鉅亨網": "https://www.moneydj.com/rss/allnews.xml",
+            "科技新報": "https://www.digitimes.com.tw/rss/rss.xml"
         }
         raw_news = []
         collected_sources = set()
@@ -1708,12 +1731,13 @@ with tabs[0]:
             try:
                 feed = feedparser.parse(url, request_headers={'User-Agent': 'Mozilla/5.0'})
                 if feed.entries: collected_sources.add(media)
-                for entry in feed.entries[:40]:
+                for entry in feed.entries[:30]:
                     raw_news.append({"media": media, "title": entry.title.strip()[:100]})
                 time.sleep(0.1)
             except: continue
         prog.progress(50)
 
+        # 核心防 Lost in the Middle：將新聞分層，限制 token 數量
         industry_kw = [stock_code, stock_name, "半導體", "AI", "營收", "配息", "外資", "法說"]
         priority_news = [n for n in raw_news if any(k in n['title'] for k in industry_kw if k)]
         other_news = [n for n in raw_news if n not in priority_news]
@@ -1753,7 +1777,7 @@ with tabs[0]:
             avg_f = safe_format_num(dividend_metrics.get('avg_fillback', -1), -1, 0)
             avg_y = safe_format_num(dividend_metrics.get('avg_yield', 0), 0, 2)
             f_str = f"{avg_f:.0f} 天" if avg_f != -1 else "樣本不足"
-            div_text = f"【yfinance 歷史配息】平均填息 {f_str}，均殖利率 {avg_y:.2f}%"
+            div_text = f"【yfinance 歷史配息】平均填息 {f_str}，均殖利率 {avg_y:.2f}%。下次預估：{dividend_metrics.get('next_ex_date', '尚未公告')}"
 
         val_text = f"Target Mean: {valuation.get('targetMeanPrice','N/A')} | Fwd P/E: {valuation.get('forwardPE','N/A')} | PEG: {valuation.get('pegRatio','N/A')}"
 
@@ -1857,7 +1881,7 @@ with tabs[0]:
 
         if not is_etf_d and metrics and hist_div:
             st.markdown("#### 🏦 Dividend Check")
-            d1, d2, d3 = st.columns(3)
+            d1, d2, d3, d4 = st.columns(4)
             d1.metric("上次除息日", metrics.get("last_ex_date", "—"))
             
             avg_f = safe_format_num(metrics.get("avg_fillback", -1), -1, 0)
@@ -1865,6 +1889,9 @@ with tabs[0]:
             
             avg_y = safe_format_num(metrics.get("avg_yield", 0), 0, 2)
             d3.metric("平均殖利率", f"{avg_y:.2f}%")
+            
+            next_cash = metrics.get("next_cash", None)
+            d4.metric("下次預估", metrics.get("next_ex_date", "—"), delta=next_cash if next_cash != "-" else None)
             
             df_h = pd.DataFrame(hist_div)[["ex_date", "cash_dividend", "yield_rate", "fillback_days"]]
             df_h["yield_rate"] = df_h["yield_rate"].apply(lambda x: f"{safe_format_num(x, 0, 2):.2f}%")
