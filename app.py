@@ -1489,6 +1489,30 @@ import streamlit as st
 
 with tabs[0]:
     # =========================================================
+    # 0) Helpers (防呆全域函數，放在最前面避免 NameError)
+    # =========================================================
+    def safe_format_num(val, default=0.0, decimals=2):
+        """安全將變數轉換為數字，失敗回傳 default，防 ValueError"""
+        try:
+            if val is None or val == "" or val == "N/A" or val == "-":
+                return default
+            num = float(val)
+            import pandas as pd
+            if pd.isna(num):
+                return default
+            return round(num, decimals)
+        except (ValueError, TypeError, AttributeError):
+            return default
+
+    def clean_md(text: str) -> str:
+        """清理 LLM 輸出的 Markdown 格式"""
+        if not text: return ""
+        import re
+        text = text.replace("\r\n", "\n")
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        text = re.sub(r"(?m)^(#{2,4} )", r"\n\1", text)
+        return text.strip()
+    # =========================================================
     # 0) Typography CSS（只調排版；不使用任何 background 色）
     # =========================================================
     st.markdown("""
