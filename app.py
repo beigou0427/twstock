@@ -1888,9 +1888,21 @@ with tabs[0]:
         # -----------------------------
         # Step C: Deep-dive prompt (content first)
         # -----------------------------
-        # --- C. Deep-Dive Prompt Engineering (機構級邏輯框架) ---
+            # -----------------------------
+        # Step C: Deep-dive prompt (content first)
+        # -----------------------------
         
-        # 1. 徹底防呆大盤與月線數值 (解決 NameError)
+        # ✅ 防呆 1: 確保所有依賴變數存在 (避免 NameError)
+        if 'news_block' not in locals():
+            news_block = "【新聞池】目前無相關新聞或抓取失敗，請專注於基本面與量化分析。"
+        if 'price_snapshot' not in locals():
+            price_snapshot = {}
+        if 'valuation' not in locals():
+            valuation = {}
+        if 'dividend_metrics' not in locals():
+            dividend_metrics = {}
+
+        # ✅ 防呆 2: 徹底防護大盤與月線數值 (解決 NameError)
         try:
             safe_S_current = float(S_current)
         except (NameError, ValueError, TypeError):
@@ -1903,7 +1915,7 @@ with tabs[0]:
 
         gap_pct = (safe_S_current - safe_ma20) / safe_ma20 * 100 if safe_ma20 > 0 else 0.0
 
-        # 2. 針對 ETF 與 個股 構建完全不同的分析框架
+        # ✅ 2. 針對 ETF 與 個股 構建完全不同的分析框架
         if is_etf:
             thesis_section = """
             ### 1) ETF Investment Thesis
@@ -1933,7 +1945,7 @@ with tabs[0]:
 
         val_text = f"Target Mean: {valuation.get('targetMeanPrice','N/A')} | Fwd P/E: {valuation.get('forwardPE','N/A')} | PEG: {valuation.get('pegRatio','N/A')}"
 
-        # 3. 組合 Prompt (導入 Chain-of-Thought 與 防幻覺機制)
+        # ✅ 3. 組合 Prompt (導入 Chain-of-Thought 與 防幻覺機制)
         ai_prompt = textwrap.dedent(f"""
         【思考步驟（Chain-of-Thought，請在心中完成，不要輸出在報告中）】
         Step 1: 確認估值 ({val_text}) 是否合理？將現價與 Target Mean 比較，判斷市場預期。
