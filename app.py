@@ -1836,76 +1836,154 @@ with tabs[0]:
         # -----------------------------
         # Step C: Deep-dive prompt (完整修復版)
         # -----------------------------
-        gap_pct = (_S - _MA) / _MA * 100 if _MA > 0 else 0.0
+        # -----------------------------
+        # Step C: Deep-dive prompt (content first)
+        # -----------------------------
+        
+        # 防呆：確保所有依賴變數存在
+        if 'news_block' not in locals():
+            news_block = "【新聞池】目前無相關新聞或抓取失敗，請專注於基本面與量化分析。"
+        if 'price_snapshot' not in locals():
+            price_snapshot = {}
+        if 'valuation' not in locals():
+            valuation = {}
+        if 'dividend_metrics' not in locals():
+            dividend_metrics = {}
 
+        # 防護大盤與月線數值
+        try:
+            safe_S_current = float(S_current)
+        except (NameError, ValueError, TypeError):
+            safe_S_current = 22000.0
+            
+        try:
+            safe_ma20 = float(ma20)
+        except (NameError, ValueError, TypeError):
+            safe_ma20 = 22000.0
+
+        gap_pct = (safe_S_current - safe_ma20) / safe_ma20 * 100 if safe_ma20 > 0 else 0.0
+
+        # 針對 ETF 與個股構建分析框架
         if is_etf:
             thesis_section = """
-### 1) ETF Investment Thesis
-- 核心曝險分析：此 ETF 主打什麼因子/產業？與大盤的本質差異？
-- Variant Perception：市場對此 ETF 成分股的共識是什麼？為何你認為市場太樂觀/悲觀？
-"""
+            ### 1) ETF Investment Thesis
+            - 核心曝險分析：此 ETF 主打什麼因子/產業？與大盤的本質差異？
+            - Variant Perception：市場對此 ETF 成分股的共識是什麼？為何你認為市場太樂觀/悲觀？
+            """
             supply_section = """
-### 3) Portfolio & Tracking Analysis
-- 依據新聞，推測其前大成分股目前的產業順/逆風。
-- 點出追蹤此類主題可能遇到的總經風險。
-"""
-            div_text = "【ETF】配息受成分股除息與市場波動雙重影響，請著重分析配息穩定性。"
+            ### 3) Portfolio & Tracking Analysis
+            - 依據新聞，推測其前大成分股目前的產業順/逆風。
+            - 點出追蹤此類主題可能遇到的總經風險。
+            """
+            div_text = "【ETF 提示】ETF 填息受成分股除息與市場波動雙重影響，請著重分析其配息穩定性與成分股殖利率變化。"
         else:
             thesis_section = """
-### 1) Investment Thesis (The "Why Now?")
-- 核心論點：用一句話定義目前的交易邏輯（例：「披著AI外皮的景氣循環股」）。
-- Variant Perception（異見點）：明確指出「華爾街共識目標價」背後的假設，並提出與市場不同的觀點。
-"""
+            ### 1) Investment Thesis (The "Why Now?")
+            - 核心論點：用一句話定義目前的交易邏輯（例如：「披著AI外皮的景氣循環股」）。
+            - Variant Perception（異見點）：明確指出「華爾街共識目標價」背後的假設是什麼？你為何反對或強烈同意？（必須提出與市場不同的觀點）。
+            """
             supply_section = """
-### 3) Supply Chain Dynamics
-【強制規範】只列出新聞池中「明確出現」的廠商名。若新聞未提，直接寫「無具體廠商資訊」。禁止杜撰。
-"""
+            ### 3) Supply Chain Dynamics
+            【強制規範】：先列出新聞池中「明確出現」的上下游公司名，才能推論。若新聞未提，直接寫「無具體廠商資訊」。禁止杜撰任何未在新聞中出現的廠商。
+            """
             avg_f = safe_format_num(dividend_metrics.get('avg_fillback', -1), -1, 0)
             avg_y = safe_format_num(dividend_metrics.get('avg_yield', 0), 0, 2)
             f_str = f"{avg_f:.0f} 天" if avg_f != -1 else "樣本不足"
-            div_text = f"平均填息 {f_str}，均殖利率 {avg_y:.2f}%。下次預估：{dividend_metrics.get('next_ex_date', '尚未公告')}"
+            div_text = f"【yfinance 歷史配息】平均填息 {f_str}，均殖利率 {avg_y:.2f}%。下次預估：{dividend_metrics.get('next_ex_date', '尚未公告')}"
 
-        val_text = (
-            f"Target Mean: {valuation.get('targetMeanPrice','N/A')} | "
-            f"Fwd P/E: {valuation.get('forwardPE','N/A')} | "
-            f"PEG: {valuation.get('pegRatio','N/A')}"
-        )
+        val_text = f"Target Mean: {valuation.get('targetMeanPrice','N/A')} | Fwd P/E: {valuation.get('forwardPE','N/A')} | PEG: {valuation.get('pegRatio','N/A')}"
 
         ai_prompt = textwrap.dedent(f"""
-        【思考步驟（Chain-of-Thought，請在心中完成，不要輸出）】
+        【思考步驟（Chain-of-Thought，請在心中完成，不要輸出在報告中）】
         Step 1: 確認估值 ({val_text}) 是否合理？將現價與 Target Mean 比較，判斷市場預期。
-        Step 2: 從新聞池中找出 2-3 個能支撐 Variant Perception 的證據，過濾掉雜訊。
+        Step 2: 從新聞池中找出 2-3 個能支撐 Variant Perception (異見點) 的證據。過濾掉雜訊。
         Step 3: 構思 Bull/Bear 兩個極端情境的「具體量化觸發條件」。
 
         【角色與撰寫規範】
-        你是對沖基金資深研究員，為 Portfolio Manager 撰寫 Deep-Dive 分析。
-        - 語氣：冷靜客觀、具批判性。拒絕廢話。
-        - 防幻覺：不確定的數字一律寫「無資料/有待驗證」，絕對禁止杜撰。
-        - 信心標注：每個論點後強制標注 [High Confidence]（有數據）或 [Low Confidence]（推演）。
-
-        【數據輸入錨點】
-        - 標的：{stock_code} {stock_name}｜{"ETF" if is_etf else "個股"}｜{industry}
+        你是一位對沖基金資深研究員，為 Portfolio Manager 撰寫一份 Deep-Dive 分析報告。
+        - 語氣：冷靜客觀、具批判性。拒絕廢話與泛泛之談。
+        - 防幻覺要求：對於不確定的數字或預測，一律寫『無資料/有待驗證』，絕對禁止杜撰。
+        - 信心標注：每個重要論點後，強制標注信心水準：[High Confidence] (有 yfinance 或新聞數據支撐) 或 [Low Confidence] (邏輯推演，無直接數據)。
+        
+        【數據輸入錨點（分析的基準）】
         - 價格位階：TAIEX 乖離 {gap_pct:+.2f}% | 近期報酬 {safe_format_num(price_snapshot.get('ret_approx_pct', 0), 0)}%
         - 估值共識：{val_text}
         - 股息特性：{div_text}
-
+        
         【情報來源（新聞池）】
         {news_block}
 
-        【強制輸出框架（只輸出以下 Markdown，不要加 ```markdown 標籤，不要自我介紹）】
+        【強制輸出框架（只輸出以下 Markdown，不要加上 ```markdown 標籤，也不要自我介紹）】
         {thesis_section}
 
         ### 2) Valuation & Scenario Analysis
-        - 估值評價：目前的 Fwd P/E 與 PEG 是否合理反映風險？
-        - 🟢 Bull Case：強制寫出「具體觸發條件」（例：Q3毛利率突破XX%）及估值影響。禁止模糊描述。
-        - 🔴 Bear Case：強制寫出「具體觸發條件」（例：客戶庫存遞延至下半年）及風險擴散路徑。
+        - 估值評價：目前的 Fwd P/E 與 PEG 是否合理反映了風險？
+        - 🟢 Bull Case（樂觀情境）：強制寫出「具體的觸發條件」（例：Q3毛利率突破XX%、或某產品提前上市）及其對估值的影響。
+        - 🔴 Bear Case（悲觀情境）：強制寫出「具體的觸發條件」（例：客戶庫存回補遞延至下半年）及風險擴散路徑。
 
         {supply_section}
 
         ### 4) Catalysts & Action Plan
-        - 近期催化劑：列出 2 個即將發生的事件並給出「判讀方式」（What to monitor）。
+        - 近期催化劑：列出 2 個即將發生的事件，並給出「判讀方式」。
         - 資金行動方案：這份報告的邏輯適合哪種操作？必須與 Thesis 邏輯一致。
         """)
+
+        # -----------------------------
+        # Step D: Groq call (修復解析錯誤)
+        # -----------------------------
+        status.info("🧠 深度研究推演中（LLM）...")
+        groq_analysis = None
+        groq_error = None
+
+        try:
+            from groq import Groq
+            import httpx
+            client = Groq(api_key=groq_key, http_client=httpx.Client())
+            
+            for model_name in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"]:
+                try:
+                    resp = client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "你是極度嚴謹的機構研究分析師。"
+                                    "不確定的數字一律寫「無資料/有待驗證」，禁止杜撰。"
+                                    "禁止列出未在新聞池標題中出現的公司名。"
+                                    "語氣：冷靜、結構化、可驗證。"
+                                )
+                            },
+                            {"role": "user", "content": ai_prompt},
+                        ],
+                        max_tokens=2400,
+                        temperature=0.25,
+                    )
+                    
+                    # ✅ 終極防呆解析方式：相容 SDK Object 與 Dictionary 回傳
+                    if hasattr(resp, "choices") and len(resp.choices) > 0:
+                        choice = resp.choices
+                        if hasattr(choice, "message"): # 新版 Groq SDK Object
+                            groq_analysis = choice.message.content
+                        elif isinstance(choice, dict) and "message" in choice: # Dictionary 解析
+                            groq_analysis = choice["message"]["content"]
+                        else:
+                            groq_analysis = str(choice)
+                    else:
+                        raise ValueError(f"Unexpected API response structure: {resp}")
+                        
+                    break # 如果成功取到內容，跳出多模型嘗試迴圈
+                    
+                except Exception as e:
+                    groq_error = str(e)
+                    continue # 嘗試下一個模型
+                    
+        except Exception as e:
+            groq_error = str(e)
+
+        prog.progress(100)
+        status.empty()
+
 
         # -----------------------------
         # ✅ Step D: Groq call (這是之前整個遺失的區塊！)
