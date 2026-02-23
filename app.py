@@ -1986,7 +1986,7 @@ with tabs[0]:
 
 
         # -----------------------------
-        # ✅ Step D: Groq call (這是之前整個遺失的區塊！)
+        # ✅ Step D: Groq call (徹底修復 list 解析錯誤)
         # -----------------------------
         status.info("🧠 深度研究推演中（LLM）...")
         groq_analysis = None
@@ -1996,6 +1996,7 @@ with tabs[0]:
             from groq import Groq
             import httpx
             client = Groq(api_key=groq_key, http_client=httpx.Client())
+            
             for model_name in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"]:
                 try:
                     resp = client.chat.completions.create(
@@ -2008,43 +2009,48 @@ with tabs[0]:
                                     "不確定的數字一律寫「無資料/有待驗證」，禁止杜撰。"
                                     "禁止列出未在新聞池標題中出現的公司名。"
                                     "語氣：冷靜、結構化、可驗證。"
-                                ),
+                                )
                             },
                             {"role": "user", "content": ai_prompt},
                         ],
                         max_tokens=2400,
                         temperature=0.25,
                     )
-                    groq_analysis = resp.choices.message.content
-                    break
+                    
+                    # ✅ 終極防呆解析：支援新舊 SDK、支援 Object/Dict 兩種型態
+                    if hasattr(resp, "choices") and isinstance(resp.choices, list) and len(resp.choices) > 0:
+                        choice = resp.choices[0]
+                        
+                        if isinstance(choice, dict):
+                            # 如果 choice 是 Dict
+                            message_obj = choice.get("message", {})
+                            if isinstance(message_obj, dict):
+                                groq_analysis = message_obj.get("content", "")
+                            else:
+                                groq_analysis = getattr(message_obj, "content", "")
+                                
+                        else:
+                            # 如果 choice 是 Object
+                            if hasattr(choice, "message"):
+                                groq_analysis = getattr(choice.message, "content", "")
+                            else:
+                                groq_analysis = str(choice)
+                    else:
+                        raise ValueError(f"Unexpected API response structure: {resp}")
+                        
+                    if groq_analysis: 
+                        break # 如果成功取到內容，跳出多模型嘗試迴圈
+                    
                 except Exception as e:
                     groq_error = str(e)
-                    continue
+                    continue # 嘗試下一個模型
+                    
         except Exception as e:
             groq_error = str(e)
 
         prog.progress(100)
         status.empty()
 
-        if groq_analysis:
-            st.session_state.update({
-                "t5_result": clean_md(groq_analysis),
-                "t5_stock_name": stock_name,
-                "t5_industry": industry,
-                "t5_news": final_news,
-                "t5_sources": collected_sources,
-                "t5_dividend_metrics": dividend_metrics,
-                "t5_dividend_history": dividend_history,
-                "t5_display_title": f"{stock_code} {stock_name}" if stock_name else stock_code,
-                "t5_is_etf": is_etf,
-                "t5_gap_pct": gap_pct,
-                "t5_valuation": valuation,
-                "t5_price_snapshot": price_snapshot,
-            })
-        else:
-            st.error("❌ AI 報告生成失敗")
-            if groq_error:
-                st.caption(f"Error: {groq_error}")
 
     # =========================================================
     # 4) Display (content-oriented; no background blocks)
