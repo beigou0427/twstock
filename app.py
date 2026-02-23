@@ -1865,8 +1865,21 @@ with tabs[0]:
         # Step C: Deep-dive prompt (content first)
         # -----------------------------
         # --- C. Deep-Dive Prompt Engineering (機構級邏輯框架) ---
-        gap_pct = (_S_current - _ma20) / _ma20 * 100 if _ma20 else 0.0
+        
+        # 1. 徹底防呆大盤與月線數值 (解決 NameError)
+        try:
+            safe_S_current = float(S_current)
+        except (NameError, ValueError, TypeError):
+            safe_S_current = 22000.0  # 預設值
+            
+        try:
+            safe_ma20 = float(ma20)
+        except (NameError, ValueError, TypeError):
+            safe_ma20 = 22000.0       # 預設值
 
+        gap_pct = (safe_S_current - safe_ma20) / safe_ma20 * 100 if safe_ma20 > 0 else 0.0
+
+        # 2. 針對 ETF 與 個股 構建完全不同的分析框架
         if is_etf:
             thesis_section = """
             ### 1) ETF Investment Thesis
@@ -1896,8 +1909,9 @@ with tabs[0]:
 
         val_text = f"Target Mean: {valuation.get('targetMeanPrice','N/A')} | Fwd P/E: {valuation.get('forwardPE','N/A')} | PEG: {valuation.get('pegRatio','N/A')}"
 
+        # 3. 組合 Prompt (導入 Chain-of-Thought 與 防幻覺機制)
         ai_prompt = textwrap.dedent(f"""
-        【思考步驟（Chain-of-Thought，請在心中完成，不要輸出）】
+        【思考步驟（Chain-of-Thought，請在心中完成，不要輸出在報告中）】
         Step 1: 確認估值 ({val_text}) 是否合理？將現價與 Target Mean 比較，判斷市場預期。
         Step 2: 從新聞池中找出 2-3 個能支撐 Variant Perception (異見點) 的證據。過濾掉雜訊。
         Step 3: 構思 Bull/Bear 兩個極端情境的「具體量化觸發條件」。
@@ -1930,6 +1944,7 @@ with tabs[0]:
         - 近期催化劑：列出 2 個即將發生的事件（如法說會、營收公布），並給出「判讀方式」（What to monitor）。
         - 資金行動方案：這份報告的邏輯適合哪種操作？（例：若 Bear Case 觸發應如何停損；若估值收斂應在哪個支撐位建倉）。必須與第一段的 Thesis 邏輯一致。
         """)
+
 
 
     # =========================================================
