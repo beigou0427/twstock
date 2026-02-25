@@ -1872,7 +1872,6 @@ with tabs[0]:
         prog.progress(65)
 
 
-```python
         # -----------------------------
         # Step C: Deep-dive prompt (content first)
         # -----------------------------
