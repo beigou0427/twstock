@@ -19,6 +19,12 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import random
 import httpx
+if not FINMIND_TOKEN:
+    st.error("❌ 請設定 FinMind Token！前往 https://finmindtrade.com 註冊")
+    st.stop()
+dl = DataLoader(); dl.login_by_token(FINMIND_TOKEN)
+test_df = dl.taiwan_stock_daily("TAIEX", start_date="2026-02-20")
+st.success(f"✅ Token OK！最新 TAIEX: {test_df['close'].iloc[-1]:,.0f}")
 
 # =========================================
 # 0. 自動跳轉 JS 函數 (完美修復版，支援 jump=5)
