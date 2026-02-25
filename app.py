@@ -19,12 +19,6 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import random
 import httpx
-if not FINMIND_TOKEN:
-    st.error("❌ 請設定 FinMind Token！前往 https://finmindtrade.com 註冊")
-    st.stop()
-dl = DataLoader(); dl.login_by_token(FINMIND_TOKEN)
-test_df = dl.taiwan_stock_daily("TAIEX", start_date="2026-02-20")
-st.success(f"✅ Token OK！最新 TAIEX: {test_df['close'].iloc[-1]:,.0f}")
 
 # =========================================
 # 0. 自動跳轉 JS 函數 (完美修復版，支援 jump=5)
@@ -78,6 +72,16 @@ auto_jump_to_tab()
 # 1. 初始化 & 設定
 # =========================================
 st.set_page_config(page_title="貝伊果屋-財富雙軌系統", layout="wide", page_icon="🥯")
+# 安全檢查 Token（放在 st.set_page_config 後）
+try:
+    FINMIND_TOKEN = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
+    st.info(f"🔑 Token 狀態: {'✅ 已設定' if FINMIND_TOKEN else '❌ 未設定'}")
+    if not FINMIND_TOKEN:
+        st.error("🚨 請在 .streamlit/secrets.toml 加: FINMIND_TOKEN = '你的token'\n或 Cloud 設定 Secrets")
+        # Fallback 繼續跑，但標紅警告
+except Exception as e:
+    st.error(f"Secrets 讀取失敗: {str(e)[:50]}...")
+    FINMIND_TOKEN = ""
 
 st.markdown("""
 <style>
