@@ -1908,7 +1908,6 @@ prog.progress(65)
 
 status.success(f"✅ Step B完成！產業：{industry} | 情緒：{news_emotion}% | 準備Step C報告生成")
 
-
         # =======================================================
         # Step C: 動態微觀邏輯引擎（Dynamic Micro-Metrics Engine）
         # =======================================================
@@ -2212,5 +2211,7 @@ status.success(f"✅ Step B完成！產業：{industry} | 情緒：{news_emotion
                 df_news = df_news.rename(columns={"media": "媒體", "title": "標題", "date": "時間"})
                 st.dataframe(df_news, use_container_width=True)
                 st.caption("Sources: " + ", ".join(sorted(list(st.session_state.get("t5_sources", set())))))
+
+
 
 
