@@ -1801,11 +1801,62 @@ with tabs[0]:
             status.warning(f"yfinance 略過：{e}")
 
         prog.progress(22)
-        # ----------------------------- 
-        # Step B: News pool
         # -----------------------------
-        status.info("🌐 全網新聞矩陣抓取中...")
+        # Step A 補充：抓取進階台股數據 (FinMind)
+        # -----------------------------
+        status.info("📊 抓取進階基本面與籌碼數據 (FinMind)...")
+        advanced_data = {
+            "revenue_yoy": "無資料",
+            "foreign_inv": "無資料",
+            "investment_trust": "無資料"
+        }
         
+        try:
+            from finmind.data import DataLoader
+            api = DataLoader()
+            
+            # 1. 抓取近兩個月營收 YoY
+            df_rev = api.taiwan_stock_month_revenue(
+                stock_id=stock_code, 
+                start_date=(datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+            )
+            if not df_rev.empty:
+                # 取得最新一筆的 YoY (如果有的話)
+                if 'revenue_YearOnYear_ratio' in df_rev.columns:
+                    latest_yoy = df_rev['revenue_YearOnYear_ratio'].iloc[-1]
+                    advanced_data["revenue_yoy"] = f"{latest_yoy:.2f}%"
+            
+            # 2. 抓取近 5 日三大法人買賣超 (觀察籌碼)
+            df_inst = api.taiwan_stock_institutional_investors(
+                stock_id=stock_code, 
+                start_date=(datetime.today() - timedelta(days=10)).strftime("%Y-%m-%d")
+            )
+            if not df_inst.empty:
+                # 計算外資與投信近 5 日累積買賣超
+                foreign_df = df_inst[df_inst['name'] == 'Foreign_Investor']
+                trust_df = df_inst[df_inst['name'] == 'Investment_Trust']
+                
+                if not foreign_df.empty:
+                    foreign_sum = foreign_df['buy_sell'].tail(5).sum()
+                    advanced_data["foreign_inv"] = f"{foreign_sum/1000:+.0f} 張"
+                if not trust_df.empty:
+                    trust_sum = trust_df['buy_sell'].tail(5).sum()
+                    advanced_data["investment_trust"] = f"{trust_sum/1000:+.0f} 張"
+                    
+        except Exception as e:
+            print(f"FinMind 數據抓取失敗: {e}")
+            pass # 若 FinMind API 失敗或無配額，維持「無資料」不中斷程式
+
+        prog.progress(40)
+
+
+        # ----------------------------- 
+        # Step B: News pool (動態產業擴展抓取)
+        # -----------------------------
+        status.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")
+        
+        collected_sources = set()
+        raw_news_pool = []
         mega_rss_pool = {
             "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
             "鉅亨網-台股": "https://www.moneydj.com/rss/allnews.xml",
@@ -1817,25 +1868,6 @@ with tabs[0]:
             "Yahoo Finance (個股)": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW"
         }
 
-        collected_sources = set()
-        raw_news_pool = []
-
-
-
-        
-        # 1. 擴充 RSS 來源 (包含全球與在地財經)
-        mega_rss_pool = {
-            "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
-            "鉅亨網-台股": "https://www.moneydj.com/rss/allnews.xml",
-            "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
-            "CNBC-科技": "https://www.cnbc.com/id/19854910/device/rss/rss.html",
-            "工商時報": "https://ctee.com.tw/rss/all_news.xml",
-            "經濟日報": "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
-            "科技新報": "https://www.digitimes.com.tw/rss/rss.xml",
-            "Yahoo Finance (個股)": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW",
-        }
-
-        raw_news_pool = []
         for media_name, rss_url in mega_rss_pool.items():
             try:
                 feed = feedparser.parse(rss_url)
@@ -1848,8 +1880,9 @@ with tabs[0]:
                         raw_news_pool.append({
                             "media": media_name,
                             "title": title,
-                            "date": entry.get("published", "即時")[:10], # 只取日期
+                            "date": entry.get("published", "即時")[:10],
                         })
+                        collected_sources.add(media_name)
                 time.sleep(0.05)
             except Exception:
                 continue
@@ -1857,23 +1890,21 @@ with tabs[0]:
         prog.progress(50)
         status.info(f"📥 抓取 {len(raw_news_pool)} 篇，啟動【產業關聯引擎】篩選...")
         
-        # 2. 動態產業關鍵字生成 (解決死板關鍵字問題)
         exact_keywords = [stock_code, stock_name]
         
-        # 根據 industry 變數動態賦予產業字庫
         ind_lower = str(industry).lower()
-        if any(x in ind_lower for x in ["半導體", "電子", "電腦", "光電", "零組件"]):
-            industry_keywords = [industry, "半導體", "AI", "台積電", "輝達", "Nvidia", "伺服器", "晶片", "供應鏈", "消費性電子", "庫存"]
-        elif any(x in ind_lower for x in ["金融", "保險", "銀行"]):
+        if any(x in ind_lower for x in ["半導體", "電子", "電腦", "光電", "零組件", "網通"]):
+            industry_keywords = [industry, "半導體", "AI", "台積電", "輝達", "Nvidia", "伺服器", "晶片", "供應鏈", "庫存", "蘋果"]
+        elif any(x in ind_lower for x in ["金融", "保險", "銀行", "證券"]):
             industry_keywords = [industry, "降息", "Fed", "殖利率", "外資", "金控", "放款", "避險", "壽險"]
         elif any(x in ind_lower for x in ["生技", "醫療"]):
             industry_keywords = [industry, "FDA", "解盲", "臨床", "授權", "醫材", "藥證"]
         elif any(x in ind_lower for x in ["資訊服務", "軟體"]):
-            industry_keywords = [industry, "雲端", "資安", "數位轉型", "軟體", "AI應用", "企業支出"]
+            industry_keywords = [industry, "雲端", "資安", "數位轉型", "微軟", "AWS", "企業支出"]
         else:
             industry_keywords = [industry, "資本支出", "需求復甦", "毛利率", "轉型", "供應鏈", "報價"]
 
-        macro_keywords = ["營收", "財報", "外資", "通膨", "關稅", "出口"]
+        macro_keywords = ["營收", "財報", "外資", "通膨", "關稅", "出口", "大盤"]
 
         priority_news, industry_news, macro_news = [], [], []
 
@@ -1886,12 +1917,10 @@ with tabs[0]:
             elif any(k.lower() in t for k in macro_keywords if k):
                 if n not in macro_news: macro_news.append(n)
 
-        # 3. 組合新聞池：強制拉高「產業新聞」的佔比
         max_news_limit = 150
         final_news = []
-        final_news.extend(priority_news) # 個股全拿
+        final_news.extend(priority_news)
         
-        # 保障至少 50% 的空間給產業新聞
         rem_industry = int(max_news_limit * 0.5) - len(final_news)
         if rem_industry > 0 and industry_news:
             final_news.extend(random.sample(industry_news, min(rem_industry, len(industry_news))))
@@ -1909,9 +1938,8 @@ with tabs[0]:
 
         prog.progress(65)
 
-
         # -----------------------------
-        # Step C: Deep-dive prompt (Top-Down 產業深度分析版)
+        # Step C: Deep-dive prompt (進階量化與質化整合版)
         # -----------------------------
         if dividend_metrics:
             avg_f = dividend_metrics.get("avg_fillback", -1)
@@ -1943,18 +1971,26 @@ with tabs[0]:
 - 近似短期報酬：{fmt(price_snapshot.get('ret_approx_pct'))}%
 """
 
+        # 將 FinMind 數據加入 AI 輸入
+        fundamental_chip_text = f"""
+【基本面與籌碼面 (FinMind 近期動態)】
+- 最新月營收 YoY：{advanced_data['revenue_yoy']}
+- 近 5 日外資買賣超：{advanced_data['foreign_inv']}
+- 近 5 日投信買賣超：{advanced_data['investment_trust']}
+"""
+
         gap_pct = (S_current - ma20) / ma20 * 100 if ma20 else 0.0
 
         ai_prompt = textwrap.dedent(f"""
-        你是外資券商的【產業首席分析師 (Sector Lead)】，專精於由上而下 (Top-Down) 的產業鏈分析。
-        你的報告必須展現宏觀視野，先分析產業大週期，再定位該公司的投資價值。
+        你是外資券商的【產業首席分析師 (Sector Lead)】，以「第二層思考 (Second-Level Thinking)」與「逆向投資」的精準洞察聞名。
+        你的報告必須超越「新聞摘要」，挖出市場共識（第一層思考）中的盲點，並指出真實的「預期差（Alpha）」。
 
         ════════════════════════════════════════
-        【🚨 專業紀律與防呆鐵律（違反即作廢）】
-        1. 產業視角優先：即使個股資料極少，也要利用新聞池中的「同業動態、上下游趨勢、總經環境」來支撐你的分析。
-        2. 無資料處理法：若估值 (P/E) 為「無資料」，絕對禁止將其解讀為「估值偏低/具吸引力」。請直接在估值段落聲明「因財測資料受限，本報告側重於產業趨勢與技術面動能評價」。
-        3. 嚴禁編造數字與指數：催化劑只能填真實的產業事件 (如：終端庫存去化、某大廠財報開出)；禁止發明「技術領先指數、產業風險指數」等假名詞。
-        4. 情境分析相對化：Scenario 嚴禁編造具體股價(如 2000元)，請使用「乖離率回到 0%」、「站穩/跌破 MA20」等相對條件。
+        【🚨 反偷懶與專業紀律鐵律（系統將嚴格稽核）】
+        1. 嚴禁鸚鵡學舌：絕對禁止在輸出中印出「某個產業雜音」、「某個利多新聞」這種代名詞！你必須從【新聞池】中抽出「真實的新聞事件/真實公司名」來替換！
+        2. 強制結合量化數據：論述時必須強制引用【基本面與籌碼面】的數據（營收 YoY、外資/投信買賣超）。例如：新聞報利多，但外資連 5 日賣超，這就是極佳的「預期差」題材。
+        3. 具體化要求：寫到「技術優勢」必須說明是良率、產能還是 IP？寫到「產業鏈風險」必須說明是庫存積壓、地緣政治還是終端消費降級？嚴禁寫空泛廢話。
+        4. 誠實面對缺漏：遇到「無資料」的欄位，請用一句「因財測資料受限，現階段側重技術面與籌碼動能定價」帶過，絕對不可用「無資料」來當作利多或利空的依據。
         ════════════════════════════════════════
 
         【標的與產業背景】
@@ -1962,61 +1998,56 @@ with tabs[0]:
         - 所屬產業：【{industry}】
         - 技術面：MA20 {ma20:.0f}｜乖離 {gap_pct:+.2f}%
 
-        【輸入資料 (有限數據，需結合產業新聞推導)】
+        【輸入資料 (你的量化基礎)】
         {price_text}
         {valuation_text}
+        {fundamental_chip_text}
         {dividend_ai_text}
 
-        【全球產業與個股新聞池】
+        【全球產業與個股新聞池 (你的質化基礎)】
         {news_summary}
 
         ════════════════════════════════════════
-        【輸出框架（請維持專業高盛風格，繁體中文）】
+        【輸出框架（請直接輸出標題與內容，展現頂級分析師的冷靜與犀利）】
         ════════════════════════════════════════
 
         ### 🏦 Sector View & Executive Summary｜產業觀點與摘要
-        - 產業週期判定：目前【{industry}】正處於 [復甦 / 擴張 / 庫存去化 / 衰退] 週期，主要特徵為 [引用 1 則產業新聞佐證]。
-        - 個股評級：【Buy / Neutral / Sell】 
-        - 核心邏輯：給予該評級的主因為其在產業中的 [站位/技術面乖離/短期動能] 表現 [說明]。
-        - 三大產業與投資亮點：（每點需結合產業與個股）
-          • [產業大勢，例：AI 資本支出外溢帶動次產業需求]
-          • [個股定位，例：Beta {fmt(valuation.get('beta'))} 顯示其相對產業的防禦/彈性特徵]
-          • [技術現況，例：乖離 {gap_pct:+.2f}% 提供明確的波段操作訊號]
+        - 評級與週期定調：給予【Buy / Neutral / Sell】評級。目前【{industry}】正處於 [請依據新聞池具體指出：例如 庫存回補初升段 / 資本支出過熱期 / 需求下修期]。
+        - 核心邏輯 (The "Why")：給予該評級的主因（必須結合：技術面乖離 {gap_pct:+.2f}% + 近期法人籌碼動向 + 最新營收 YoY 表現）。
+        - 三大變現亮點：（禁止空話，每點必須含具體數字與具體事件）
+          • 基本面與籌碼：[解讀最新營收 YoY {advanced_data['revenue_yoy']} 與三大法人近 5 日買賣超的訊號]
+          • 估值與技術面：[解讀 P/E 或乖離率，例：乖離顯示短期動能極強，但需留意獲利了結賣壓]
+          • 產業動能：[明確指出新聞池中哪一項真實需求正在擴張或萎縮]
 
-        ### 1) Sector Cycle & Themes｜產業週期與核心主題
-        - 驅動順風 (Tailwinds)：[引用新聞池中的產業大新聞]，此總經/產業趨勢將如何擴大【{industry}】的市場餅圖（TAM）或利潤率？
-        - 結構逆風 (Headwinds)：[引用新聞池中的隱憂，如關稅/特定需求轉弱]，這對產業供應鏈帶來什麼壓力？
-        - 資金流向推論：基於上述新聞情緒，推測目前市場資金對本產業是 [追逐成長 / 防禦避險 / 觀望撤出]。
+        ### 1) Variant Perception｜第二層思考與預期差 (核心精華)
+        - 第一層思考 (市場共識)：多數散戶與新聞標題目前普遍認為 [歸納新聞池中的表面情緒]。
+        - 第二層思考 (本報告洞見)：但本報告透過【籌碼面與營收數據】發現，市場忽略了 [請指出盲點，例如：利多新聞頻發但外資卻呈現賣超 / 或是營收已悄悄轉正但市場尚未發覺]。
+        - 預期差交易機會：因此，目前的真實操作機會在於 [賺取估值修復的錢 / 賺取動能噴出的錢 / 避開即將到來的回調]。
 
         ### 2) Value Chain & Positioning｜產業鏈站位與護城河
-        - 價值鏈定位：本標的在【{industry}】中扮演 [上游材料 / 中游製造 / 下游終端 / 服務整合] 角色，其議價能力在當前週期中屬於 [強/中/弱]。
-        - 同業與護城河：[若新聞有提及其他同業，請列出對比；若無，請推論其最難被新進者取代的營運壁壘]。
-        - 估值狀態：目前 P/E、P/B 為 [{fmt(valuation.get('trailingPE'))} / {fmt(valuation.get('priceToBook'))}]（若為無資料，請寫「因財測資料受限，現階段側重技術面與產業趨勢定價」）。
+        - 供應鏈壓力測試：根據新聞池動態，目前【{industry}】的利潤主要集中在 [上游/中游/下游]；本標的之議價能力在當前環境下受到 [正面/負面] 影響。
+        - 真實護城河：[依據產業常識，具體點出它的不可替代性，如：先進封裝產能壟斷 / 具備特許執照 / 通路市佔率極高。禁止寫「領導地位」]。
+        - 估值狀態：目前 P/E {fmt(valuation.get('trailingPE'))}、P/B {fmt(valuation.get('priceToBook'))}（若無資料，評估其目前的技術面與籌碼位階是否合理）。
 
-        ### 3) Investment Thesis｜投資論述 (Why this stock?)
-        - 買/賣此標的的理由：在當前的產業週期下，維持 [評級] 的主因是 [技術面乖離/短期報酬] 與 [某產業趨勢] 的共振。
-        - 市場盲點 (Variant Perception)：市場可能過度關注 [某個產業雜音]，但本報告認為 [深層邏輯]，這將提供預期差的交易機會。
+        ### 3) Scenario Analysis｜情境推演 (結合技術與真實產業事件)
+        - 🟢 Bull Case (資金狂熱)：若【{industry}】的 [引用新聞池中具體潛在利多] 確實驗證，且法人籌碼持續流入 → 預期將引發右側資金追價。
+        - 🟡 Base Case (基準路徑)：考量目前乖離率 {gap_pct:+.2f}%，最合理的走勢為於 MA20 附近震盪，等待次月營收公布。
+        - 🔴 Sell Case (風險擴散)：若發生 [引用新聞池中具體潛在利空]，導致法人籌碼轉為連續賣超且失守 MA20 防線 → 預期將引發停損賣壓。
 
-        ### 4) Scenario Analysis｜情境推演 (結合技術與產業)
-        - 🟢 Bull Case (樂觀)：若【{industry}】的 [某利多新聞] 持續發酵，且本標的乖離率維持強勢擴張/收斂至安全區 → 預期資金將加速流入本標的。
-        - 🟡 Base Case (基準)：維持現狀，乖離率 {gap_pct:+.2f}% 於 MA20 附近震盪，等待產業鏈進一步的營收指引。
-        - 🔴 Sell Case (悲觀)：若產業需求不如預期，且失守 MA20 防線 → 預期將引發停損賣壓。
-
-        ### 5) Sector Catalysts & Risks｜產業催化劑與風險矩陣
-        **待觀察的產業催化劑（請填寫真實財經事件）**
-        1. 【{industry}】龍頭廠/上下游的下季法說會指引（判斷庫存與需求）
-        2. 全球總經指標或政策（如：利率決議、出口數據對本產業的影響）
-        3. 本標的 MA20 乖離率與短期籌碼變化
+        ### 4) Catalysts & Risks｜催化劑與風險矩陣
+        **即將到來的真實催化劑（請具體寫出觀察項目）**
+        1. 籌碼連續性：觀察外資與投信是否能由賣轉買或延續買超力道。
+        2. 基本面驗證：下月營收 YoY 能否維持/突破目前的 {advanced_data['revenue_yoy']} 水準。
+        3. 產業事件：觀察 [請填入新聞池中提及的一項重要產業事件進展]。
 
         **風險矩陣（發生率 × 影響度）**
-        - 高發生率 × 高影響：[具體的產業鏈風險，如：終端需求下修]
-        - 中發生率 × 高影響：[公司特定或地緣政治黑天鵝]
-        - 高發生率 × 低影響：[短期的技術面乖離修正]
+        - 高發生率 × 高影響：[請從新聞池中挑出一個最核心的真實產業威脅]
+        - 中發生率 × 高影響：[總經層面的系統性風險或政策黑天鵝]
+        - 高發生率 × 低影響：獲利了結導致的技術面短期乖離修正
 
-        ### 6) Action Plan｜資金配置建議
-        - 建議策略：[基於評級與技術面，給出「分批建倉/觀望/逢高減碼」等建議]。
+        ### 5) Action Plan｜資金配置建議
+        - 建議策略：[結合評級、乖離率與籌碼現況，給出具體操作，例如「籌碼渙散且乖離過大，不建議追高」或「法人默默吃貨，可逢回測 MA20 佈局」]。
         - 適合投資人：適合 [短線動能 / 中長線產業趨勢 / 防禦收息] 佈局。
-        - 下次觀測重點：為完善模型，建議後續需重點追蹤 [某個營收或財報指標] 作為重新評估的依據。
         """)
 
 
