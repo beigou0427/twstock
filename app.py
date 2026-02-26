@@ -1871,8 +1871,12 @@ for source_name, rss_url in mega_rss_pool.items():
         status.warning(f"{source_name} RSS失敗：{e}")
 
 news_summary = " | ".join(raw_news_pool[:15])  # 濃縮版給Groq
+# 第1875行修復版
+try:
+    prog.progress(55)
+except:
+    pass
 
-prog.progress(55)
 
 # B2. 🔥 Groq智能產業校正 + 情緒分數（永不錯判）
 groq_result = {"industry": industry, "confidence": 0, "sentiment": 50, "reason": "無API"}
