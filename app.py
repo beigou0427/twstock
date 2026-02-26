@@ -1903,152 +1903,114 @@ with tabs[0]:
 
 
         # -----------------------------
-        # Step C: Deep-dive prompt (content first) - 解決無資料與邏輯死胡同版
+        # Step C: Deep-dive prompt (Top-Down 產業深度分析版)
         # -----------------------------
-        # Dividend block for AI
         if dividend_metrics:
             avg_f = dividend_metrics.get("avg_fillback", -1)
             avg_f_str = f"{avg_f:.0f} 天" if isinstance(avg_f, (int, float)) and avg_f != -1 else "樣本不足"
             mp = dividend_metrics.get("months_pattern", [])
             dividend_ai_text = f"""
 【配息/填息（yfinance）】
-- 上次除息日：{dividend_metrics.get('last_ex_date','無資料')}（距今 {dividend_metrics.get('days_since_last_ex',0)} 天）
 - 上次現金股利：{dividend_metrics.get('last_cash','無資料')}
-- 下次配息：{dividend_metrics.get('next_ex_date','尚未公告')}（預估：{dividend_metrics.get('next_cash','-')}）
 - 平均填息天數：{avg_f_str}
 - 平均單期殖利率：{dividend_metrics.get('avg_yield',0):.2f}%
-- 配息旺季：{', '.join([str(m)+'月' for m in mp]) if mp else '無明顯季節性/樣本不足'}
 """
         else:
-            dividend_ai_text = "【配息/填息】無足夠資料（可能為成長型或資料缺漏）。"
+            dividend_ai_text = "【配息/填息】無足夠資料。"
 
-        # Valuation block for AI
         def fmt(v, fallback="無資料"):
             return fallback if (v is None or v == "" or (isinstance(v, float) and pd.isna(v))) else str(v)
 
         valuation_text = f"""
 【估值/共識（yfinance info）】
-- 市值(Market Cap)：{fmt(valuation.get('marketCap'))}
 - Beta：{fmt(valuation.get('beta'))}
 - Trailing P/E：{fmt(valuation.get('trailingPE'))}
 - Forward P/E：{fmt(valuation.get('forwardPE'))}
-- PEG：{fmt(valuation.get('pegRatio'))}
 - P/B：{fmt(valuation.get('priceToBook'))}
-- 華爾街共識：{fmt(valuation.get('recommendationKey')).upper() if fmt(valuation.get('recommendationKey'))!='無資料' else '無資料'}
-- 目標價均值：{fmt(valuation.get('targetMeanPrice'))}
 """
 
-        # Price snapshot for AI
         price_text = f"""
 【價格快照（yfinance history）】
 - 最新收盤：{fmt(price_snapshot.get('last_price'))}
 - 近似短期報酬：{fmt(price_snapshot.get('ret_approx_pct'))}%
 """
 
-        supply_chain_section = (
-            """
-### 🧩 Portfolio & Exposure Analysis｜ETF 成分股結構與曝險
-- 產業曝險：僅能根據「新聞池標題」推導方向；每個產業結論後需括號標註對應新聞標題關鍵字。
-            """.strip()
-            if is_etf else
-            """
-### 🔗 Supply Chain Dynamics｜產業鏈供需
-- 僅允許列出新聞池中明確出現的「其他公司」，格式：公司名（新聞標題關鍵字）。若無，請輸出「本次新聞池未提供供應鏈資訊」。
-            """.strip()
-        )
-
-        # gap_pct (market context)
         gap_pct = (S_current - ma20) / ma20 * 100 if ma20 else 0.0
 
         ai_prompt = textwrap.dedent(f"""
-        你是頂級外資券商的資深股票研究分析師。請根據提供的數據與新聞，撰寫一份邏輯嚴密、無廢話的機構級投資報告。
+        你是外資券商的【產業首席分析師 (Sector Lead)】，專精於由上而下 (Top-Down) 的產業鏈分析。
+        你的報告必須展現宏觀視野，先分析產業大週期，再定位該公司的投資價值。
 
         ════════════════════════════════════════
-        【🚨 致命錯誤防護鐵律（違反即報告作廢）】
-        1. 處理「無資料」的最高原則：
-           - 絕對禁止將「無資料」解讀為「估值低」、「具防禦性」或任何利多/利空。
-           - 若 P/E、P/B 等估值指標為「無資料」，評級與論述【必須轉向】依賴「技術面（乖離率 {gap_pct:+.2f}%）」、「短期報酬」或「產業新聞趨勢」。
-           - 在報告中遇到無資料的欄位，請直接使用「因缺乏公開預估值，暫不提供倍數評價」這句專業術語帶過，【絕對不要】把「無資料」三個字印在報告的分析句子裡。
-        2. 嚴格的金融邏輯：
-           - 買入（Buy）理由不能是因為缺資料；必須是因為技術面突破、乖離收斂安全、或新聞有明確產業順風。
-           - Beta 值若缺失，不可說它有防禦性；乖離若為正（過熱），不可說是低估值。
-        3. 拒絕鸚鵡學舌：禁止在不同段落重複相同的句子。每個段落必須有獨特的切入點（如：段落 1 講產業大勢，段落 2 講技術面籌碼，段落 3 講估值或股利）。
-        4. 情境分析禁止捏造：Scenario 的觸發條件只能寫「乖離率回到 0%」、「突破近期箱型區間」等相對指標，嚴禁編造絕對股價。
+        【🚨 專業紀律與防呆鐵律（違反即作廢）】
+        1. 產業視角優先：即使個股資料極少，也要利用新聞池中的「同業動態、上下游趨勢、總經環境」來支撐你的分析。
+        2. 無資料處理法：若估值 (P/E) 為「無資料」，絕對禁止將其解讀為「估值偏低/具吸引力」。請直接在估值段落聲明「因財測資料受限，本報告側重於產業趨勢與技術面動能評價」。
+        3. 嚴禁編造數字與指數：催化劑只能填真實的產業事件 (如：終端庫存去化、某大廠財報開出)；禁止發明「技術領先指數、產業風險指數」等假名詞。
+        4. 情境分析相對化：Scenario 嚴禁編造具體股價(如 2000元)，請使用「乖離率回到 0%」、「站穩/跌破 MA20」等相對條件。
         ════════════════════════════════════════
 
-        【標的】
-        - 標的：{stock_code} {stock_name if stock_name else ''}
-        - 類型：{"ETF" if is_etf else "個股"}｜產業：{industry}
-        - 大盤：TAIEX {S_current:.0f}｜MA20 {ma20:.0f}｜乖離 {gap_pct:+.2f}%
+        【標的與產業背景】
+        - 標的：{stock_code} {stock_name if stock_name else ''} ({"ETF" if is_etf else "個股"})
+        - 所屬產業：【{industry}】
+        - 技術面：MA20 {ma20:.0f}｜乖離 {gap_pct:+.2f}%
 
-        【輸入資料（分析基礎）】
+        【輸入資料 (有限數據，需結合產業新聞推導)】
         {price_text}
         {valuation_text}
         {dividend_ai_text}
 
-        【全球新聞池】
+        【全球產業與個股新聞池】
         {news_summary}
 
         ════════════════════════════════════════
         【輸出框架（請維持專業高盛風格，繁體中文）】
         ════════════════════════════════════════
 
-        ### 🏦 Executive Summary｜封面摘要
-        - 評級：【Buy / Neutral / Sell】 (High/Medium/Low)
-        - 核心觀點：  
-          - 評級依據：[請基於有數據的指標（如乖離率、短期報酬、或新聞明確利多）給出 1 句核心理由，嚴禁提及無資料]。  
-          - 最大風險：[指出 1 個可能顛覆上述理由的變數]。
-        - 三大投資亮點：（每點 15 字以內，不重複）
-          • [技術面/籌碼面現況，例：乖離 +8.77% 顯示短期動能強勁]
-          • [產業新聞利多/利空，需引述新聞]
-          • [估值或防禦性評估；若無估值資料，改寫「需待下季財報更新財務模型」]
+        ### 🏦 Sector View & Executive Summary｜產業觀點與摘要
+        - 產業週期判定：目前【{industry}】正處於 [復甦 / 擴張 / 庫存去化 / 衰退] 週期，主要特徵為 [引用 1 則產業新聞佐證]。
+        - 個股評級：【Buy / Neutral / Sell】 
+        - 核心邏輯：給予該評級的主因為其在產業中的 [站位/技術面乖離/短期動能] 表現 [說明]。
+        - 三大產業與投資亮點：（每點需結合產業與個股）
+          • [產業大勢，例：AI 資本支出外溢帶動次產業需求]
+          • [個股定位，例：Beta {fmt(valuation.get('beta'))} 顯示其相對產業的防禦/彈性特徵]
+          • [技術現況，例：乖離 {gap_pct:+.2f}% 提供明確的波段操作訊號]
 
-        ### 1) Industry Context & Moat｜產業格局
-        - 產業順風：[引用 1 則新聞標題]，該趨勢對【{industry}】的實質影響為 [說明]。
-        - 產業逆風：[引用另一則新聞標題或宏觀常識]，潛在隱憂為 [說明]。
-        - 同業相對定位：相對於【{industry}】同業，本標的目前呈現 [動能強勁 / 價值修復 / 觀望] 狀態（依據乖離率與近期新聞判斷）。
+        ### 1) Sector Cycle & Themes｜產業週期與核心主題
+        - 驅動順風 (Tailwinds)：[引用新聞池中的產業大新聞]，此總經/產業趨勢將如何擴大【{industry}】的市場餅圖（TAM）或利潤率？
+        - 結構逆風 (Headwinds)：[引用新聞池中的隱憂，如關稅/特定需求轉弱]，這對產業供應鏈帶來什麼壓力？
+        - 資金流向推論：基於上述新聞情緒，推測目前市場資金對本產業是 [追逐成長 / 防禦避險 / 觀望撤出]。
 
-        ### 2) Investment Thesis｜投資論述
-        - 核心論述：維持 [評級] 看法，主要由 [技術面乖離/產業新聞順風] 所驅動。
-        - Variant Perception（市場盲點）：市場可能僅看到 [某新聞表面]，但本報告認為 [深層影響]，因為 [邏輯推導]。
-        - 關鍵監控變數：[1 個真實可查指標，例如營收 YoY 或 MA20 支撐]。
+        ### 2) Value Chain & Positioning｜產業鏈站位與護城河
+        - 價值鏈定位：本標的在【{industry}】中扮演 [上游材料 / 中游製造 / 下游終端 / 服務整合] 角色，其議價能力在當前週期中屬於 [強/中/弱]。
+        - 同業與護城河：[若新聞有提及其他同業，請列出對比；若無，請推論其最難被新進者取代的營運壁壘]。
+        - 估值狀態：目前 P/E、P/B 為 [{fmt(valuation.get('trailingPE'))} / {fmt(valuation.get('priceToBook'))}]（若為無資料，請寫「因財測資料受限，現階段側重技術面與產業趨勢定價」）。
 
-        ### 3) Evidence & Counter-evidence｜證據與反證
-        **【支持評級的證據】**
-        - 證據 1：[技術面或股價表現，例如乖離或短期報酬] ｜ 來源：價格快照
-        - 證據 2：[產業新聞利多/利空] ｜ 來源：[新聞標題片段]
-        - 證據 3：[估值、Beta 或目標價；若皆無資料，請改寫一則不同的新聞影響] ｜ 來源：[對應來源]
+        ### 3) Investment Thesis｜投資論述 (Why this stock?)
+        - 買/賣此標的的理由：在當前的產業週期下，維持 [評級] 的主因是 [技術面乖離/短期報酬] 與 [某產業趨勢] 的共振。
+        - 市場盲點 (Variant Perception)：市場可能過度關注 [某個產業雜音]，但本報告認為 [深層邏輯]，這將提供預期差的交易機會。
 
-        **【下修評級的觸發條件（反證）】**
-        - 風險觸發 1：若跌破 MA20 且乖離轉負，技術面轉弱將迫使評級下調。
-        - 風險觸發 2：若 [新聞中的某個趨勢反轉]，基本面邏輯將被破壞。
+        ### 4) Scenario Analysis｜情境推演 (結合技術與產業)
+        - 🟢 Bull Case (樂觀)：若【{industry}】的 [某利多新聞] 持續發酵，且本標的乖離率維持強勢擴張/收斂至安全區 → 預期資金將加速流入本標的。
+        - 🟡 Base Case (基準)：維持現狀，乖離率 {gap_pct:+.2f}% 於 MA20 附近震盪，等待產業鏈進一步的營收指引。
+        - 🔴 Sell Case (悲觀)：若產業需求不如預期，且失守 MA20 防線 → 預期將引發停損賣壓。
 
-        ### 4) Valuation & Technical｜技術與評價
-        - 技術面判斷：目前乖離率為 {gap_pct:+.2f}%，顯示短期處於 [過熱/中性/超賣]；MA20 目前視為關鍵 [支撐/壓力]。
-        - 估值水位：[若 P/E 為無資料，請填：「因缺乏近期公開預估值，暫不提供倍數評價，目前評級主要依賴技術與產業動能」；若有數字則正常解讀]。
-
-        ### 5) Scenario Analysis｜情境推演
-        - 🟢 Bull Case：若乖離率維持正向擴張且站穩 MA20 上方，配合產業順風發酵 → 預期將吸引右側資金進駐。
-        - 🟡 Base Case：維持當前 {gap_pct:+.2f}% 乖離率震盪，等待下一波財報或營收數據指引方向。
-        - 🔴 Sell Case：失守 MA20，短期籌碼鬆動引發停損賣壓 → 技術面將轉為空頭排列。
-
-        ### 6) Catalysts & Risk Matrix｜催化劑與風險矩陣
-        **待觀察催化劑（請填寫真實財報或經濟事件）**
-        1. 下月營收公布｜若優於預期則支持動能延續。
-        2. 產業法說會指引｜觀察【{industry}】庫存去化與資本支出狀況。
-        3. 技術面 MA20 保衛戰｜觀察回測支撐力道。
+        ### 5) Sector Catalysts & Risks｜產業催化劑與風險矩陣
+        **待觀察的產業催化劑（請填寫真實財經事件）**
+        1. 【{industry}】龍頭廠/上下游的下季法說會指引（判斷庫存與需求）
+        2. 全球總經指標或政策（如：利率決議、出口數據對本產業的影響）
+        3. 本標的 MA20 乖離率與短期籌碼變化
 
         **風險矩陣（發生率 × 影響度）**
-        - 高發生率 × 高影響：[總經變數或產業利空]
-        - 中發生率 × 高影響：[公司特定黑天鵝]
-        - 高發生率 × 低影響：[短期技術面回調]
+        - 高發生率 × 高影響：[具體的產業鏈風險，如：終端需求下修]
+        - 中發生率 × 高影響：[公司特定或地緣政治黑天鵝]
+        - 高發生率 × 低影響：[短期的技術面乖離修正]
 
-        {supply_chain_section}
-
-        ### 7) Action Plan｜行動方案
-        - 建議策略：[基於技術面與評級給出操作建議，例如「逢回測 MA20 佈局」或「乖離過大建議減碼」]。
-        - 下次更新觸發：強烈建議取得 [Trailing P/E 與 Forward P/E] 以完善基礎估值模型，在此之前部位控管應以技術面為準。
+        ### 6) Action Plan｜資金配置建議
+        - 建議策略：[基於評級與技術面，給出「分批建倉/觀望/逢高減碼」等建議]。
+        - 適合投資人：適合 [短線動能 / 中長線產業趨勢 / 防禦收息] 佈局。
+        - 下次觀測重點：為完善模型，建議後續需重點追蹤 [某個營收或財報指標] 作為重新評估的依據。
         """)
+
 
         # -----------------------------
         # Step D: Groq call (with fallback model)
