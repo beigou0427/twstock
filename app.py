@@ -1802,22 +1802,23 @@ with tabs[0]:
 
         prog.progress(22)
         # ----------------------------- 
-        # Step B: News pool (修復版)
+        # Step B: News pool
         # -----------------------------
         status.info("🌐 全網新聞矩陣抓取中...")
         
-        # 強制初始化所有變數
         mega_rss_pool = {
             "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
             "鉅亨網-台股": "https://www.moneydj.com/rss/allnews.xml",
             "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
             "CNBC-科技": "https://www.cnbc.com/id/19854910/device/rss/rss.html",
             "工商時報": "https://ctee.com.tw/rss/all_news.xml",
-            "經濟日報": "https://money.udn.com/rss/money
+            "經濟日報": "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
+            "科技新報": "https://www.digitimes.com.tw/rss/rss.xml",
+            "Yahoo Finance (個股)": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW"
+        }
 
-            collected_sources = set()
-            raw_news_pool
-
+        collected_sources = set()
+        raw_news_pool = []
 
 
 
