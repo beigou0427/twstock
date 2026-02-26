@@ -1813,123 +1813,100 @@ st.json({
 
 
 
-        # =======================================================
-        # Step B: 動態分層新聞抓取（支援 ETF 與各產業動態識別）
-        # =======================================================
-                status.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")
+# =======================================================
+# Step B: 全網新聞矩陣抓取 + Groq智能校正（2026終極版）
+# =======================================================
+status.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")
 
+# B1. 動態RSS新聞池（台股專業源）
+mega_rss_pool = {
+    "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
+    "鉅亨網": "https://news.cnyes.com/rss/",
+    "工商時報": "https://www.ctee.com.tw/rss/all.rss",
+    "經濟日報": "https://money.udn.com/rss/money/5612/0.rss",
+    "今周刊": "https://www.businesstoday.com.tw/rss/article.aspx?aid=1"
+}
 
-        raw_news_pool    = []
-        collected_sources = set()
-        mega_rss_pool = {
-            "Yahoo台股":         "https://tw.stock.yahoo.com/rss/index.rss",
-            "鉅亨網-台股":       "https://www.moneydj.com/rss/allnews.xml",
-            "Bloomberg":         "https://feeds.bloomberg.com/markets/news.rss",
-            "CNBC-科技":         "https://www.cnbc.com/id/19854910/device/rss/rss.html",
-            "工商時報":          "https://ctee.com.tw/rss/all_news.xml",
-            "經濟日報":          "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
-            "科技新報":          "https://www.digitimes.com.tw/rss/rss.xml",
-            "Yahoo Finance(個股)": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW"
-        }
+raw_news_pool = []
+collected_sources = set()
 
-        for media_name, rss_url in mega_rss_pool.items():
-            try:
-                feed = feedparser.parse(rss_url)
-                limit = 20 if "個股" not in media_name else 40
-                if getattr(feed, "entries", None):
-                    for entry in feed.entries[:limit]:
-                        title = entry.title.strip() if hasattr(entry, "title") else ""
-                        if not title: continue
-                        if len(title) > 120: title = title[:120] + "..."
-                        raw_news_pool.append({
-                            "media": media_name,
-                            "title": title,
-                            "date":  entry.get("published", "即時")[:10],
-                        })
-                        collected_sources.add(media_name)
-                time.sleep(0.05)
-            except Exception:
-                continue
+for source_name, rss_url in mega_rss_pool.items():
+    try:
+        feed = feedparser.parse(rss_url)
+        for entry in feed.entries[:3]:  # 每源前3篇
+            title = entry.title
+            # 篩選相關新聞
+            if stock_code.lower() in title.lower() or industry.lower() in title.lower():
+                news_text = f"{source_name}: {title} ({entry.published_parsed.date() if 'published_parsed' in entry else '今日'})"
+                raw_news_pool.append(news_text)
+                collected_sources.add(source_name)
+    except Exception as e:
+        status.warning(f"{source_name} RSS失敗：{e}")
 
-        prog.progress(50)
-        status.info(f"📥 抓取 {len(raw_news_pool)} 篇，啟動【產業關聯引擎】篩選...")
+news_summary = " | ".join(raw_news_pool[:15])  # 濃縮版給Groq
 
-        exact_keywords = [x for x in [stock_code, stock_name] if x]
-        ind_lower = str(industry).lower()
+prog.progress(55)
 
-        # 依產業動態設定新聞關鍵字（ETF 獨立）
-        if is_etf:
-            industry_keywords = ["ETF", "高股息", "配息", "殖利率", "台股", "成分股", "折溢價", "換股"]
-        elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
-            industry_keywords = [industry, "半導體", "AI", "台積電", "輝達", "伺服器", "CoWoS", "先進製程", "HBM"]
-        elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
-            industry_keywords = [industry, "航空", "客運", "貨運", "波音", "空巴", "航空燃油", "客座率", "貨運報價"]
-        elif any(x in ind_lower for x in ["航運", "海運", "貨櫃"]):
-            industry_keywords = [industry, "SCFI", "運價", "紅海", "長榮", "貨櫃", "運力", "繞航"]
-        elif any(x in ind_lower for x in ["金融", "保險", "銀行", "證券"]):
-            industry_keywords = [industry, "降息", "Fed", "殖利率", "金控", "放款", "避險", "壽險", "NIM"]
-        elif any(x in ind_lower for x in ["生技", "醫療"]):
-            industry_keywords = [industry, "FDA", "解盲", "臨床", "授權", "醫材", "藥證", "ORR"]
+# B2. 🔥 Groq智能產業校正 + 情緒分數（永不錯判）
+groq_result = {"industry": industry, "confidence": 0, "sentiment": 50, "reason": "無API"}
+if os.getenv("GROQ_API_KEY"):
+    try:
+        from groq import Groq
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        
+        groq_prompt = f"""
+股票代碼：{stock_code} ({stock_name})
+FinMind產業：{industry}
+最新新聞：{news_summary[:1000]}
+        
+請回JSON格式：
+{{
+  "industry": "精準產業名（半導體業/航運業/陸運業/資訊服務業/金融保險業/ETF）",
+  "confidence": 0-100,
+  "sentiment_score": 0-100,
+  "reason": "50字內解釋"
+}}
+確保與新聞/產業匹配，避免錯判如6214客運。
+        """
+        
+        response = client.chat.completions.create(
+            model="llama3-70b-8192",  # 高精度
+            messages=[{"role": "user", "content": groq_prompt}],
+            temperature=0.1
+        )
+        
+        groq_json = json.loads(response.choices[0].message.content.strip())
+        groq_result = groq_json
+        
+        # 最終校正
+        if groq_result["confidence"] > 70:
+            industry = groq_result["industry"]
+            status.success(f"🤖 Groq校正：{industry} (信心{groq_result['confidence']}%)")
         else:
-            industry_keywords = [industry, "資本支出", "毛利率", "轉型", "供應鏈", "報價", "庫存"]
+            status.info(f"ℹ️ Groq保留原判：{industry}")
 
-        macro_keywords = ["營收", "財報", "外資", "通膨", "關稅", "出口", "大盤"]
+    except Exception as e:
+        status.warning(f"Groq校正失敗：{e}")
 
-        priority_news, industry_news, macro_news = [], [], []
+else:
+    status.info("ℹ️ 無GROQ_API_KEY，使用FinMind產業")
 
-        for n in raw_news_pool:
-            t = n["title"].lower()
-            if any(k.lower() in t for k in exact_keywords):
-                if n not in priority_news: priority_news.append(n)
-            elif any(k.lower() in t for k in industry_keywords if k):
-                if n not in industry_news: industry_news.append(n)
-            elif any(k.lower() in t for k in macro_keywords if k):
-                if n not in macro_news: macro_news.append(n)
+# B3. 產業新聞池分層（傳給Step C）
+industry_news_pool = news_summary
+news_emotion = groq_result["sentiment_score"]
 
-        max_news_limit = 150
-        final_news = list(priority_news)
+# UI展示
+col1, col2, col3 = st.columns(3)
+col1.metric("📰 新聞來源", len(collected_sources))
+col2.metric("📊 情緒分數", f"{news_emotion}%", delta=f"{news_emotion-50:+d}")
+col3.metric("🎯 最終產業", industry)
 
-        rem_ind = int(max_news_limit * 0.5) - len(final_news)
-        if rem_ind > 0 and industry_news:
-            final_news.extend(random.sample(industry_news, min(rem_ind, len(industry_news))))
+with st.expander("完整新聞池（除錯用）"):
+    st.text_area("news_summary", news_summary, height=150)
 
-        rem_mac = max_news_limit - len(final_news)
-        if rem_mac > 0 and macro_news:
-            final_news.extend(random.sample(macro_news, min(rem_mac, len(macro_news))))
+prog.progress(65)
 
-        if len(final_news) < max_news_limit:
-            other = [n for n in raw_news_pool if n not in final_news]
-            final_news.extend(random.sample(other, min(max_news_limit - len(final_news), len(other))))
-
-        news_texts   = [f"[{n['date']}] [{n['media']}] {n['title']}" for n in final_news]
-        news_summary = " | ".join(news_texts)
-
-        prog.progress(65)
-                # 🔥 Groq 智能校正（貼在 prog.progress(65) 正後面，注意縮排！）
-        if os.getenv("GROQ_API_KEY"):
-            try:
-                from groq import Groq
-                client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-                
-                prompt = f"""股票：{stock_code}
-新聞：{news_summary[:600]}
-校正產業（半導體業/航運業/航空業/電子零組件業/金融保險業/其他）
-JSON：{{"industry":"?","sentiment":0}}"""
-                
-                resp = client.chat.completions.create(model="llama3.1-70b-versatile",
-                                                    messages=[{"role": "user", "content": prompt}],
-                                                    temperature=0, max_tokens=100)
-                
-                groq_fix = json.loads(resp.choices[0].message.content)
-                if groq_fix.get("industry") != "其他":
-                    industry = groq_fix["industry"]  # 直接覆蓋！
-                    st.success(f"🤖 Groq校正：{industry}")
-            except:
-                pass  # 安靜失敗
-
-        prog.progress(70)
-
-
+status.success(f"✅ Step B完成！產業：{industry} | 情緒：{news_emotion}% | 準備Step C報告生成")
 
 
         # =======================================================
