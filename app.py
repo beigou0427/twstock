@@ -1661,26 +1661,33 @@ with tabs[0]:
         dividend_metrics, dividend_history = {}, []
         is_etf = False
 
-        # A1) FinMind (name/industry/ETF hint)
+        # --- 優化：統一初始化 FinMind DataLoader 並登入 (避免重複登入與浪費額度) ---
+        dl = None
         try:
             from FinMind.data import DataLoader
             dl = DataLoader()
             if finmind_key:
                 dl.login_by_token(api_token=finmind_key)
-            df_info = dl.taiwan_stock_info()
-            row = df_info[df_info["stock_id"] == stock_code]
-            if not row.empty:
-                stock_name = str(row["stock_name"].iloc[0])
-                industry = str(row["industry_category"].iloc[0])
-
-                etf_kw = ["etf", "ETF", "指數股票型", "基金", "債券", "期信"]
-                is_etf = (
-                    any(k.lower() in industry.lower() for k in etf_kw)
-                    or any(k.lower() in stock_name.lower() for k in etf_kw)
-                    or stock_code.startswith("0")
-                )
         except Exception as e:
-            status.warning(f"FinMind 略過：{e}")
+            status.warning(f"FinMind 初始化失敗：{e}")
+
+        # A1) FinMind (name/industry/ETF hint)
+        if dl is not None:
+            try:
+                df_info = dl.taiwan_stock_info()
+                row = df_info[df_info["stock_id"] == stock_code]
+                if not row.empty:
+                    stock_name = str(row["stock_name"].iloc[0])
+                    industry = str(row["industry_category"].iloc[0])
+
+                    etf_kw = ["etf", "ETF", "指數股票型", "基金", "債券", "期信"]
+                    is_etf = (
+                        any(k.lower() in industry.lower() for k in etf_kw)
+                        or any(k.lower() in stock_name.lower() for k in etf_kw)
+                        or stock_code.startswith("0")
+                    )
+            except Exception as e:
+                status.warning(f"FinMind 標的辨識略過：{e}")
 
         # A2) yfinance (history/dividends/info)
         valuation = {}
@@ -1801,6 +1808,7 @@ with tabs[0]:
             status.warning(f"yfinance 略過：{e}")
 
         prog.progress(22)
+
         # -----------------------------
         # Step A 補充：抓取進階台股數據 (FinMind)
         # -----------------------------
@@ -1811,46 +1819,102 @@ with tabs[0]:
             "investment_trust": "無資料"
         }
         
-        try:
-            from finmind.data import DataLoader
-            api = DataLoader()
-            
-            # 1. 抓取近兩個月營收 YoY
-            df_rev = api.taiwan_stock_month_revenue(
-                stock_id=stock_code, 
-                start_date=(datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
-            )
-            if not df_rev.empty:
-                # 取得最新一筆的 YoY (如果有的話)
-                if 'revenue_YearOnYear_ratio' in df_rev.columns:
-                    latest_yoy = df_rev['revenue_YearOnYear_ratio'].iloc[-1]
-                    advanced_data["revenue_yoy"] = f"{latest_yoy:.2f}%"
-            
-            # 2. 抓取近 5 日三大法人買賣超 (觀察籌碼)
-            df_inst = api.taiwan_stock_institutional_investors(
-                stock_id=stock_code, 
-                start_date=(datetime.today() - timedelta(days=10)).strftime("%Y-%m-%d")
-            )
-            if not df_inst.empty:
-                # 計算外資與投信近 5 日累積買賣超
-                foreign_df = df_inst[df_inst['name'] == 'Foreign_Investor']
-                trust_df = df_inst[df_inst['name'] == 'Investment_Trust']
+        # --- 優化：共用上方已登入的 dl 變數 ---
+        if dl is not None:
+            try:
+                from datetime import datetime, timedelta
                 
-                if not foreign_df.empty:
-                    foreign_sum = foreign_df['buy_sell'].tail(5).sum()
-                    advanced_data["foreign_inv"] = f"{foreign_sum/1000:+.0f} 張"
-                if not trust_df.empty:
-                    trust_sum = trust_df['buy_sell'].tail(5).sum()
-                    advanced_data["investment_trust"] = f"{trust_sum/1000:+.0f} 張"
+                # 1. 抓取近兩個月營收 YoY
+                df_rev = dl.taiwan_stock_month_revenue(
+                    stock_id=stock_code, 
+                    start_date=(datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+                )
+                if not df_rev.empty and 'revenue_YearOnYear_ratio' in df_rev.columns:
+                    # 優化：加上 .dropna() 避免最新一個月數值是 NaN 導致格式化報錯
+                    valid_yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
+                    if not valid_yoy.empty:
+                        latest_yoy = valid_yoy.iloc[-1]
+                        advanced_data["revenue_yoy"] = f"{latest_yoy:.2f}%"
+                
+                # 2. 抓取近 5 日三大法人買賣超 (觀察籌碼)
+                df_inst = dl.taiwan_stock_institutional_investors(
+                    stock_id=stock_code, 
+                    start_date=(datetime.today() - timedelta(days=10)).strftime("%Y-%m-%d")
+                )
+                if not df_inst.empty:
+                    # 計算外資與投信近 5 日累積買賣超
+                    foreign_df = df_inst[df_inst['name'] == 'Foreign_Investor']
+                    trust_df = df_inst[df_inst['name'] == 'Investment_Trust']
                     
-        except Exception as e:
-            print(f"FinMind 數據抓取失敗: {e}")
-            pass # 若 FinMind API 失敗或無配額，維持「無資料」不中斷程式
+                    if not foreign_df.empty:
+                        foreign_sum = foreign_df['buy_sell'].tail(5).sum()
+                        advanced_data["foreign_inv"] = f"{foreign_sum/1000:+.0f} 張"
+                    if not trust_df.empty:
+                        trust_sum = trust_df['buy_sell'].tail(5).sum()
+                        advanced_data["investment_trust"] = f"{trust_sum/1000:+.0f} 張"
+                        
+            except Exception as e:
+                print(f"FinMind 進階數據抓取失敗: {e}")
+
+        prog.progress(40)
+
+        # -----------------------------
+        # Step A 補充：抓取進階台股數據 (FinMind)
+        # -----------------------------
+        status.info("📊 抓取進階基本面與籌碼數據 (FinMind)...")
+        advanced_data = {
+            "revenue_yoy": "無資料",
+            "foreign_inv": "無資料",
+            "investment_trust": "無資料"
+        }
+        
+        # --- 優化：共用上方已登入的 dl 變數 ---
+        if dl is not None:
+            try:
+                from datetime import datetime, timedelta
+                import pandas as pd
+                
+                # 1. 抓取近兩個月營收 YoY
+                df_rev = dl.taiwan_stock_month_revenue(
+                    stock_id=stock_code, 
+                    start_date=(datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+                )
+                if not df_rev.empty and 'revenue_YearOnYear_ratio' in df_rev.columns:
+                    # 優化：加上 .dropna() 確保過濾掉 NaN 數值
+                    valid_yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
+                    if not valid_yoy.empty:
+                        latest_yoy = valid_yoy.iloc[-1]
+                        advanced_data["revenue_yoy"] = f"{latest_yoy:.2f}%"
+                
+                # 2. 抓取近 5 日三大法人買賣超 (觀察籌碼)
+                df_inst = dl.taiwan_stock_institutional_investors(
+                    stock_id=stock_code, 
+                    start_date=(datetime.today() - timedelta(days=15)).strftime("%Y-%m-%d")
+                )
+                if not df_inst.empty:
+                    # FinMind API 安全計算淨買賣超 (buy - sell)
+                    if 'buy' in df_inst.columns and 'sell' in df_inst.columns:
+                        df_inst['net_buy'] = df_inst['buy'] - df_inst['sell']
+                    else:
+                        df_inst['net_buy'] = df_inst['buy_sell'] if 'buy_sell' in df_inst.columns else 0
+
+                    foreign_df = df_inst[df_inst['name'] == 'Foreign_Investor']
+                    trust_df = df_inst[df_inst['name'] == 'Investment_Trust']
+                    
+                    if not foreign_df.empty:
+                        foreign_sum = foreign_df.tail(5)['net_buy'].sum()
+                        advanced_data["foreign_inv"] = f"{foreign_sum/1000:+.0f} 張"
+                    if not trust_df.empty:
+                        trust_sum = trust_df.tail(5)['net_buy'].sum()
+                        advanced_data["investment_trust"] = f"{trust_sum/1000:+.0f} 張"
+                        
+            except Exception as e:
+                print(f"FinMind 進階數據抓取失敗: {e}")
 
         prog.progress(40)
 
 
-        # ----------------------------- 
+        # -----------------------------  
         # Step B: News pool (動態產業擴展抓取)
         # -----------------------------
         status.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")
@@ -1870,6 +1934,8 @@ with tabs[0]:
 
         for media_name, rss_url in mega_rss_pool.items():
             try:
+                import feedparser
+                import time
                 feed = feedparser.parse(rss_url)
                 limit = 20 if "個股" not in media_name else 40 
                 if getattr(feed, "entries", None):
@@ -1906,6 +1972,7 @@ with tabs[0]:
 
         macro_keywords = ["營收", "財報", "外資", "通膨", "關稅", "出口", "大盤"]
 
+        import random
         priority_news, industry_news, macro_news = [], [], []
 
         for n in raw_news_pool:
@@ -1941,6 +2008,7 @@ with tabs[0]:
         # -----------------------------
         # Step C: Deep-dive prompt (進階量化與質化整合版)
         # -----------------------------
+        import textwrap
         if dividend_metrics:
             avg_f = dividend_metrics.get("avg_fillback", -1)
             avg_f_str = f"{avg_f:.0f} 天" if isinstance(avg_f, (int, float)) and avg_f != -1 else "樣本不足"
@@ -1955,6 +2023,7 @@ with tabs[0]:
             dividend_ai_text = "【配息/填息】無足夠資料。"
 
         def fmt(v, fallback="無資料"):
+            import pandas as pd
             return fallback if (v is None or v == "" or (isinstance(v, float) and pd.isna(v))) else str(v)
 
         valuation_text = f"""
@@ -2049,7 +2118,6 @@ with tabs[0]:
         - 建議策略：[結合評級、乖離率與籌碼現況，給出具體操作，例如「籌碼渙散且乖離過大，不建議追高」或「法人默默吃貨，可逢回測 MA20 佈局」]。
         - 適合投資人：適合 [短線動能 / 中長線產業趨勢 / 防禦收息] 佈局。
         """)
-
 
         # -----------------------------
         # Step D: Groq call (with fallback model)
