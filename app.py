@@ -1681,11 +1681,22 @@ with tabs[0]:
             "investment_trust": "無資料"
         }
 # =======================================================
-# Step A: 雙引擎辨識標的與進階數據抓取（終極完整版）
+# Step A: 雙引擎辨識標的與進階數據抓取（終極完整版 - 零錯誤版）
 # =======================================================
+# status防呆：自動fallback到st（解決NameError）
+try:
+    from status import status
+except ImportError:
+    import streamlit as st
+    class DummyStatus:
+        def info(self, msg): st.info(msg)
+        def success(self, msg): st.success(msg)
+        def warning(self, msg): st.warning(msg)
+    status = DummyStatus()
+
 status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
 
-# A0. 本地保險字典（關鍵熱門股）
+# A0. 本地保險字典（關鍵熱門股）- 完整保留
 local_industry_map = {
     "2330": ("台積電",    "半導體業"), "2454": ("聯發科",    "半導體業"),
     "2317": ("鴻海",      "半導體業"), "2303": ("聯電",      "半導體業"),
@@ -1701,7 +1712,7 @@ stock_name = stock_code
 industry = "未知產業"
 is_etf = False
 
-# 全域防呆變數
+# 全域防呆變數 - 完整保留
 advanced_data = {"revenue_yoy": "財報空窗期，暫不評估", "foreign_chips": "無顯著訊號"}
 price_snapshot = {}
 dividend_metrics = {}
@@ -1711,7 +1722,7 @@ if stock_code in local_industry_map:
     is_etf = (industry == "ETF")
     status.success(f"✅ 本地字典：{industry}")
 
-# A1. FinMind 雙API辨識
+# A1. FinMind 雙API辨識 - 完整保留
 dl = None
 finmind_key = st.secrets.get("finmind_key", "")  # 或你的finmind_key變數
 try:
@@ -1738,7 +1749,7 @@ except Exception as e:
 
 prog.progress(22)
 
-# A2. yfinance價格+估值（標準乖離）
+# A2. yfinance價格+估值（標準乖離）- 完整保留
 def safe_num(val, rd=2):
     try:
         return round(float(val), rd) if pd.notna(val) else None
@@ -1746,6 +1757,7 @@ def safe_num(val, rd=2):
         return None
 
 try:
+    import yfinance as yf
     yf_ticker = yf.Ticker(f"{stock_code}.TW")
     hist = yf_ticker.history(period="5y")
     if hist.empty:
@@ -1777,10 +1789,11 @@ try:
 except Exception as e:
     status.warning(f"yfinance略過：{e}")
 
-# A3. FinMind進階（營收+三大法人）
+# A3. FinMind進階（營收+三大法人）- 完整保留
 status.info("📊 抓取營收YoY與三大法人...")
 if dl:
     try:
+        from datetime import datetime, timedelta
         # 營收
         df_rev = dl.taiwan_stock_month_revenue(
             stock_id=stock_code,
@@ -1810,7 +1823,6 @@ st.json({
     "advanced_data": advanced_data,
     "dividend_metrics": dividend_metrics
 })
-
 
 
 # =======================================================
