@@ -1801,17 +1801,20 @@ with tabs[0]:
             status.warning(f"yfinance 略過：{e}")
 
         prog.progress(22)
-             # ----------------------------- 
-        # Step B: News pool (動態產業擴展抓取)
+        # ----------------------------- 
+        # Step B: News pool (修復版)
         # -----------------------------
-                # ----------------------------- 
-        # Step B: News pool (防呆版)
-        # -----------------------------
-        try:
-            status.info("🌐 全網新聞矩陣抓取中...")
-            
-            # 強制初始化所有變數
-            mega_rss_pool = {}
+        status.info("🌐 全網新聞矩陣抓取中...")
+        
+        # 強制初始化所有變數
+        mega_rss_pool = {
+            "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
+            "鉅亨網-台股": "https://www.moneydj.com/rss/allnews.xml",
+            "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
+            "CNBC-科技": "https://www.cnbc.com/id/19854910/device/rss/rss.html",
+            "工商時報": "https://ctee.com.tw/rss/all_news.xml",
+            "經濟日報": "https://money.udn.com/rss/money
+
             collected_sources = set()
             raw_news_pool
 
