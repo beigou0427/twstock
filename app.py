@@ -2024,36 +2024,35 @@ rev_text = fmt(advanced_data.get('revenue_yoy'))
 chip_text = fmt(advanced_data.get('foreign_chips'))
 pe_text = fmt(advanced_data.get('pe_ratio'))
 
-# C4. 完整高盛Prompt（你的框架+數字強制）
-ai_prompt = f"""
-你是高盛資深產業首席，嚴禁臆造數字，只用以下真實數據。
+# C4. 🔥終極高盛Prompt（強制數據填空+全框架保留）
+ai_prompt = f"""你是高盛資深產業首席，**強制引用以下真實數據填空**，無數據寫「穩定/中性」，嚴禁臆造數字。
 
 【標的】{stock_code} {stock_name} | {industry}
-【微觀框架】{industry_micro_logic}
-【數據】
-- 乖離：{gap_pct:+.2f}%
-- 營收：{rev_text}
-- 外資：{chip_text}
-- P/E：{pe_text}
-【新聞】{news_summary[:300]}
+【數據強制綁定】
+- 最新價：{price_snapshot.get('last_price', 'N/A')}元 (乖離 {advanced_data.get('ma20_deviation', '0%')})
+- P/E：{advanced_data.get('pe_ratio', 'N/A')} 
+- 年配：{dividend_metrics.get('avg_div', 'N/A')}元
+- 營收：{advanced_data.get('revenue_yoy', '月營穩定')}
+- 外資：{advanced_data.get('foreign_chips', '近週中性')}
 
-【輸出結構】
+【微觀框架】{industry_micro_logic}
+【新聞精華】{news_summary[:500]}  ← 強制引用至少2篇標題
+
+【輸出結構：每節≥2數據點，禁「無法評估」】
 ### Executive Summary
-評級+核心論述+三大亮點（綁定數字）
+評級（買入/持有/賣出）+核心論述+3亮點（綁定P/E/乖離/外資等數字）
 
 ### 1) Micro-Metrics
-{industry_micro_logic}解析
+完整解析{industry_micro_logic}，強制引用營收YoY+外資+P/E數據
 
 ### 2) Variant Perception
-市場共識 vs 本洞見
+市場共識vs本院數據洞見（外資連買/乖離訊號/新聞事件）
 
 ### 3) Valuation & Moat
-護城河+估值（用{pe_text}）
+P/E{advanced_data.get('pe_ratio', 'N/A')}同業比較+年配{dividend_metrics.get('avg_div', 'N/A')}元護城河
 
 ### 4) Action Plan
-具體建議（乖離{gap_pct:+.2f}%）
-風險矩陣（新聞事件）
-"""
+具體建議（乖離>5%買入<-5%賣出）+風險矩陣（新聞排序）"""
 
 # C5. Groq生成
 if os.getenv("GROQ_API_KEY"):
@@ -2075,6 +2074,7 @@ else:
     st.code(ai_prompt)
 
 status.success("🎉 高盛級報告生成完成！")
+
 # ----------------------------- 
 # Step D: Groq call (with fallback model) - 防無限循環終極版（完美縮排）
 # -----------------------------
