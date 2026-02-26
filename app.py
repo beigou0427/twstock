@@ -1801,72 +1801,123 @@ with tabs[0]:
             status.warning(f"yfinance 略過：{e}")
 
         prog.progress(22)
-
+        # ----------------------------- 
+        # Step B: News pool (優化：總經、產業、個股分層抓取)
         # -----------------------------
-        # Step B: News pool
-        # -----------------------------
-        status.info("🌐 全網新聞矩陣抓取中...")
+        status.info("🌐 全網新聞矩陣抓取中 (包含同業與產業動態)...")
+        
+        # 1. 擴充 RSS 來源：區分「個股特定」與「宏觀產業」
         mega_rss_pool = {
+            # 宏觀與總經 (不限定個股)
             "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
+            "鉅亨網-台股": "https://www.moneydj.com/rss/allnews.xml",
+            "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
+            "CNBC-科技": "https://www.cnbc.com/id/19854910/device/rss/rss.html", # 科技產業
+            
+            # 財經媒體全網
             "工商時報": "https://ctee.com.tw/rss/all_news.xml",
             "經濟日報": "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
             "科技新報": "https://www.digitimes.com.tw/rss/rss.xml",
-            "鉅亨網": "https://www.moneydj.com/rss/allnews.xml",
-            "CNBC": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-            "Yahoo Finance": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW,QQQ",
-            "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
+            
+            # 個股特定 (精準打擊)
+            "Yahoo Finance (個股)": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW",
         }
 
         raw_news_pool = []
         collected_sources = set()
+        
         for media_name, rss_url in mega_rss_pool.items():
             try:
                 feed = feedparser.parse(rss_url)
-                if getattr(feed, "entries", None):
-                    if len(feed.entries) > 0:
-                        collected_sources.add(media_name)
-                for entry in getattr(feed, "entries", [])[:50]:
-                    title = entry.title.strip() if hasattr(entry, "title") else ""
-                    if not title:
-                        continue
-                    if len(title) > 120:
-                        title = title[:120] + "..."
-                    raw_news_pool.append({
-                        "media": media_name,
-                        "title": title,
-                        "date": entry.get("published", "即時"),
-                    })
+                if getattr(feed, "entries", None) and len(feed.entries) > 0:
+                    collected_sources.add(media_name)
+                    
+                    # 依據來源性質設定抓取數量 (個股多抓，宏觀少抓精華)
+                    limit = 20 if "個股" not in media_name else 40 
+                    
+                    for entry in feed.entries[:limit]:
+                        title = entry.title.strip() if hasattr(entry, "title") else ""
+                        if not title:
+                            continue
+                        if len(title) > 120:
+                            title = title[:120] + "..."
+                        raw_news_pool.append({
+                            "media": media_name,
+                            "title": title,
+                            "date": entry.get("published", "即時"),
+                        })
                 time.sleep(0.05)
             except Exception:
                 continue
 
         prog.progress(50)
 
-        status.info(f"📥 抓取 {len(raw_news_pool)} 篇，開始篩選關聯性...")
-        keywords = [
-            stock_code, stock_name, industry,
-            "半導體", "AI", "供應鏈", "營收", "財報", "外資",
-            "股息", "除息", "配息", "殖利率",
+        status.info(f"📥 抓取 {len(raw_news_pool)} 篇，開始進行【分層關聯性】篩選...")
+        
+        # 2. 優化過濾邏輯：從「嚴格包含」改為「分層權重篩選」
+        # Level 1: 直接命中標的 (絕對保留)
+        exact_keywords = [stock_code, stock_name]
+        
+        # Level 2: 命中產業或重要競爭對手/上游 (保留一部分)
+        industry_keywords = [
+            industry, "半導體", "AI", "台積電", "輝達", "Nvidia", "蘋果", 
+            "供應鏈", "伺服器", "晶片", "雲端"
         ]
-        def hit(title: str) -> bool:
-            t = (title or "").lower()
-            for k in keywords:
-                if not k:
-                    continue
-                if str(k).lower() in t:
-                    return True
-            return False
+        
+        # Level 3: 命中總經或財報關鍵字 (保留一部分，用來寫宏觀順逆風)
+        macro_keywords = [
+            "營收", "財報", "外資", "股息", "殖利率", "降息", "Fed", "通膨", "關稅"
+        ]
 
-        priority_news = [n for n in raw_news_pool if hit(n["title"])]
+        priority_news = []
+        industry_news = []
+        macro_news = []
+
+        for n in raw_news_pool:
+            t = (n["title"]).lower()
+            
+            # 檢查是否直接命中個股
+            if any(str(k).lower() in t for k in exact_keywords if k):
+                if n not in priority_news:
+                    priority_news.append(n)
+                continue
+                
+            # 檢查是否命中產業/同業
+            if any(str(k).lower() in t for k in industry_keywords if k):
+                if n not in industry_news:
+                    industry_news.append(n)
+                continue
+                
+            # 檢查是否命中總經/財報
+            if any(str(k).lower() in t for k in macro_keywords if k):
+                if n not in macro_news:
+                    macro_news.append(n)
+
+        # 3. 組合最終新聞池：確保個股、產業、宏觀的比例 (避免被單一類別洗版)
         max_news_limit = 150
-        if len(priority_news) >= max_news_limit:
-            final_news = priority_news[:max_news_limit]
-        else:
-            other = [n for n in raw_news_pool if n not in priority_news]
-            remaining = max_news_limit - len(priority_news)
-            final_news = priority_news + random.sample(other, min(remaining, len(other)))
+        final_news = []
+        
+        # 優先放入所有個股新聞
+        final_news.extend(priority_news)
+        
+        # 補上產業與同業新聞 (最多補到總數的 70%)
+        rem_industry = int(max_news_limit * 0.7) - len(final_news)
+        if rem_industry > 0:
+            final_news.extend(random.sample(industry_news, min(rem_industry, len(industry_news))))
+            
+        # 補上總經新聞 (最多補滿)
+        rem_macro = max_news_limit - len(final_news)
+        if rem_macro > 0:
+            final_news.extend(random.sample(macro_news, min(rem_macro, len(macro_news))))
+            
+        # 如果還是不夠，隨機塞其他新聞
+        if len(final_news) < max_news_limit:
+            other = [n for n in raw_news_pool if n not in final_news]
+            remaining = max_news_limit - len(final_news)
+            final_news.extend(random.sample(other, min(remaining, len(other))))
 
-        news_texts = [f"[{n['media']}] {n['title']}" for n in final_news]
+        # 為了讓 AI 更有時間概念，把日期加進摘要裡
+        news_texts = [f"[{n['date'][:10]}] [{n['media']}] {n['title']}" for n in final_news]
         news_summary = " | ".join(news_texts)
 
         prog.progress(65)
