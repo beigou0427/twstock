@@ -1833,17 +1833,15 @@ st.json({
 
 
 # =======================================================
-# Step B: 全網新聞矩陣抓取 + Groq智能校正（2026終極版）
+# Step B: 全網新聞矩陣抓取 + Groq智能校正（2026終極版 - 全防呆）
 # =======================================================
-# Step B開頭加這行（取代原status.info那一行）
 status.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")
 
-# prog防呆（取代第1867行prog.progress(55)）
+# prog防呆
 try:
     prog.progress(55)
-except NameError:
-    pass  # 無prog變數自動略過
-
+except:
+    pass
 
 # B1. 動態RSS新聞池（台股專業源）
 mega_rss_pool = {
@@ -1859,6 +1857,7 @@ collected_sources = set()
 
 for source_name, rss_url in mega_rss_pool.items():
     try:
+        import feedparser
         feed = feedparser.parse(rss_url)
         for entry in feed.entries[:3]:  # 每源前3篇
             title = entry.title
@@ -1871,25 +1870,28 @@ for source_name, rss_url in mega_rss_pool.items():
         status.warning(f"{source_name} RSS失敗：{e}")
 
 news_summary = " | ".join(raw_news_pool[:15])  # 濃縮版給Groq
-# 第1875行修復版
+
+# 第1875行prog防呆
 try:
     prog.progress(55)
 except:
     pass
 
-
 # B2. 🔥 Groq智能產業校正 + 情緒分數（永不錯判）
-groq_result = {"industry": industry, "confidence": 0, "sentiment": 50, "reason": "無API"}
+groq_result = {"industry": industry, "confidence": 0, "sentiment_score": 50, "reason": "無API"}
+news_emotion = 50  # 全域預設
+
 if os.getenv("GROQ_API_KEY"):
     try:
         from groq import Groq
+        import json
         client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         
         groq_prompt = f"""
 股票代碼：{stock_code} ({stock_name})
 FinMind產業：{industry}
 最新新聞：{news_summary[:1000]}
-        
+
 請回JSON格式：
 {{
   "industry": "精準產業名（半導體業/航運業/陸運業/資訊服務業/金融保險業/ETF）",
@@ -1909,13 +1911,19 @@ FinMind產業：{industry}
         groq_json = json.loads(response.choices[0].message.content.strip())
         groq_result = groq_json
         
+        # 修復KeyError：安全取值
+        news_emotion = groq_result.get("sentiment_score", 50)
+        
         # 最終校正
-        if groq_result["confidence"] > 70:
+        if groq_result.get("confidence", 0) > 70:
             industry = groq_result["industry"]
-            status.success(f"🤖 Groq校正：{industry} (信心{groq_result['confidence']}%)")
+            status.success(f"🤖 Groq校正：{industry} (信心{groq_result.get('confidence',0)}%)")
         else:
             status.info(f"ℹ️ Groq保留原判：{industry}")
 
+    except json.JSONDecodeError:
+        status.warning("Groq回傳非JSON，使用預設")
+        news_emotion = 50
     except Exception as e:
         status.warning(f"Groq校正失敗：{e}")
 
@@ -1924,7 +1932,6 @@ else:
 
 # B3. 產業新聞池分層（傳給Step C）
 industry_news_pool = news_summary
-news_emotion = groq_result["sentiment_score"]
 
 # UI展示
 col1, col2, col3 = st.columns(3)
@@ -1935,9 +1942,13 @@ col3.metric("🎯 最終產業", industry)
 with st.expander("完整新聞池（除錯用）"):
     st.text_area("news_summary", news_summary, height=150)
 
-prog.progress(65)
+try:
+    prog.progress(65)
+except:
+    pass
 
 status.success(f"✅ Step B完成！產業：{industry} | 情緒：{news_emotion}% | 準備Step C報告生成")
+
 # =======================================================
 # Step C: 機構研究報告生成（產業微觀邏輯終極版）
 # =======================================================
