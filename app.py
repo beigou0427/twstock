@@ -2075,9 +2075,8 @@ else:
     st.code(ai_prompt)
 
 status.success("🎉 高盛級報告生成完成！")
-
 # ----------------------------- 
-# Step D: Groq call (with fallback model) - 防無限循環終極版
+# Step D: Groq call (with fallback model) - 防無限循環終極版（縮排修復）
 # -----------------------------
 status.info("🧠 深度研究推演中（LLM）...")
 
@@ -2129,26 +2128,16 @@ try:
 except Exception as e:
     groq_error = str(e)
 
-# ❌ 完全移除問題的st.rerun()
-# try:
-#     prog.progress(100)
-# except:
-#     pass
-# try:
-#     status.empty()
-# except AttributeError:
-#     st.rerun()  # 🚫 這行造成無限循環，已移除
-
-# ✅ 直接展示結果（無rerun）
+# ✅ 直接展示結果（無rerun，防無限循環）
 if groq_analysis:
-    # 簡化變數，避開複雜locals()
+    # 簡化變數
     report_content = groq_analysis if 'clean_md' not in globals() else clean_md(groq_analysis)
     
     st.markdown("## 🏦 **機構研究報告**")
     st.markdown(report_content)
-    st.download_button("📥 下載MD", report_content, f"{stock_code}_report.md")
+    st.download_button("📥 下載MD", report_content, f"{stock_code}_報告.md")
     
-    # 關鍵數據面板
+    # 關鍵數據面板（4空格縮排）
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("最新價", f"{price_snapshot.get('last_price', 'N/A')}元")
     col2.metric("MA20乖離", f"{advanced_data.get('ma20_deviation', 'N/A')}")
@@ -2156,17 +2145,15 @@ if groq_analysis:
     col4.metric("年配", f"{dividend_metrics.get('avg_div', 'N/A')}元")
     
     status.success("🎉 高盛級報告生成完成！")
-    
+
 else:
     st.error("❌ AI報告生成失敗")
     if groq_error:
         st.caption(f"錯誤：{groq_error}")
-    st.info("可使用台積電 +9.06%乖離 + PE30.1數據手動分析")
+    st.info("台積電關鍵數據：+9.06%乖離 | PE30.1 | 年配19元")
 
-# 🔓 解除鎖定
+# 🔓 解除鎖定（移除最後st.rerun防循環）
 st.session_state.generating_report = False
-st.rerun()  # ✅ 只在最後成功時執行一次
-
 
 
     # =========================================================
