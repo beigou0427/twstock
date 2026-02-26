@@ -2077,7 +2077,7 @@ else:
 status.success("🎉 高盛級報告生成完成！")
 
 # ----------------------------- 
-# Step D: Groq call (with fallback model) - 全防呆終極版
+# Step D: Groq call (with fallback model) - 全防呆終極版（模型修復）
 # -----------------------------
 status.info("🧠 深度研究推演中（LLM）...")
 groq_analysis = None
@@ -2087,8 +2087,8 @@ try:
     from groq import Groq
     import httpx
     client = Groq(api_key=groq_key, http_client=httpx.Client())
-    # try stronger model first; fallback to 8b if unavailable
-    for model_name in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"]:
+    # 🔥 2026最新可用模型（llama-3.1-70b-versatile已停用）
+    for model_name in ["llama-3.3-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant"]:
         try:
             resp = client.chat.completions.create(
                 model=model_name,
@@ -2133,18 +2133,18 @@ except AttributeError:
 # Step D輸出：session_state全更新（防呆版）
 if groq_analysis:
     # 防呆變數檢查
-    final_news = locals().get('final_news', news_summary) if 'news_summary' in locals() else ""
+    final_news = locals().get('final_news', getattr(locals().get('news_summary', ''), '')) if 'news_summary' in locals() else ""
     dividend_history = locals().get('dividend_history', [])
     valuation = locals().get('valuation', advanced_data)
     gap_pct = locals().get('gap_pct', price_snapshot.get('deviation_ma20_pct', 0))
     
     try:
         st.session_state.update({
-            "t5_result": clean_md(groq_analysis),  # 你的MD清理函數
+            "t5_result": clean_md(groq_analysis) if 'clean_md' in globals() else groq_analysis,  # 防clean_md未定義
             "t5_stock_name": stock_name,
             "t5_industry": industry,
             "t5_news": final_news,
-            "t5_sources": collected_sources,
+            "t5_sources": getattr(locals().get('collected_sources', set()), list(), []),
             "t5_dividend_metrics": dividend_metrics,
             "t5_dividend_history": dividend_history,
             "t5_display_title": f"{stock_code} {stock_name}" if stock_name else stock_code,
@@ -2165,7 +2165,7 @@ if groq_analysis:
         
     except Exception as e:
         st.error(f"session_state更新失敗：{e}")
-        st.markdown("## 原始報告")
+        st.markdown("## 原始報告（fallback）")
         st.markdown(groq_analysis)
         
 else:
@@ -2173,6 +2173,7 @@ else:
     if groq_error:
         st.caption(f"錯誤：{groq_error}")
     st.code(ai_prompt)  # fallback顯示prompt
+
 
 
     # =========================================================
