@@ -1664,19 +1664,20 @@ with tabs[0]:
         from datetime import datetime, timedelta
 
         # 所有變數強制初始化，避免任何 NameError
-        stock_name      = ""
-        industry        = "未知產業"
-        is_etf          = False
-        dl              = None
-        hist            = pd.DataFrame()
-        S_current       = 0.0
-        ma20            = 0.0
-        valuation       = {}
-        price_snapshot  = {}
+        stock_name       = ""
+        industry         = "未知產業"
+        is_etf           = False
+        dl               = None
+        hist             = pd.DataFrame()
+        S_current        = 0.0
+        ma20             = 0.0
+        valuation        = {}
+        price_snapshot   = {}
         dividend_metrics = {}
-        advanced_data   = {
-            "revenue_yoy": "無資料",
-            "foreign_inv": "無資料",
+        dividend_history = []   # ← 加這行！
+        advanced_data    = {
+            "revenue_yoy":      "無資料",
+            "foreign_inv":      "無資料",
             "investment_trust": "無資料"
         }
 
