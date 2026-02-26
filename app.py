@@ -1653,7 +1653,7 @@ with tabs[0]:
         prog = st.progress(0)
         status = st.empty()
         # =======================================================
-        # Step A: 雙引擎辨識標的與進階數據抓取
+        # 【統一安全宣告區】確保所有變數有初始值，不管 API 成功與否
         # =======================================================
         import yfinance as yf
         import pandas as pd
@@ -1663,41 +1663,79 @@ with tabs[0]:
         import feedparser
         from datetime import datetime, timedelta
 
-        status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
-        
-        # 建立本地保險字典 (涵蓋重要權值股與容易辨識失敗的標的)
-        local_industry_map = {
-            "2330": ("台積電", "半導體業"), "2454": ("聯發科", "半導體業"), 
-            "2317": ("鴻海", "半導體業"), "2603": ("長榮", "航運業"), 
-            "2609": ("陽明", "航運業"), "2610": ("華航", "航運業"),
-            "2618": ("長榮航", "航運業"), "2881": ("富邦金", "金融保險業"),
-            "2882": ("國泰金", "金融保險業"), "0050": ("元大台灣50", "ETF"),
-            "0056": ("元大高股息", "ETF"), "00878": ("國泰永續高股息", "ETF")
+        # 所有變數強制初始化，避免任何 NameError
+        stock_name      = ""
+        industry        = "未知產業"
+        is_etf          = False
+        dl              = None
+        hist            = pd.DataFrame()
+        S_current       = 0.0
+        ma20            = 0.0
+        valuation       = {}
+        price_snapshot  = {}
+        dividend_metrics = {}
+        advanced_data   = {
+            "revenue_yoy": "無資料",
+            "foreign_inv": "無資料",
+            "investment_trust": "無資料"
         }
-        
-        stock_name, industry = "", "未知產業"
-        is_etf = False
 
-        # 先用本地字典保底
+        # =======================================================
+        # Step A: 雙引擎辨識標的與進階數據抓取
+        # =======================================================
+        status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
+
+        # A0. 本地保險字典（FinMind 失敗時的最後防線）
+        local_industry_map = {
+            "2330": ("台積電",    "半導體業"),
+            "2454": ("聯發科",    "半導體業"),
+            "2317": ("鴻海",      "半導體業"),
+            "2303": ("聯電",      "半導體業"),
+            "2308": ("台達電",    "半導體業"),
+            "3711": ("日月光",    "半導體業"),
+            "2603": ("長榮",      "航運業"),
+            "2609": ("陽明",      "航運業"),
+            "2615": ("萬海",      "航運業"),
+            "2610": ("華航",      "航空業"),
+            "2618": ("長榮航",    "航空業"),
+            "2881": ("富邦金",    "金融保險業"),
+            "2882": ("國泰金",    "金融保險業"),
+            "2891": ("中信金",    "金融保險業"),
+            "2886": ("兆豐金",    "金融保險業"),
+            "2884": ("玉山金",    "金融保險業"),
+            "2002": ("中鋼",      "鋼鐵業"),
+            "1301": ("台塑",      "塑化業"),
+            "1303": ("南亞",      "塑化業"),
+            "1326": ("台化",      "塑化業"),
+            "2412": ("中華電",    "電信業"),
+            "3045": ("台灣大",    "電信業"),
+            "4904": ("遠傳",      "電信業"),
+            "6547": ("高端疫苗",  "生技醫療業"),
+            "4174": ("浩鼎",      "生技醫療業"),
+            "0050": ("元大台灣50",       "ETF"),
+            "0056": ("元大高股息",        "ETF"),
+            "00878": ("國泰永續高股息",   "ETF"),
+            "00919": ("群益台灣精選高息", "ETF"),
+            "00929": ("復華台灣科技優息", "ETF"),
+        }
+
         if stock_code in local_industry_map:
             stock_name, industry = local_industry_map[stock_code]
             is_etf = (industry == "ETF")
 
-        # 再用 FinMind 更新 (如果有的話)
-        dl = None
+        # A1. FinMind 辨識（覆蓋本地字典，若成功抓到的話）
         try:
             from finmind.data import DataLoader
             dl = DataLoader()
-            if finmind_key:  
+            if finmind_key:
                 dl.login_by_token(api_token=finmind_key)
-                
+
             df_info = dl.taiwan_stock_info()
             row = df_info[df_info["stock_id"] == stock_code]
             if not row.empty:
                 stock_name = str(row["stock_name"].iloc[0])
-                # 若 FinMind 抓到有效產業，才覆蓋
                 finmind_ind = str(row["industry_category"].iloc[0])
-                if finmind_ind and "未知" not in finmind_ind:
+                if finmind_ind and finmind_ind not in ["", "nan", "未知產業"]:
                     industry = finmind_ind
 
             etf_kw = ["etf", "ETF", "指數股票型", "基金", "債券", "期信"]
@@ -1707,31 +1745,125 @@ with tabs[0]:
                 or stock_code.startswith("0")
             )
         except Exception as e:
-            status.warning(f"FinMind 標的辨識異常，啟用本地備援：{e}")
+            status.warning(f"FinMind 標的辨識略過，已啟用本地備援：{e}")
+
+        # A2. yfinance 基礎數據（價格、估值、配息）
+        def safe_num(val, rd=2):
+            try:
+                v = float(val)
+                return round(v, rd) if not pd.isna(v) else None
+            except:
+                return None
+
+        try:
+            yf_ticker = yf.Ticker(f"{stock_code}.TW")
+            hist = yf_ticker.history(period="5y", auto_adjust=False)
+            if hist.empty:
+                yf_ticker = yf.Ticker(f"{stock_code}.TWO")
+                hist = yf_ticker.history(period="5y", auto_adjust=False)
+
+            if not hist.empty:
+                hist.index = hist.index.tz_localize(None)
+                close = hist["Close"].dropna()
+                if len(close) >= 2:
+                    last_px = float(close.iloc[-1])
+                    px_base = float(close.iloc[-min(len(close), 6)])
+                    ret_approx = (last_px / px_base - 1.0) * 100 if px_base else None
+                    S_current = last_px
+                    ma20 = float(close.tail(20).mean()) if len(close) >= 20 else last_px
+                    price_snapshot = {
+                        "last_price": safe_num(last_px, 2),
+                        "ret_approx_pct": safe_num(ret_approx, 2),
+                    }
+
+            # 配息
+            if yf_ticker is not None and not hist.empty:
+                divs = yf_ticker.dividends
+                if not divs.empty:
+                    latest_div = float(divs.iloc[-1])
+                    dividend_metrics = {
+                        "last_cash": round(latest_div, 2),
+                        "avg_yield": round(latest_div / S_current * 100, 2) if S_current > 0 else 0.0
+                    }
+
+            # 估值
+            if yf_ticker is not None:
+                info = yf_ticker.info or {}
+                valuation = {
+                    "beta":        safe_num(info.get("beta"), 2),
+                    "trailingPE":  safe_num(info.get("trailingPE"), 2),
+                    "forwardPE":   safe_num(info.get("forwardPE"), 2),
+                    "priceToBook": safe_num(info.get("priceToBook"), 2),
+                }
+        except Exception as e:
+            status.warning(f"yfinance 略過：{e}")
+
+        prog.progress(22)
+
+        # A3. FinMind 進階數據（月營收 YoY + 三大法人）
+        status.info("📊 抓取進階基本面與籌碼數據 (FinMind)...")
+
+        if dl is not None:
+            try:
+                df_rev = dl.taiwan_stock_month_revenue(
+                    stock_id=stock_code,
+                    start_date=(datetime.today() - timedelta(days=90)).strftime("%Y-%m-%d")
+                )
+                if not df_rev.empty and 'revenue_YearOnYear_ratio' in df_rev.columns:
+                    valid_yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
+                    if not valid_yoy.empty:
+                        advanced_data["revenue_yoy"] = f"{valid_yoy.iloc[-1]:.2f}%"
+            except Exception as e:
+                print(f"FinMind 月營收失敗: {e}")
+
+            try:
+                df_inst = dl.taiwan_stock_institutional_investors(
+                    stock_id=stock_code,
+                    start_date=(datetime.today() - timedelta(days=15)).strftime("%Y-%m-%d")
+                )
+                if not df_inst.empty:
+                    if 'buy' in df_inst.columns and 'sell' in df_inst.columns:
+                        df_inst['net_buy'] = df_inst['buy'] - df_inst['sell']
+                    else:
+                        df_inst['net_buy'] = df_inst.get('buy_sell', 0)
+
+                    foreign_df = df_inst[df_inst['name'] == 'Foreign_Investor']
+                    trust_df   = df_inst[df_inst['name'] == 'Investment_Trust']
+
+                    if not foreign_df.empty:
+                        f_sum = foreign_df.tail(5)['net_buy'].sum()
+                        advanced_data["foreign_inv"] = f"{f_sum/1000:+.0f} 張"
+                    if not trust_df.empty:
+                        t_sum = trust_df.tail(5)['net_buy'].sum()
+                        advanced_data["investment_trust"] = f"{t_sum/1000:+.0f} 張"
+            except Exception as e:
+                print(f"FinMind 法人籌碼失敗: {e}")
+
+        prog.progress(40)
 
 
         # =======================================================
-        # Step B: 動態分層新聞抓取 (支援 ETF 與各產業動態識別)
+        # Step B: 動態分層新聞抓取（支援 ETF 與各產業動態識別）
         # =======================================================
         status.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")
-        
+
+        raw_news_pool    = []
         collected_sources = set()
-        raw_news_pool = []
         mega_rss_pool = {
-            "Yahoo台股": "https://tw.stock.yahoo.com/rss/index.rss",
-            "鉅亨網-台股": "https://www.moneydj.com/rss/allnews.xml",
-            "Bloomberg": "https://feeds.bloomberg.com/markets/news.rss",
-            "CNBC-科技": "https://www.cnbc.com/id/19854910/device/rss/rss.html",
-            "工商時報": "https://ctee.com.tw/rss/all_news.xml",
-            "經濟日報": "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
-            "科技新報": "https://www.digitimes.com.tw/rss/rss.xml",
-            "Yahoo Finance (個股)": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW"
+            "Yahoo台股":         "https://tw.stock.yahoo.com/rss/index.rss",
+            "鉅亨網-台股":       "https://www.moneydj.com/rss/allnews.xml",
+            "Bloomberg":         "https://feeds.bloomberg.com/markets/news.rss",
+            "CNBC-科技":         "https://www.cnbc.com/id/19854910/device/rss/rss.html",
+            "工商時報":          "https://ctee.com.tw/rss/all_news.xml",
+            "經濟日報":          "https://money.udn.com/rss/money/1001/7247/udnrss2.0.xml",
+            "科技新報":          "https://www.digitimes.com.tw/rss/rss.xml",
+            "Yahoo Finance(個股)": f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={stock_code}.TW"
         }
 
         for media_name, rss_url in mega_rss_pool.items():
             try:
                 feed = feedparser.parse(rss_url)
-                limit = 20 if "個股" not in media_name else 40 
+                limit = 20 if "個股" not in media_name else 40
                 if getattr(feed, "entries", None):
                     for entry in feed.entries[:limit]:
                         title = entry.title.strip() if hasattr(entry, "title") else ""
@@ -1740,7 +1872,7 @@ with tabs[0]:
                         raw_news_pool.append({
                             "media": media_name,
                             "title": title,
-                            "date": entry.get("published", "即時")[:10],
+                            "date":  entry.get("published", "即時")[:10],
                         })
                         collected_sources.add(media_name)
                 time.sleep(0.05)
@@ -1749,23 +1881,25 @@ with tabs[0]:
 
         prog.progress(50)
         status.info(f"📥 抓取 {len(raw_news_pool)} 篇，啟動【產業關聯引擎】篩選...")
-        
-        exact_keywords = [stock_code, stock_name]
+
+        exact_keywords = [x for x in [stock_code, stock_name] if x]
         ind_lower = str(industry).lower()
-        
-        # 動態產業關鍵字 (ETF 獨立邏輯)
+
+        # 依產業動態設定新聞關鍵字（ETF 獨立）
         if is_etf:
-            industry_keywords = ["ETF", "高股息", "配息", "殖利率", "台股", "金融股", "傳產", "換股", "成分股", "折溢價"]
-        elif any(x in ind_lower for x in ["半導體", "電子", "晶圓"]):
-            industry_keywords = [industry, "半導體", "AI", "台積電", "輝達", "Nvidia", "伺服器", "晶片", "CoWoS", "先進製程"]
+            industry_keywords = ["ETF", "高股息", "配息", "殖利率", "台股", "成分股", "折溢價", "換股"]
+        elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
+            industry_keywords = [industry, "半導體", "AI", "台積電", "輝達", "伺服器", "CoWoS", "先進製程", "HBM"]
+        elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
+            industry_keywords = [industry, "航空", "客運", "貨運", "波音", "空巴", "航空燃油", "客座率", "貨運報價"]
         elif any(x in ind_lower for x in ["航運", "海運", "貨櫃"]):
-            industry_keywords = [industry, "SCFI", "運價", "紅海", "長榮", "貨櫃", "運力"]
+            industry_keywords = [industry, "SCFI", "運價", "紅海", "長榮", "貨櫃", "運力", "繞航"]
         elif any(x in ind_lower for x in ["金融", "保險", "銀行", "證券"]):
-            industry_keywords = [industry, "降息", "Fed", "殖利率", "外資", "金控", "放款", "避險", "壽險"]
+            industry_keywords = [industry, "降息", "Fed", "殖利率", "金控", "放款", "避險", "壽險", "NIM"]
         elif any(x in ind_lower for x in ["生技", "醫療"]):
-            industry_keywords = [industry, "FDA", "解盲", "臨床", "授權", "醫材", "藥證"]
+            industry_keywords = [industry, "FDA", "解盲", "臨床", "授權", "醫材", "藥證", "ORR"]
         else:
-            industry_keywords = [industry, "資本支出", "需求復甦", "毛利率", "轉型", "供應鏈", "報價"]
+            industry_keywords = [industry, "資本支出", "毛利率", "轉型", "供應鏈", "報價", "庫存"]
 
         macro_keywords = ["營收", "財報", "外資", "通膨", "關稅", "出口", "大盤"]
 
@@ -1773,7 +1907,7 @@ with tabs[0]:
 
         for n in raw_news_pool:
             t = n["title"].lower()
-            if any(k.lower() in t for k in exact_keywords if k):
+            if any(k.lower() in t for k in exact_keywords):
                 if n not in priority_news: priority_news.append(n)
             elif any(k.lower() in t for k in industry_keywords if k):
                 if n not in industry_news: industry_news.append(n)
@@ -1781,153 +1915,174 @@ with tabs[0]:
                 if n not in macro_news: macro_news.append(n)
 
         max_news_limit = 150
-        final_news = []
-        final_news.extend(priority_news)
-        
-        rem_industry = int(max_news_limit * 0.5) - len(final_news)
-        if rem_industry > 0 and industry_news:
-            final_news.extend(random.sample(industry_news, min(rem_industry, len(industry_news))))
-            
-        rem_macro = max_news_limit - len(final_news)
-        if rem_macro > 0 and macro_news:
-            final_news.extend(random.sample(macro_news, min(rem_macro, len(macro_news))))
-            
+        final_news = list(priority_news)
+
+        rem_ind = int(max_news_limit * 0.5) - len(final_news)
+        if rem_ind > 0 and industry_news:
+            final_news.extend(random.sample(industry_news, min(rem_ind, len(industry_news))))
+
+        rem_mac = max_news_limit - len(final_news)
+        if rem_mac > 0 and macro_news:
+            final_news.extend(random.sample(macro_news, min(rem_mac, len(macro_news))))
+
         if len(final_news) < max_news_limit:
             other = [n for n in raw_news_pool if n not in final_news]
             final_news.extend(random.sample(other, min(max_news_limit - len(final_news), len(other))))
 
-        news_texts = [f"[{n['date']}] [{n['media']}] {n['title']}" for n in final_news]
+        news_texts   = [f"[{n['date']}] [{n['media']}] {n['title']}" for n in final_news]
         news_summary = " | ".join(news_texts)
 
         prog.progress(65)
 
 
-         # =======================================================
-        # Step C: 動態微觀邏輯引擎 (Dynamic Micro-Metrics Engine)
         # =======================================================
-        import textwrap
-        import pandas as pd
-        
-        # 1. 安全防呆：確保所有需要的變數都存在 (避免 NameError)
-        if 'advanced_data' not in locals():
-            advanced_data = {"revenue_yoy": "無資料", "foreign_inv": "無資料", "investment_trust": "無資料"}
-        if 'valuation' not in locals() or valuation is None:
-            valuation = {}
-        if 'S_current' not in locals():
-            S_current = 0.0
-        if 'ma20' not in locals():
-            ma20 = 0.0
+        # Step C: 動態微觀邏輯引擎（Dynamic Micro-Metrics Engine）
+        # =======================================================
 
-        def fmt(v, fallback="無資料"):
-            return fallback if (v is None or v == "" or (isinstance(v, float) and pd.isna(v))) else str(v)
-
-        # 2. 決定產業微觀思考框架 (動態切換)
-        ind_lower = str(industry).lower()
+        # C1. 決定產業微觀思考框架
         industry_micro_logic = ""
-        
         if is_etf:
             industry_micro_logic = """
             【ETF 專屬分析框架】
-            重點分析其核心成分股所屬產業的總經環境、法人資金流向、折溢價狀況，以及配息除息帶動的資金效應。
+            1. 追蹤標的與權重：分析其核心成分股產業的總經環境（如高股息的金融/傳產/科技權重分布）。
+            2. 資金流向：分析法人籌碼動向、折溢價狀況，以及配息除息帶動的資金效應。
+            3. 嚴禁事項：嚴禁將單一個股（如 Nvidia）的利多直接視為高股息 ETF 的唯一驅動。
             """
         elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
             industry_micro_logic = """
             【半導體專屬分析框架】
-            1. 技術：必須評估先進製程 (如 3nm) 的良率，或先進封裝 (如 CoWoS) 的產能瓶頸。
-            2. 供需：分析「晶圓代工稼動率」與下游客戶的「庫存去化天數」。
+            1. 技術迭代：評估先進製程（如 2nm/3nm）的良率與轉換成本，或先進封裝（CoWoS）的產能瓶頸。
+            2. 供需動態：分析晶圓代工稼動率（Utilization rate）與下游客戶的庫存去化天數。
+            3. 資本支出：評估 Capex/Sales 比率，判斷是過度投資還是精準擴產。
             """
         elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
             industry_micro_logic = """
             【航空業專屬分析框架】
-            1. 客運：強制分析客運載客率 (Load Factor) 與單位收益 (Yield)。
-            2. 貨運：分析航空貨運急單報價與 FTK (貨運噸公里)。
-            3. 成本：分析航空燃油避險比例與波音/空巴交機延遲對運力的影響。
+            1. 客運：強制分析客運載客率（Load Factor）與單位收益（Yield）的趨勢。
+            2. 貨運：分析航空貨運急單報價（如 AI 伺服器包機）與 FTK（貨運噸公里）。
+            3. 成本：分析航空燃油避險比例（Jet Fuel Hedge）與波音/空巴交機延遲對可用運力的影響。
+            4. 嚴禁：禁止討論海運 SCFI 指數，此標的為航空公司而非海運公司！
             """
         elif any(x in ind_lower for x in ["航運", "海運", "貨櫃"]):
             industry_micro_logic = """
             【海運業專屬分析框架】
             1. 運價：強制引用 SCFI/CCFI 運價趨勢，區分「長約價」與「現貨價」。
-            2. 運力：評估新船交付運力、船舶閒置率及紅海繞航等實質運力折損。
+            2. 運力：評估新船交付運力（TEU capacity）、閒置率及紅海繞航的實質運力折損。
+            3. 成本：分析燃油成本（Bunker costs）與環保法規（CII/EEXI）壓力。
             """
-        elif any(x in ind_lower for x in ["金融", "銀行"]):
+        elif any(x in ind_lower for x in ["金融", "銀行", "保險"]):
             industry_micro_logic = """
             【金融業專屬分析框架】
-            分析 NIM (淨利差) 的擴張/收斂、LDR (放款餘額成長)，以及 ROE (股東權益報酬率)。
+            1. 利差：在目前利率循環下，分析 NIM（淨利差）擴張/收斂與放款餘額成長（LDR）。
+            2. 資產品質：評估 NPL（逾期放款比率）與備抵呆帳覆蓋率。
+            3. 資本結構：分析 ROE（股東權益報酬率）與配息能力。
+            """
+        elif any(x in ind_lower for x in ["生技", "製藥", "醫療"]):
+            industry_micro_logic = """
+            【生技新藥專屬分析框架】
+            1. 臨床數據：分析 Phase I/II/III 試驗的 ORR（客觀緩解率）、PFS（無進展存活期）。
+            2. 商業化：評估 TAM（總潛在市場）及 FDA 孤兒藥或突破性療法資格。
+            3. 資金：分析現金消耗率（Cash burn rate）與授權金（Milestone payments）。
             """
         else:
             industry_micro_logic = """
             【一般產業分析框架】
-            分析原物料報價轉嫁能力 (Cost Pass-through)、毛利率變化、以及通路庫存水位。
+            1. 成本與報價：分析原物料報價轉嫁能力（Cost Pass-through）與毛利率變化。
+            2. 產能與庫存：評估稼動率（Capacity Utilization）與通路庫存水位（Channel Inventory）。
+            3. 終端需求：分析主要應用市場的資本支出週期或消費降級影響。
             """
 
-        # 3. 數據字串清洗 (消滅「無資料」這三個字印在報告上)
+        # C2. 數據字串清洗（消滅「無資料」印在報告上）
+        def fmt(v, fallback="無資料"):
+            return fallback if (
+                v is None or v == "" or
+                (isinstance(v, float) and pd.isna(v))
+            ) else str(v)
+
         rev_yoy = advanced_data.get('revenue_yoy', '無資料')
-        f_inv = advanced_data.get('foreign_inv', '無資料')
-        
-        # 把醜陋的「無資料」轉換為機構分析師的「專業口吻」
-        rev_text = rev_yoy if rev_yoy != "無資料" else "因逢財報空窗期，暫不評估短期營收動能"
-        chip_text = f_inv if f_inv != "無資料" else "目前無顯著外資進出訊號，以技術面判定為主"
+        f_inv   = advanced_data.get('foreign_inv', '無資料')
+        t_inv   = advanced_data.get('investment_trust', '無資料')
+
+        rev_text  = rev_yoy if rev_yoy != "無資料" else "因逢財報空窗期，暫不評估短期營收動能，側重技術面定價"
+        chip_text = f_inv   if f_inv   != "無資料" else "目前無顯著外資進出訊號，以技術面與產業邏輯為主要判斷依據"
+        trust_text = t_inv  if t_inv   != "無資料" else "投信籌碼數據更新中"
 
         fundamental_chip_text = f"""
 【量化數據動態】
 - 營收動能：{rev_text}
-- 外資籌碼：{chip_text}
+- 外資籌碼（近5日）：{chip_text}
+- 投信籌碼（近5日）：{trust_text}
 """
 
-        gap_pct = (S_current - ma20) / ma20 * 100 if ma20 else 0.0
+        last_cash = dividend_metrics.get('last_cash', None)
+        avg_yield = dividend_metrics.get('avg_yield', None)
+        if last_cash:
+            dividend_ai_text = f"【配息】上次現金股利：{last_cash}｜殖利率估算：{avg_yield:.2f}%"
+        else:
+            dividend_ai_text = "【配息】目前處於配息空窗期，殖利率具下檔保護功能。"
 
-        # 4. 組裝最終 AI Prompt
+        gap_pct = (S_current - ma20) / ma20 * 100 if ma20 and ma20 != 0 else 0.0
+
+        # C3. 組裝最終 AI Prompt
         ai_prompt = textwrap.dedent(f"""
-        你是頂尖外資券商的【產業首席分析師 (Sector Lead)】。
+        你是頂尖外資券商的【產業首席分析師 (Sector Lead)】。你的報告必須讓該領域的基金經理人 (PM) 感到驚艷，展現極深度的產業微觀理解與第二層思考。
 
         ════════════════════════════════════════
         【🚨 致命錯誤防護鐵律（系統嚴格稽核）】
-        1. 嚴禁鸚鵡學舌：報告中【絕對不可以】出現「無資料」這三個字！如果看到數據缺失，請用「目前逢財報空窗期，側重技術面與產業新聞估值」帶過。
-        2. 嚴禁發明標題：禁止直接複製框架中的 `[某個利多新聞]`，你必須從【新聞池】抽出真實的新聞事件與名詞！
-        3. 嚴守產業邏輯：本標的是 {stock_name}，產業為【{industry}】。
-           {industry_micro_logic}
+        1. 嚴禁出現「無資料」三個字：若數據缺失，請用「目前逢財報空窗期，側重技術面與產業新聞定價」帶過。
+        2. 嚴禁鸚鵡學舌：絕對禁止直接印出框架中的 `[某個利多新聞]`，你必須從【新聞池】抽出真實的事件與公司名。
+        3. 嚴守產業邏輯：本標的是「{stock_name}」，產業為【{industry}】。請嚴格套用下方的產業框架，禁止混用其他產業的指標！
+        4. 誠實面對缺漏：遇到數據不足的欄位，請用一句專業口吻帶過，絕對不可用缺漏數據作為利多或利空的依據。
         ════════════════════════════════════════
 
+        【產業深度強制要求】
+        {industry_micro_logic}
+
         【標的與輸入資料】
-        - 標的：{stock_code} {stock_name if stock_name else ''} 
-        - 產業：【{industry}】 ({"ETF" if is_etf else "個股"})
-        【價格快照】最新收盤：{fmt(S_current)}｜MA20 乖離率：{gap_pct:+.2f}%
-        【估值】P/E：{fmt(valuation.get('trailingPE'))}｜P/B：{fmt(valuation.get('priceToBook'))}
+        - 標的：{stock_code} {stock_name}（{"ETF" if is_etf else "個股"}）
+        - 產業：【{industry}】
+        - 最新收盤：{fmt(S_current)}｜MA20 乖離率：{gap_pct:+.2f}%
+        - P/E：{fmt(valuation.get('trailingPE'))}｜P/B：{fmt(valuation.get('priceToBook'))}
         {fundamental_chip_text}
-        
-        【全球新聞池 (提取事件用)】
+        {dividend_ai_text}
+
+        【全球新聞池（提取具體事件用）】
         {news_summary}
 
         ════════════════════════════════════════
-        【輸出框架（請直接輸出標題與內容）】
+        【輸出框架（請直接輸出標題與內容，展現頂級分析師的冷靜與犀利）】
         ════════════════════════════════════════
-        
+
         ### 🏦 Sector View & Executive Summary｜產業觀點與摘要
-        - 評級與週期定調：給予【Buy / Neutral / Sell】評級。目前產業正處於 [請依據微觀邏輯，如：客運復甦期 / 庫存去化尾聲]。
-        - 核心論述：基於 [具體的微觀指標，例如客運收益提升 / SCFI有撐 / 稼動率回溫]，配合技術面乖離 {gap_pct:+.2f}%，給出此評級。
+        - 評級與週期定調：給予【Buy / Neutral / Sell】評級。目前產業正處於 [請依據產業微觀邏輯具體指出，如：客運復甦加速期 / CoWoS 產能出貨初期 / 運力過剩整理期]。
+        - 核心論述：基於 [具體微觀指標，如客運收益提升/稼動率回溫]，配合技術面乖離 {gap_pct:+.2f}%，給出此評級。
         - 三大變現亮點：
-          • 營收與籌碼：[解讀輸入資料中的營收動能與外資籌碼，若逢空窗期則強調技術面]
-          • 估值與位階：[解讀 P/E 或乖離率位階，提示動能或獲利了結賣壓]
-          • 產業動能：[明確指出新聞池中哪一項具體指標正在惡化或轉佳]
-        
+          • 營收與籌碼：[解讀輸入資料中的營收動能與法人籌碼，若空窗期則強調技術面位階]
+          • 估值與位階：[解讀 P/E 或乖離率位階，提示動能延續或獲利了結賣壓]
+          • 產業動能：[明確指出新聞池中哪一項具體事件正在驅動或拖累這個產業]
+
         ### 1) Micro-Metrics & Industry Dynamics｜微觀指標與產業動態
-        - 關鍵指標解析：根據本產業特性，目前的 [請填入對應產業的核心指標，例如：客運載客率 / CoWoS產能 / 運價] 表現如何？新聞事件對此有何影響？
-        - 供需與資本結構：[分析產能、運力供給或資金流向的變化]。
-        
-        ### 2) Variant Perception｜預期差與資金動向 (核心精華)
-        - 第一層思考 (市場共識)：市場普遍被新聞池中的 [引用具體新聞事件] 吸引。
-        - 第二層思考 (本報告洞見)：但透過交叉比對，我們發現市場忽略了 [指出具體盲點，例如：交機延遲反而限制供給有助票價 / 利多未反映在財報上]。
-        - 預期差交易機會：因此，目前真實操作機會在於 [賺取估值修復 / 避開回調]。
-        
+        - 關鍵指標解析：根據本產業框架，目前的 [請填入對應產業的核心指標] 表現如何？從新聞池中哪件具體事件可以驗證此趨勢？
+        - 供需與資本結構：[使用產業框架中的詞彙，分析產能、庫存、運力或資金流向的變化]。
+
+        ### 2) Variant Perception｜預期差與資金動向（核心精華）
+        - 第一層思考（市場共識）：市場普遍被 [從新聞池中引用一個具體的表面事件或情緒] 吸引。
+        - 第二層思考（本報告洞見）：但透過籌碼面與產業數據交叉比對，我們發現市場忽略了 [指出具體盲點，如：利多未反映財報/交機延遲反限制供給/利空遭錯殺]。
+        - 預期差交易機會：因此，目前真實操作機會在於 [賺取估值修復 / 動能延續 / 避開即將到來的回調]。
+
         ### 3) Valuation & Moat｜估值與護城河
-        - 核心護城河：[必須寫出絕對優勢，如：優質航線分配權 / 先進製程專利 / 高股息抗跌性]。
-        - 估值狀態：目前的 P/E 或 P/B 相對於其微觀指標的成長性是否合理？
-        
+        - 核心護城河：[嚴禁寫空泛的「領導地位」！必須寫出絕對的競爭優勢，如：特定航線壟斷的時刻帶分配權 / CoWoS 產能全球唯一 / 高股息選股邏輯的下檔殖利率保護]。
+        - 估值狀態：目前 P/E、P/B 相對於其微觀指標的成長性，是溢價、折價還是合理？（若為 ETF，請評估殖利率吸引力）
+
         ### 4) Action Plan & Catalysts｜操作建議與催化劑
-        - 資金配置建議：[基於乖離率給出具體進出場建議，如「乖離為負，可逢低承接」]。
-        - 近期觀察重點 (催化劑)：
-          1. 產業指標驗證：[如：下月公佈的客運營收 / 法說會資本支出指引]
-          2. 籌碼與技術面：[MA20 是否能形成有效支撐，外資買盤是否延續]
+        - 資金配置建議：[基於乖離率、籌碼與產業微觀，給出具體進出場建議，如「乖離為負，技術面具有支撐，可逢低承接」或「乖離過大，建議等待回測 MA20 再佈局」]。
+        - 近期觀察重點（催化劑）：
+          1. 產業指標驗證：[如：下月公佈的客運營收 / 法說會資本支出指引 / SCFI 是否止跌]
+          2. 籌碼與技術面：[MA20 是否形成支撐，外資買盤是否具備延續性]
+        - 風險矩陣（發生率 × 影響度）：
+          - 高發生率 × 高影響：[從新聞池中挑出最核心的真實產業威脅]
+          - 中發生率 × 高影響：[總經層面的系統性風險或政策黑天鵝]
+          - 高發生率 × 低影響：技術面乖離修正或短線獲利了結
         """)
 
         # -----------------------------
