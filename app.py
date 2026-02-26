@@ -2076,7 +2076,7 @@ else:
 
 status.success("🎉 高盛級報告生成完成！")
 # ----------------------------- 
-# Step D: Groq call (with fallback model) - 防無限循環終極版（縮排修復）
+# Step D: Groq call (with fallback model) - 防無限循環終極版（完美縮排）
 # -----------------------------
 status.info("🧠 深度研究推演中（LLM）...")
 
@@ -2137,7 +2137,7 @@ if groq_analysis:
     st.markdown(report_content)
     st.download_button("📥 下載MD", report_content, f"{stock_code}_報告.md")
     
-    # 關鍵數據面板（4空格縮排）
+    # 關鍵數據面板
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("最新價", f"{price_snapshot.get('last_price', 'N/A')}元")
     col2.metric("MA20乖離", f"{advanced_data.get('ma20_deviation', 'N/A')}")
@@ -2152,7 +2152,7 @@ else:
         st.caption(f"錯誤：{groq_error}")
     st.info("台積電關鍵數據：+9.06%乖離 | PE30.1 | 年配19元")
 
-# 🔓 解除鎖定（移除最後st.rerun防循環）
+# 🔓 解除鎖定
 st.session_state.generating_report = False
 
 
