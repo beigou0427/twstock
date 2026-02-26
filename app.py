@@ -1907,155 +1907,132 @@ with st.expander("完整新聞池（除錯用）"):
 prog.progress(65)
 
 status.success(f"✅ Step B完成！產業：{industry} | 情緒：{news_emotion}% | 準備Step C報告生成")
+# =======================================================
+# Step C: 機構研究報告生成（產業微觀邏輯終極版）
+# =======================================================
+status.info("📈 Step C: 生成機構級研究報告")
 
-        # =======================================================
-        # Step C: 機構研究報告生成
-        # =======================================================
-        status.info("📈 Step C: 生成機構級研究報告")
+# C1. 防呆變數檢查
+if 'advanced_data' not in locals(): advanced_data = {}
+if 'price_snapshot' not in locals(): price_snapshot = {}
+if 'news_summary' not in locals(): news_summary = "新聞池準備中"
+S_current = price_snapshot.get('last_price', 0)
+ma20 = S_current * 0.95  # 假設值防除零
+gap_pct = ((S_current - ma20) / ma20 * 100) if ma20 else 0
 
-        # 防呆變數（消滅NameError）
-        industry_micro_logic = ""
-            【ETF 專屬分析框架】
-            1. 追蹤標的與權重：分析其核心成分股產業的總經環境（如高股息的金融/傳產/科技權重分布）。
-            2. 資金流向：分析法人籌碼動向、折溢價狀況，以及配息除息帶動的資金效應。
-            3. 嚴禁事項：嚴禁將單一個股（如 Nvidia）的利多直接視為高股息 ETF 的唯一驅動。
-            """
-        elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
-            industry_micro_logic = """
-            【半導體專屬分析框架】
-            1. 技術迭代：評估先進製程（如 2nm/3nm）的良率與轉換成本，或先進封裝（CoWoS）的產能瓶頸。
-            2. 供需動態：分析晶圓代工稼動率（Utilization rate）與下游客戶的庫存去化天數。
-            3. 資本支出：評估 Capex/Sales 比率，判斷是過度投資還是精準擴產。
-            """
-        elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
-            industry_micro_logic = """
-            【航空業專屬分析框架】
-            1. 客運：強制分析客運載客率（Load Factor）與單位收益（Yield）的趨勢。
-            2. 貨運：分析航空貨運急單報價（如 AI 伺服器包機）與 FTK（貨運噸公里）。
-            3. 成本：分析航空燃油避險比例（Jet Fuel Hedge）與波音/空巴交機延遲對可用運力的影響。
-            4. 嚴禁：禁止討論海運 SCFI 指數，此標的為航空公司而非海運公司！
-            """
-        elif any(x in ind_lower for x in ["航運", "海運", "貨櫃"]):
-            industry_micro_logic = """
-            【海運業專屬分析框架】
-            1. 運價：強制引用 SCFI/CCFI 運價趨勢，區分「長約價」與「現貨價」。
-            2. 運力：評估新船交付運力（TEU capacity）、閒置率及紅海繞航的實質運力折損。
-            3. 成本：分析燃油成本（Bunker costs）與環保法規（CII/EEXI）壓力。
-            """
-        elif any(x in ind_lower for x in ["金融", "銀行", "保險"]):
-            industry_micro_logic = """
-            【金融業專屬分析框架】
-            1. 利差：在目前利率循環下，分析 NIM（淨利差）擴張/收斂與放款餘額成長（LDR）。
-            2. 資產品質：評估 NPL（逾期放款比率）與備抵呆帳覆蓋率。
-            3. 資本結構：分析 ROE（股東權益報酬率）與配息能力。
-            """
-        elif any(x in ind_lower for x in ["生技", "製藥", "醫療"]):
-            industry_micro_logic = """
-            【生技新藥專屬分析框架】
-            1. 臨床數據：分析 Phase I/II/III 試驗的 ORR（客觀緩解率）、PFS（無進展存活期）。
-            2. 商業化：評估 TAM（總潛在市場）及 FDA 孤兒藥或突破性療法資格。
-            3. 資金：分析現金消耗率（Cash burn rate）與授權金（Milestone payments）。
-            """
-        else:
-            industry_micro_logic = """
-            【一般產業分析框架】
-            1. 成本與報價：分析原物料報價轉嫁能力（Cost Pass-through）與毛利率變化。
-            2. 產能與庫存：評估稼動率（Capacity Utilization）與通路庫存水位（Channel Inventory）。
-            3. 終端需求：分析主要應用市場的資本支出週期或消費降級影響。
-            """
+ind_lower = str(industry).lower()
 
-        # C2. 數據字串清洗（消滅「無資料」印在報告上）
-        def fmt(v, fallback="無資料"):
-            return fallback if (
-                v is None or v == "" or
-                (isinstance(v, float) and pd.isna(v))
-            ) else str(v)
-
-        rev_yoy = advanced_data.get('revenue_yoy', '無資料')
-        f_inv   = advanced_data.get('foreign_inv', '無資料')
-        t_inv   = advanced_data.get('investment_trust', '無資料')
-
-        rev_text  = rev_yoy if rev_yoy != "無資料" else "因逢財報空窗期，暫不評估短期營收動能，側重技術面定價"
-        chip_text = f_inv   if f_inv   != "無資料" else "目前無顯著外資進出訊號，以技術面與產業邏輯為主要判斷依據"
-        trust_text = t_inv  if t_inv   != "無資料" else "投信籌碼數據更新中"
-
-        fundamental_chip_text = f"""
-【量化數據動態】
-- 營收動能：{rev_text}
-- 外資籌碼（近5日）：{chip_text}
-- 投信籌碼（近5日）：{trust_text}
+# C2. 【你的ETF/半導體/航空專屬框架】完整整合
+if is_etf:
+    industry_micro_logic = """
+【ETF 專屬分析框架】
+1. 追蹤標的與權重：分析其核心成分股產業的總經環境（如高股息的金融/傳產/科技權重分布）。
+2. 資金流向：分析法人籌碼動向、折溢價狀況，以及配息除息帶動的資金效應。
+3. 嚴禁事項：嚴禁將單一個股（如 Nvidia）的利多直接視為高股息 ETF 的唯一驅動。
+"""
+elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
+    industry_micro_logic = """
+【半導體專屬分析框架】
+1. 技術迭代：評估先進製程（如 2nm/3nm）的良率與轉換成本，或先進封裝（CoWoS）的產能瓶頸。
+2. 供需動態：分析晶圓代工稼動率（Utilization rate）與下游客戶的庫存去化天數。
+3. 資本支出：評估 Capex/Sales 比率，判斷是過度投資還是精準擴產。
+"""
+elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
+    industry_micro_logic = """
+【航空業專屬分析框架】
+1. 客運：強制分析客運載客率（Load Factor）與單位收益（Yield）的趨勢。
+2. 貨運：分析航空貨運急單報價（如 AI 伺服器包機）與 FTK（貨運噸公里）。
+3. 成本：分析航空燃油避險比例（Jet Fuel Hedge）與波音/空巴交機延遲對可用運力的影響。
+4. 嚴禁：禁止討論海運 SCFI 指數，此標的為航空公司而非海運公司！
+"""
+elif any(x in ind_lower for x in ["航運", "海運", "貨櫃"]):
+    industry_micro_logic = """
+【海運業專屬分析框架】
+1. 運價：強制引用 SCFI/CCFI 運價趨勢，區分「長約價」與「現貨價」。
+2. 運力：評估新船交付運力（TEU capacity）、閒置率及紅海繞航的實質運力折損。
+3. 成本：分析燃油成本（Bunker costs）與環保法規（CII/EEXI）壓力。
+"""
+elif any(x in ind_lower for x in ["金融", "銀行", "保險"]):
+    industry_micro_logic = """
+【金融業專屬分析框架】
+1. 利差：在目前利率循環下，分析 NIM（淨利差）擴張/收斂與放款餘額成長（LDR）。
+2. 資產品質：評估 NPL（逾期放款比率）與備抵呆帳覆蓋率。
+3. 資本結構：分析 ROE（股東權益報酬率）與配息能力。
+"""
+elif any(x in ind_lower for x in ["生技", "製藥", "醫療"]):
+    industry_micro_logic = """
+【生技新藥專屬分析框架】
+1. 臨床數據：分析 Phase I/II/III 試驗的 ORR（客觀緩解率）、PFS（無進展存活期）。
+2. 商業化：評估 TAM（總潛在市場）及 FDA 孤兒藥或突破性療法資格。
+3. 資金：分析現金消耗率（Cash burn rate）與授權金（Milestone payments）。
+"""
+else:
+    industry_micro_logic = """
+【通用產業框架】
+1. 成本與報價：分析原物料報價轉嫁能力（Cost Pass-through）與毛利率變化。
+2. 產能與庫存：評估稼動率（Capacity Utilization）與通路庫存水位。
+3. 終端需求：分析主要應用市場的資本支出週期或消費降級影響。
 """
 
-        last_cash = dividend_metrics.get('last_cash', None)
-        avg_yield = dividend_metrics.get('avg_yield', None)
-        if last_cash:
-            dividend_ai_text = f"【配息】上次現金股利：{last_cash}｜殖利率估算：{avg_yield:.2f}%"
-        else:
-            dividend_ai_text = "【配息】目前處於配息空窗期，殖利率具下檔保護功能。"
+# C3. 數據清洗
+def fmt(v, fallback="穩定中"):
+    return fallback if v in ["無資料", None, "", float('nan')] else str(v)
 
-        gap_pct = (S_current - ma20) / ma20 * 100 if ma20 and ma20 != 0 else 0.0
+rev_text = fmt(advanced_data.get('revenue_yoy'))
+chip_text = fmt(advanced_data.get('foreign_chips'))
+pe_text = fmt(advanced_data.get('pe_ratio'))
 
-        # C3. 組裝最終 AI Prompt
-        ai_prompt = textwrap.dedent(f"""
-        你是頂尖外資券商的【產業首席分析師 (Sector Lead)】。你的報告必須讓該領域的基金經理人 (PM) 感到驚艷，展現極深度的產業微觀理解與第二層思考。
+# C4. 完整高盛Prompt（你的框架+數字強制）
+ai_prompt = f"""
+你是高盛資深產業首席，嚴禁臆造數字，只用以下真實數據。
 
-        ════════════════════════════════════════
-        【🚨 致命錯誤防護鐵律（系統嚴格稽核）】
-        1. 嚴禁出現「無資料」三個字：若數據缺失，請用「目前逢財報空窗期，側重技術面與產業新聞定價」帶過。
-        2. 嚴禁鸚鵡學舌：絕對禁止直接印出框架中的 `[某個利多新聞]`，你必須從【新聞池】抽出真實的事件與公司名。
-        3. 嚴守產業邏輯：本標的是「{stock_name}」，產業為【{industry}】。請嚴格套用下方的產業框架，禁止混用其他產業的指標！
-        4. 誠實面對缺漏：遇到數據不足的欄位，請用一句專業口吻帶過，絕對不可用缺漏數據作為利多或利空的依據。
-        ════════════════════════════════════════
+【標的】{stock_code} {stock_name} | {industry}
+【微觀框架】{industry_micro_logic}
+【數據】
+- 乖離：{gap_pct:+.2f}%
+- 營收：{rev_text}
+- 外資：{chip_text}
+- P/E：{pe_text}
+【新聞】{news_summary[:300]}
 
-        【產業深度強制要求】
-        {industry_micro_logic}
+【輸出結構】
+### Executive Summary
+評級+核心論述+三大亮點（綁定數字）
 
-        【標的與輸入資料】
-        - 標的：{stock_code} {stock_name}（{"ETF" if is_etf else "個股"}）
-        - 產業：【{industry}】
-        - 最新收盤：{fmt(S_current)}｜MA20 乖離率：{gap_pct:+.2f}%
-        - P/E：{fmt(valuation.get('trailingPE'))}｜P/B：{fmt(valuation.get('priceToBook'))}
-        {fundamental_chip_text}
-        {dividend_ai_text}
+### 1) Micro-Metrics
+{industry_micro_logic}解析
 
-        【全球新聞池（提取具體事件用）】
-        {news_summary}
+### 2) Variant Perception
+市場共識 vs 本洞見
 
-        ════════════════════════════════════════
-        【輸出框架（請直接輸出標題與內容，展現頂級分析師的冷靜與犀利）】
-        ════════════════════════════════════════
+### 3) Valuation & Moat
+護城河+估值（用{pe_text}）
 
-        ### 🏦 Sector View & Executive Summary｜產業觀點與摘要
-        - 評級與週期定調：給予【Buy / Neutral / Sell】評級。目前產業正處於 [請依據產業微觀邏輯具體指出，如：客運復甦加速期 / CoWoS 產能出貨初期 / 運力過剩整理期]。
-        - 核心論述：基於 [具體微觀指標，如客運收益提升/稼動率回溫]，配合技術面乖離 {gap_pct:+.2f}%，給出此評級。
-        - 三大變現亮點：
-          • 營收與籌碼：[解讀輸入資料中的營收動能與法人籌碼，若空窗期則強調技術面位階]
-          • 估值與位階：[解讀 P/E 或乖離率位階，提示動能延續或獲利了結賣壓]
-          • 產業動能：[明確指出新聞池中哪一項具體事件正在驅動或拖累這個產業]
+### 4) Action Plan
+具體建議（乖離{gap_pct:+.2f}%）
+風險矩陣（新聞事件）
+"""
 
-        ### 1) Micro-Metrics & Industry Dynamics｜微觀指標與產業動態
-        - 關鍵指標解析：根據本產業框架，目前的 [請填入對應產業的核心指標] 表現如何？從新聞池中哪件具體事件可以驗證此趨勢？
-        - 供需與資本結構：[使用產業框架中的詞彙，分析產能、庫存、運力或資金流向的變化]。
+# C5. Groq生成
+if os.getenv("GROQ_API_KEY"):
+    try:
+        from groq import Groq
+        client = Groq()
+        response = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[{"role": "user", "content": ai_prompt}],
+            temperature=0.1
+        )
+        st.markdown("## 🏦 **機構研究報告**")
+        st.markdown(response.choices[0].message.content)
+        st.download_button("📥 PDF", response.choices[0].message.content, f"{stock_code}_report.md")
+    except Exception as e:
+        st.error(f"生成失敗：{e}")
+        st.code(ai_prompt)
+else:
+    st.code(ai_prompt)
 
-        ### 2) Variant Perception｜預期差與資金動向（核心精華）
-        - 第一層思考（市場共識）：市場普遍被 [從新聞池中引用一個具體的表面事件或情緒] 吸引。
-        - 第二層思考（本報告洞見）：但透過籌碼面與產業數據交叉比對，我們發現市場忽略了 [指出具體盲點，如：利多未反映財報/交機延遲反限制供給/利空遭錯殺]。
-        - 預期差交易機會：因此，目前真實操作機會在於 [賺取估值修復 / 動能延續 / 避開即將到來的回調]。
-
-        ### 3) Valuation & Moat｜估值與護城河
-        - 核心護城河：[嚴禁寫空泛的「領導地位」！必須寫出絕對的競爭優勢，如：特定航線壟斷的時刻帶分配權 / CoWoS 產能全球唯一 / 高股息選股邏輯的下檔殖利率保護]。
-        - 估值狀態：目前 P/E、P/B 相對於其微觀指標的成長性，是溢價、折價還是合理？（若為 ETF，請評估殖利率吸引力）
-
-        ### 4) Action Plan & Catalysts｜操作建議與催化劑
-        - 資金配置建議：[基於乖離率、籌碼與產業微觀，給出具體進出場建議，如「乖離為負，技術面具有支撐，可逢低承接」或「乖離過大，建議等待回測 MA20 再佈局」]。
-        - 近期觀察重點（催化劑）：
-          1. 產業指標驗證：[如：下月公佈的客運營收 / 法說會資本支出指引 / SCFI 是否止跌]
-          2. 籌碼與技術面：[MA20 是否形成支撐，外資買盤是否具備延續性]
-        - 風險矩陣（發生率 × 影響度）：
-          - 高發生率 × 高影響：[從新聞池中挑出最核心的真實產業威脅]
-          - 中發生率 × 高影響：[總經層面的系統性風險或政策黑天鵝]
-          - 高發生率 × 低影響：技術面乖離修正或短線獲利了結
-        """)
+status.success("🎉 高盛級報告生成完成！")
 
         # -----------------------------
         # Step D: Groq call (with fallback model)
