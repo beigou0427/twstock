@@ -2078,9 +2078,9 @@ status.success("🎉 高盛級報告生成完成！")
 # ----------------------------- 
 # Step D: Groq call (with fallback model) - 防無限循環終極版（完美縮排）
 # -----------------------------
-status.info("🧠 深度研究推演中（LLM）...")
+st.info("🧠 深度研究推演中（LLM）...")  # ✅ status→st
 
-# 🚨 防無限循環鎖
+# 🚨 防無限循環鎖（完全保留）
 if 'generating_report' not in st.session_state:
     st.session_state.generating_report = False
 
@@ -2097,7 +2097,7 @@ try:
     from groq import Groq
     import httpx
     client = Groq(api_key=groq_key, http_client=httpx.Client())
-    # 🔥 2026最新可用模型
+    # 🔥 2026最新可用模型（完全保留）
     for model_name in ["llama-3.3-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant"]:
         try:
             resp = client.chat.completions.create(
@@ -2110,7 +2110,7 @@ try:
                             "不確定的數字一律寫『無資料/有待驗證』，禁止杜撰。"
                             "禁止列出未在新聞池標題中出現的公司/客戶/供應商。"
                             "語氣：冷靜、結構化、可驗證。"
-                            f"產業微觀框架：{industry_micro_logic}"
+                            f"產業微觀框架：{industry_micro_logic}"  # ✅ 完整保留
                         ),
                     },
                     {"role": "user", "content": ai_prompt},
@@ -2119,32 +2119,32 @@ try:
                 temperature=0.25,
             )
             groq_analysis = resp.choices[0].message.content
-            status.success(f"✅ Groq {model_name} 成功生成")
+            st.success(f"✅ Groq {model_name} 成功生成")  # ✅ status→st
             break
         except Exception as e:
             groq_error = str(e)
-            status.warning(f"⚠️ {model_name} 不可用，嘗試下一個...")
+            st.warning(f"⚠️ {model_name} 不可用，嘗試下一個...")  # ✅ status→st
             continue
 except Exception as e:
     groq_error = str(e)
 
-# ✅ 直接展示結果（無rerun，防無限循環）
+# ✅ 直接展示結果（無rerun，防無限循環）完全保留
 if groq_analysis:
-    # 簡化變數
+    # 簡化變數（完全保留）
     report_content = groq_analysis if 'clean_md' not in globals() else clean_md(groq_analysis)
     
     st.markdown("## 🏦 **機構研究報告**")
     st.markdown(report_content)
     st.download_button("📥 下載MD", report_content, f"{stock_code}_報告.md")
     
-    # 關鍵數據面板
+    # 關鍵數據面板（完全保留）
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("最新價", f"{price_snapshot.get('last_price', 'N/A')}元")
     col2.metric("MA20乖離", f"{advanced_data.get('ma20_deviation', 'N/A')}")
     col3.metric("P/E", f"{advanced_data.get('pe_ratio', 'N/A')}")
     col4.metric("年配", f"{dividend_metrics.get('avg_div', 'N/A')}元")
     
-    status.success("🎉 高盛級報告生成完成！")
+    st.success("🎉 高盛級報告生成完成！")  # ✅ status→st
 
 else:
     st.error("❌ AI報告生成失敗")
@@ -2152,7 +2152,7 @@ else:
         st.caption(f"錯誤：{groq_error}")
     st.info("台積電關鍵數據：+9.06%乖離 | PE30.1 | 年配19元")
 
-# 🔓 解除鎖定
+# 🔓 解除鎖定（完全保留）
 st.session_state.generating_report = False
 
 
