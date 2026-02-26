@@ -1934,32 +1934,30 @@ with tabs[0]:
         news_summary = " | ".join(news_texts)
 
         prog.progress(65)
-        # 只需在 Step B 最後加這 15 行（最小修改！）
-
-# 🔥 Groq 智能產業校正（加在 prog.progress(65) 之後）
-if os.getenv("GROQ_API_KEY"):
-    try:
-        from groq import Groq
-        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        
-        prompt = f"""股票：{stock_code}
+                # 🔥 Groq 智能校正（貼在 prog.progress(65) 正後面，注意縮排！）
+        if os.getenv("GROQ_API_KEY"):
+            try:
+                from groq import Groq
+                client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+                
+                prompt = f"""股票：{stock_code}
 新聞：{news_summary[:600]}
-校正產業（選：半導體業/航運業/航空業/電子零組件業/金融保險業/其他）
+校正產業（半導體業/航運業/航空業/電子零組件業/金融保險業/其他）
 JSON：{{"industry":"?","sentiment":0}}"""
-        
-        resp = client.chat.completions.create(model="llama3.1-70b-versatile",
-                                            messages=[{"role": "user", "content": prompt}],
-                                            temperature=0, max_tokens=100)
-        
-        groq_fix = json.loads(resp.choices[0].message.content)
-        if groq_fix["industry"] != "其他":
-            industry = groq_fix["industry"]  # 直接覆蓋！
-            sentiment_score = groq_fix["sentiment"]
-            st.success(f"🤖 Groq校正：{industry}")
-    except:
-        pass
+                
+                resp = client.chat.completions.create(model="llama3.1-70b-versatile",
+                                                    messages=[{"role": "user", "content": prompt}],
+                                                    temperature=0, max_tokens=100)
+                
+                groq_fix = json.loads(resp.choices[0].message.content)
+                if groq_fix.get("industry") != "其他":
+                    industry = groq_fix["industry"]  # 直接覆蓋！
+                    st.success(f"🤖 Groq校正：{industry}")
+            except:
+                pass  # 安靜失敗
 
-prog.progress(70)
+        prog.progress(70)
+
 
 
 
