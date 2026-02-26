@@ -1804,7 +1804,16 @@ with tabs[0]:
              # ----------------------------- 
         # Step B: News pool (動態產業擴展抓取)
         # -----------------------------
-        status.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")
+                # Step B: News pool
+        status.info("🌐 全網新聞矩陣抓取中...")
+        
+        # 安全初始化
+        collected_sources = set()
+        raw_news_pool = []
+        
+        mega_rss_pool
+
+
         
         # 1. 擴充 RSS 來源 (包含全球與在地財經)
         mega_rss_pool = {
