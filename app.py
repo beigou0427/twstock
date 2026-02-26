@@ -2034,67 +2034,81 @@ else:
 
 status.success("🎉 高盛級報告生成完成！")
 
-        # -----------------------------
-        # Step D: Groq call (with fallback model)
-        # -----------------------------
-        status.info("🧠 深度研究推演中（LLM）...")
-        groq_analysis = None
-        groq_error = None
+# ----------------------------- 
+# Step D: Groq call (with fallback model) - 你的原始碼無縫整合
+# -----------------------------
+status.info("🧠 深度研究推演中（LLM）...")
+groq_analysis = None
+groq_error = None
 
+try:
+    from groq import Groq
+    import httpx
+    client = Groq(api_key=groq_key, http_client=httpx.Client())
+    # try stronger model first; fallback to 8b if unavailable
+    for model_name in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"]:
         try:
-            from groq import Groq
-            import httpx
-            client = Groq(api_key=groq_key, http_client=httpx.Client())
-            # try stronger model first; fallback to 8b if unavailable
-            for model_name in ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"]:
-                try:
-                    resp = client.chat.completions.create(
-                        model=model_name,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": (
-                                    "你是極度嚴謹的機構研究分析師。"
-                                    "不確定的數字一律寫『無資料/有待驗證』，禁止杜撰。"
-                                    "禁止列出未在新聞池標題中出現的公司/客戶/供應商。"
-                                    "語氣：冷靜、結構化、可驗證。"
-                                ),
-                            },
-                            {"role": "user", "content": ai_prompt},
-                        ],
-                        max_tokens=2400,
-                        temperature=0.25,
-                    )
-                    groq_analysis = resp.choices[0].message.content
-                    break
-                except Exception as e:
-                    groq_error = str(e)
-                    continue
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是極度嚴謹的機構研究分析師。"
+                            "不確定的數字一律寫『無資料/有待驗證』，禁止杜撰。"
+                            "禁止列出未在新聞池標題中出現的公司/客戶/供應商。"
+                            "語氣：冷靜、結構化、可驗證。"
+                            f"產業微觀框架：{industry_micro_logic}"  # Step C黑話注入
+                        ),
+                    },
+                    {"role": "user", "content": ai_prompt},  # Step C完整prompt
+                ],
+                max_tokens=2400,
+                temperature=0.25,
+            )
+            groq_analysis = resp.choices[0].message.content
+            status.success(f"✅ Groq {model_name} 成功生成")
+            break
         except Exception as e:
             groq_error = str(e)
+            status.warning(f"⚠️ {model_name} 不可用，嘗試下一個...")
+            continue
+except Exception as e:
+    groq_error = str(e)
 
-        prog.progress(100)
-        status.empty()
+prog.progress(100)
+status.empty()
 
-        if groq_analysis:
-            st.session_state.update({
-                "t5_result": clean_md(groq_analysis),
-                "t5_stock_name": stock_name,
-                "t5_industry": industry,
-                "t5_news": final_news,
-                "t5_sources": collected_sources,
-                "t5_dividend_metrics": dividend_metrics,
-                "t5_dividend_history": dividend_history,
-                "t5_display_title": f"{stock_code} {stock_name}" if stock_name else stock_code,
-                "t5_is_etf": is_etf,
-                "t5_gap_pct": gap_pct,
-                "t5_valuation": valuation,
-                "t5_price_snapshot": price_snapshot,
-            })
-        else:
-            st.error("❌ AI 報告生成失敗（請查看錯誤訊息）")
-            if groq_error:
-                st.caption(f"Error: {groq_error}")
+# Step D輸出：session_state全更新
+if groq_analysis:
+    st.session_state.update({
+        "t5_result": clean_md(groq_analysis),  # 你的MD清理函數
+        "t5_stock_name": stock_name,
+        "t5_industry": industry,
+        "t5_news": final_news if 'final_news' in locals() else news_summary,
+        "t5_sources": collected_sources,
+        "t5_dividend_metrics": dividend_metrics,
+        "t5_dividend_history": dividend_history if 'dividend_history' in locals() else [],
+        "t5_display_title": f"{stock_code} {stock_name}" if stock_name else stock_code,
+        "t5_is_etf": is_etf,
+        "t5_gap_pct": gap_pct,
+        "t5_valuation": valuation if 'valuation' in locals() else advanced_data,
+        "t5_price_snapshot": price_snapshot,
+        "t5_micro_logic": industry_micro_logic,  # 新增：傳黑話給前端
+        "t5_ai_prompt": ai_prompt[:500] + "..."  # 除錯用
+    })
+    
+    # 即時展示報告
+    st.markdown("## 🏦 **機構研究報告**")
+    st.markdown(st.session_state["t5_result"])
+    st.download_button("📥 下載MD", st.session_state["t5_result"], f"{stock_code}_report.md")
+    
+else:
+    st.error("❌ AI報告生成失敗")
+    if groq_error:
+        st.caption(f"錯誤：{groq_error}")
+    st.code(ai_prompt)  # fallback顯示prompt
+
 
     # =========================================================
     # 4) Display (content-oriented; no background blocks)
