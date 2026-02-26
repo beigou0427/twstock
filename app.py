@@ -2156,98 +2156,95 @@ else:
 st.session_state.generating_report = False
 
 
-    # =========================================================
-    # 4) Display (content-oriented; no background blocks)
-    # =========================================================
-    if st.session_state.t5_result:
-        metrics = st.session_state.get("t5_dividend_metrics", {}) or {}
-        history = st.session_state.get("t5_dividend_history", []) or []
-        valuation = st.session_state.get("t5_valuation", {}) or {}
-        px = st.session_state.get("t5_price_snapshot", {}) or {}
-        is_etf_d = st.session_state.get("t5_is_etf", False)
-        gap_pct = st.session_state.get("t5_gap_pct", 0.0)
+# =========================================================
+# 4) Display (content-oriented; no background blocks)
+# =========================================================
+if st.session_state.t5_result:  # ← 第2162行，精準4空格！
+    metrics = st.session_state.get("t5_dividend_metrics", {}) or {}
+    history = st.session_state.get("t5_dividend_history", []) or []
+    valuation = st.session_state.get("t5_valuation", {}) or {}
+    px = st.session_state.get("t5_price_snapshot", {}) or {}
+    is_etf_d = st.session_state.get("t5_is_etf", False)
+    gap_pct = st.session_state.get("t5_gap_pct", 0.0)
 
-        # Title line (no background)
-        st.markdown(
-            f"""
-            <div style="padding-bottom:10px; margin:26px 0 14px 0; border-bottom:1px solid rgba(148,163,184,0.35);">
-              <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
-                <div>
-                  <div style="font-size:22px; font-weight:700; letter-spacing:-0.4px;">
-                    Institutional Research Update
-                  </div>
-                  <div style="opacity:0.65; font-family:monospace; font-size:12px; margin-top:6px;">
-                    {st.session_state.get("t5_display_title","")}
-                    · {st.session_state.get("t5_industry","")}
-                    · {"🧩 ETF" if is_etf_d else "🏭 個股"}
-                    · inputs={len(st.session_state.get("t5_news",[]))} headlines
-                  </div>
-                </div>
-                <div style="opacity:0.65; font-family:monospace; font-size:12px; text-align:right;">
-                  Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}
-                </div>
+    # Title line (no background) - 完全保留你的HTML
+    st.markdown(
+        f"""
+        <div style="padding-bottom:10px; margin:26px 0 14px 0; border-bottom:1px solid rgba(148,163,184,0.35);">
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+            <div>
+              <div style="font-size:22px; font-weight:700; letter-spacing:-0.4px;">
+                Institutional Research Update
+              </div>
+              <div style="opacity:0.65; font-family:monospace; font-size:12px; margin-top:6px;">
+                {st.session_state.get("t5_display_title","")}
+                · {st.session_state.get("t5_industry","")}
+                · {"🧩 ETF" if is_etf_d else "🏭 個股"}
+                · inputs={len(st.session_state.get("t5_news",[]))} headlines
               </div>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+            <div style="opacity:0.65; font-family:monospace; font-size:12px; text-align:right;">
+              Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-        # Quick facts row (content assist)
-        q1, q2, q3, q4 = st.columns(4)
-        q1.metric("最新收盤", f"{px.get('last_price','—')}")
-        q2.metric("短期報酬(粗)", f"{px.get('ret_approx_pct','—')}%")
-        q3.metric("Beta", f"{valuation.get('beta','—')}")
-        q4.metric("MA20乖離", f"{gap_pct:+.2f}%")
+    # Quick facts row
+    q1, q2, q3, q4 = st.columns(4)
+    q1.metric("最新收盤", f"{px.get('last_price','—')}")
+    q2.metric("短期報酬(粗)", f"{px.get('ret_approx_pct','—')}%")
+    q3.metric("Beta", f"{valuation.get('beta','—')}")
+    q4.metric("MA20乖離", f"{gap_pct:+.2f}%")
+
+    st.divider()
+
+    # Report
+    st.markdown(clean_md(st.session_state.t5_result))
+
+    st.divider()
+
+    # Dividend block（完全保留）
+    if metrics and history and isinstance(metrics, dict):
+        st.markdown("#### 🏦 Dividend & Fill-back")
+        d1, d2, d3, d4, d5 = st.columns(5)
+        d1.metric("上次除息", metrics.get("last_ex_date", "—"))
+        d2.metric("距今", f"{metrics.get('days_since_last_ex', 0)} 天")
+        d3.metric("下次配息", metrics.get("next_ex_date", "—"), delta=metrics.get("next_cash", None))
+        avg_fill = metrics.get("avg_fillback", -1)
+        d4.metric("平均填息", (f"{avg_fill:.0f} 天" if isinstance(avg_fill, (int, float)) and avg_fill != -1 else "樣本不足"))
+        d5.metric("平均殖利率", (f"{metrics.get('avg_yield', 0):.2f}%" if metrics.get("avg_yield", 0) else "—"))
+
+        df_h = pd.DataFrame(history)
+        if not df_h.empty:
+            df_h["fillback_days"] = df_h["fillback_days"].apply(lambda x: f"{x} 天" if isinstance(x, (int, float)) and x != -1 else "未填息")
+            df_h["yield_rate"] = df_h["yield_rate"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) and x > 0 else "—")
+            df_h = df_h[["year", "ex_date", "cash_dividend", "yield_rate", "fillback_days"]]
+            df_h.columns = ["年度", "除息日", "現金股利(元)", "殖利率", "填息天數"]
+            st.dataframe(df_h, use_container_width=True, hide_index=True)
 
         st.divider()
 
-        # Report (pure markdown)
-        st.markdown(clean_md(st.session_state.t5_result))
+    # Valuation snapshot（完全保留）
+    if any(v not in (None, "", 0) for v in valuation.values()):
+        st.markdown("#### 📌 Valuation & Consensus (yfinance)")
+        v1, v2, v3, v4, v5 = st.columns(5)
+        v1.metric("市值", f"{valuation.get('marketCap','—')}")
+        v2.metric("Trailing P/E", f"{valuation.get('trailingPE','—')}")
+        v3.metric("Forward P/E", f"{valuation.get('forwardPE','—')}")
+        v4.metric("PEG", f"{valuation.get('pegRatio','—')}")
+        v5.metric("共識", (valuation.get("recommendationKey","") or "—").upper())
+        st.caption("註：yfinance 的 TW 標的估值/共識欄位可能缺漏")
 
-        st.divider()
-
-        # Dividend block (only if present; safe .get)
-        if metrics and history and isinstance(metrics, dict):
-            st.markdown("#### 🏦 Dividend & Fill-back")
-            d1, d2, d3, d4, d5 = st.columns(5)
-            d1.metric("上次除息", metrics.get("last_ex_date", "—"))
-            d2.metric("距今", f"{metrics.get('days_since_last_ex', 0)} 天")
-            d3.metric("下次配息", metrics.get("next_ex_date", "—"), delta=metrics.get("next_cash", None))
-            avg_fill = metrics.get("avg_fillback", -1)
-            d4.metric("平均填息", (f"{avg_fill:.0f} 天" if isinstance(avg_fill, (int, float)) and avg_fill != -1 else "樣本不足"))
-            d5.metric("平均殖利率", (f"{metrics.get('avg_yield', 0):.2f}%" if metrics.get("avg_yield", 0) else "—"))
-
-            # Table (no styling background)
-            df_h = pd.DataFrame(history)
-            if not df_h.empty:
-                df_h["fillback_days"] = df_h["fillback_days"].apply(lambda x: f"{x} 天" if isinstance(x, (int, float)) and x != -1 else "未填息")
-                df_h["yield_rate"] = df_h["yield_rate"].apply(lambda x: f"{x:.2f}%" if isinstance(x, (int, float)) and x > 0 else "—")
-                df_h = df_h[["year", "ex_date", "cash_dividend", "yield_rate", "fillback_days"]]
-                df_h.columns = ["年度", "除息日", "現金股利(元)", "殖利率", "填息天數"]
-                st.dataframe(df_h, use_container_width=True, hide_index=True)
-
-            st.divider()
-
-        # Valuation snapshot (only if any)
-        if any(v not in (None, "", 0) for v in valuation.values()):
-            st.markdown("#### 📌 Valuation & Consensus (yfinance)")
-            v1, v2, v3, v4, v5 = st.columns(5)
-            v1.metric("市值", f"{valuation.get('marketCap','—')}")
-            v2.metric("Trailing P/E", f"{valuation.get('trailingPE','—')}")
-            v3.metric("Forward P/E", f"{valuation.get('forwardPE','—')}")
-            v4.metric("PEG", f"{valuation.get('pegRatio','—')}")
-            v5.metric("共識", (valuation.get("recommendationKey","") or "—").upper())
-            st.caption("註：yfinance 的 TW 標的估值/共識欄位可能缺漏；缺資料時請以報告中的『無資料/有待驗證』為準。")
-
-        # Raw data
-        with st.expander(f"🗃️ Raw Intelligence Matrix（{len(st.session_state.get('t5_news', []))} 篇）"):
-            if st.session_state.get("t5_news"):
-                df_news = pd.DataFrame(st.session_state["t5_news"])
-                df_news.index += 1
-                df_news = df_news.rename(columns={"media": "媒體", "title": "標題", "date": "時間"})
-                st.dataframe(df_news, use_container_width=True)
-                st.caption("Sources: " + ", ".join(sorted(list(st.session_state.get("t5_sources", set())))))
-
-
+    # Raw data（完全保留）
+    with st.expander(f"🗃️ Raw Intelligence Matrix（{len(st.session_state.get('t5_news', []))} 篇）"):
+        if st.session_state.get("t5_news"):
+            df_news = pd.DataFrame(st.session_state["t5_news"])
+            df_news.index += 1
+            df_news = df_news.rename(columns={"media": "媒體", "title": "標題", "date": "時間"})
+            st.dataframe(df_news, use_container_width=True)
+            st.caption("Sources: " + ", ".join(sorted(list(st.session_state.get("t5_sources", set())))))
 
 
