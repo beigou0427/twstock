@@ -2077,7 +2077,7 @@ else:
 status.success("🎉 高盛級報告生成完成！")
 
 # ----------------------------- 
-# Step D: Groq call (with fallback model) - 你的原始碼無縫整合
+# Step D: Groq call (with fallback model) - 全防呆終極版
 # -----------------------------
 status.info("🧠 深度研究推演中（LLM）...")
 groq_analysis = None
@@ -2118,33 +2118,56 @@ try:
 except Exception as e:
     groq_error = str(e)
 
-prog.progress(100)
-status.empty()
+# prog防呆
+try:
+    prog.progress(100)
+except:
+    pass
 
-# Step D輸出：session_state全更新
+# status.empty() 關鍵修復（第2122行）
+try:
+    status.empty()
+except AttributeError:
+    st.rerun()  # Streamlit標準替代
+
+# Step D輸出：session_state全更新（防呆版）
 if groq_analysis:
-    st.session_state.update({
-        "t5_result": clean_md(groq_analysis),  # 你的MD清理函數
-        "t5_stock_name": stock_name,
-        "t5_industry": industry,
-        "t5_news": final_news if 'final_news' in locals() else news_summary,
-        "t5_sources": collected_sources,
-        "t5_dividend_metrics": dividend_metrics,
-        "t5_dividend_history": dividend_history if 'dividend_history' in locals() else [],
-        "t5_display_title": f"{stock_code} {stock_name}" if stock_name else stock_code,
-        "t5_is_etf": is_etf,
-        "t5_gap_pct": gap_pct,
-        "t5_valuation": valuation if 'valuation' in locals() else advanced_data,
-        "t5_price_snapshot": price_snapshot,
-        "t5_micro_logic": industry_micro_logic,  # 新增：傳黑話給前端
-        "t5_ai_prompt": ai_prompt[:500] + "..."  # 除錯用
-    })
+    # 防呆變數檢查
+    final_news = locals().get('final_news', news_summary) if 'news_summary' in locals() else ""
+    dividend_history = locals().get('dividend_history', [])
+    valuation = locals().get('valuation', advanced_data)
+    gap_pct = locals().get('gap_pct', price_snapshot.get('deviation_ma20_pct', 0))
     
-    # 即時展示報告
-    st.markdown("## 🏦 **機構研究報告**")
-    st.markdown(st.session_state["t5_result"])
-    st.download_button("📥 下載MD", st.session_state["t5_result"], f"{stock_code}_report.md")
-    
+    try:
+        st.session_state.update({
+            "t5_result": clean_md(groq_analysis),  # 你的MD清理函數
+            "t5_stock_name": stock_name,
+            "t5_industry": industry,
+            "t5_news": final_news,
+            "t5_sources": collected_sources,
+            "t5_dividend_metrics": dividend_metrics,
+            "t5_dividend_history": dividend_history,
+            "t5_display_title": f"{stock_code} {stock_name}" if stock_name else stock_code,
+            "t5_is_etf": is_etf,
+            "t5_gap_pct": gap_pct,
+            "t5_valuation": valuation,
+            "t5_price_snapshot": price_snapshot,
+            "t5_micro_logic": industry_micro_logic,  # 新增：傳黑話給前端
+            "t5_ai_prompt": ai_prompt[:500] + "..."  # 除錯用
+        })
+        
+        # 即時展示報告
+        st.markdown("## 🏦 **機構研究報告**")
+        st.markdown(st.session_state["t5_result"])
+        st.download_button("📥 下載MD", st.session_state["t5_result"], f"{stock_code}_report.md")
+        
+        status.success("🎉 高盛級報告生成完成！")
+        
+    except Exception as e:
+        st.error(f"session_state更新失敗：{e}")
+        st.markdown("## 原始報告")
+        st.markdown(groq_analysis)
+        
 else:
     st.error("❌ AI報告生成失敗")
     if groq_error:
