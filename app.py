@@ -1909,13 +1909,12 @@ prog.progress(65)
 status.success(f"✅ Step B完成！產業：{industry} | 情緒：{news_emotion}% | 準備Step C報告生成")
 
         # =======================================================
-        # Step C: 動態微觀邏輯引擎（Dynamic Micro-Metrics Engine）
+        # Step C: 機構研究報告生成
         # =======================================================
+        status.info("📈 Step C: 生成機構級研究報告")
 
-        # C1. 決定產業微觀思考框架
+        # 防呆變數（消滅NameError）
         industry_micro_logic = ""
-        if is_etf:
-            industry_micro_logic = """
             【ETF 專屬分析框架】
             1. 追蹤標的與權重：分析其核心成分股產業的總經環境（如高股息的金融/傳產/科技權重分布）。
             2. 資金流向：分析法人籌碼動向、折溢價狀況，以及配息除息帶動的資金效應。
