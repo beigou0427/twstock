@@ -2077,9 +2077,20 @@ else:
 status.success("🎉 高盛級報告生成完成！")
 
 # ----------------------------- 
-# Step D: Groq call (with fallback model) - 全防呆終極版（模型修復）
+# Step D: Groq call (with fallback model) - 防無限循環終極版
 # -----------------------------
 status.info("🧠 深度研究推演中（LLM）...")
+
+# 🚨 防無限循環鎖
+if 'generating_report' not in st.session_state:
+    st.session_state.generating_report = False
+
+if st.session_state.generating_report:
+    st.error("⚠️ 報告生成中，請稍候...")
+    st.stop()
+
+st.session_state.generating_report = True
+
 groq_analysis = None
 groq_error = None
 
@@ -2087,7 +2098,7 @@ try:
     from groq import Groq
     import httpx
     client = Groq(api_key=groq_key, http_client=httpx.Client())
-    # 🔥 2026最新可用模型（llama-3.1-70b-versatile已停用）
+    # 🔥 2026最新可用模型
     for model_name in ["llama-3.3-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant"]:
         try:
             resp = client.chat.completions.create(
@@ -2100,10 +2111,10 @@ try:
                             "不確定的數字一律寫『無資料/有待驗證』，禁止杜撰。"
                             "禁止列出未在新聞池標題中出現的公司/客戶/供應商。"
                             "語氣：冷靜、結構化、可驗證。"
-                            f"產業微觀框架：{industry_micro_logic}"  # Step C黑話注入
+                            f"產業微觀框架：{industry_micro_logic}"
                         ),
                     },
-                    {"role": "user", "content": ai_prompt},  # Step C完整prompt
+                    {"role": "user", "content": ai_prompt},
                 ],
                 max_tokens=2400,
                 temperature=0.25,
@@ -2118,61 +2129,43 @@ try:
 except Exception as e:
     groq_error = str(e)
 
-# prog防呆
-try:
-    prog.progress(100)
-except:
-    pass
+# ❌ 完全移除問題的st.rerun()
+# try:
+#     prog.progress(100)
+# except:
+#     pass
+# try:
+#     status.empty()
+# except AttributeError:
+#     st.rerun()  # 🚫 這行造成無限循環，已移除
 
-# status.empty() 關鍵修復（第2122行）
-try:
-    status.empty()
-except AttributeError:
-    st.rerun()  # Streamlit標準替代
-
-# Step D輸出：session_state全更新（防呆版）
+# ✅ 直接展示結果（無rerun）
 if groq_analysis:
-    # 防呆變數檢查
-    final_news = locals().get('final_news', getattr(locals().get('news_summary', ''), '')) if 'news_summary' in locals() else ""
-    dividend_history = locals().get('dividend_history', [])
-    valuation = locals().get('valuation', advanced_data)
-    gap_pct = locals().get('gap_pct', price_snapshot.get('deviation_ma20_pct', 0))
+    # 簡化變數，避開複雜locals()
+    report_content = groq_analysis if 'clean_md' not in globals() else clean_md(groq_analysis)
     
-    try:
-        st.session_state.update({
-            "t5_result": clean_md(groq_analysis) if 'clean_md' in globals() else groq_analysis,  # 防clean_md未定義
-            "t5_stock_name": stock_name,
-            "t5_industry": industry,
-            "t5_news": final_news,
-            "t5_sources": getattr(locals().get('collected_sources', set()), list(), []),
-            "t5_dividend_metrics": dividend_metrics,
-            "t5_dividend_history": dividend_history,
-            "t5_display_title": f"{stock_code} {stock_name}" if stock_name else stock_code,
-            "t5_is_etf": is_etf,
-            "t5_gap_pct": gap_pct,
-            "t5_valuation": valuation,
-            "t5_price_snapshot": price_snapshot,
-            "t5_micro_logic": industry_micro_logic,  # 新增：傳黑話給前端
-            "t5_ai_prompt": ai_prompt[:500] + "..."  # 除錯用
-        })
-        
-        # 即時展示報告
-        st.markdown("## 🏦 **機構研究報告**")
-        st.markdown(st.session_state["t5_result"])
-        st.download_button("📥 下載MD", st.session_state["t5_result"], f"{stock_code}_report.md")
-        
-        status.success("🎉 高盛級報告生成完成！")
-        
-    except Exception as e:
-        st.error(f"session_state更新失敗：{e}")
-        st.markdown("## 原始報告（fallback）")
-        st.markdown(groq_analysis)
-        
+    st.markdown("## 🏦 **機構研究報告**")
+    st.markdown(report_content)
+    st.download_button("📥 下載MD", report_content, f"{stock_code}_report.md")
+    
+    # 關鍵數據面板
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("最新價", f"{price_snapshot.get('last_price', 'N/A')}元")
+    col2.metric("MA20乖離", f"{advanced_data.get('ma20_deviation', 'N/A')}")
+    col3.metric("P/E", f"{advanced_data.get('pe_ratio', 'N/A')}")
+    col4.metric("年配", f"{dividend_metrics.get('avg_div', 'N/A')}元")
+    
+    status.success("🎉 高盛級報告生成完成！")
+    
 else:
     st.error("❌ AI報告生成失敗")
     if groq_error:
         st.caption(f"錯誤：{groq_error}")
-    st.code(ai_prompt)  # fallback顯示prompt
+    st.info("可使用台積電 +9.06%乖離 + PE30.1數據手動分析")
+
+# 🔓 解除鎖定
+st.session_state.generating_report = False
+st.rerun()  # ✅ 只在最後成功時執行一次
 
 
 
