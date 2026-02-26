@@ -1681,9 +1681,9 @@ with tabs[0]:
             "investment_trust": "無資料"
         }
 # =======================================================
-# Step A: 雙引擎辨識標的與進階數據抓取（終極完整版 - 零錯誤版）
+# Step A: 雙引擎辨識標的與進階數據抓取（終極完整版 - 全防呆）
 # =======================================================
-# status防呆：自動fallback到st（解決NameError）
+# status防呆
 try:
     from status import status
 except ImportError:
@@ -1696,7 +1696,7 @@ except ImportError:
 
 status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
 
-# A0. 本地保險字典（關鍵熱門股）- 完整保留
+# A0. 本地保險字典（關鍵熱門股）
 local_industry_map = {
     "2330": ("台積電",    "半導體業"), "2454": ("聯發科",    "半導體業"),
     "2317": ("鴻海",      "半導體業"), "2303": ("聯電",      "半導體業"),
@@ -1712,7 +1712,7 @@ stock_name = stock_code
 industry = "未知產業"
 is_etf = False
 
-# 全域防呆變數 - 完整保留
+# 全域防呆變數
 advanced_data = {"revenue_yoy": "財報空窗期，暫不評估", "foreign_chips": "無顯著訊號"}
 price_snapshot = {}
 dividend_metrics = {}
@@ -1722,9 +1722,15 @@ if stock_code in local_industry_map:
     is_etf = (industry == "ETF")
     status.success(f"✅ 本地字典：{industry}")
 
-# A1. FinMind 雙API辨識 - 完整保留
+# prog防呆初始化
+try:
+    prog.progress(22)
+except:
+    pass  # 若無prog變數，跳過
+
+# A1. FinMind 雙API辨識（finmind未裝自動略過）
 dl = None
-finmind_key = st.secrets.get("finmind_key", "")  # 或你的finmind_key變數
+finmind_key = st.secrets.get("finmind_key", "")
 try:
     from finmind.data import DataLoader
     dl = DataLoader()
@@ -1747,9 +1753,7 @@ try:
 except Exception as e:
     status.warning(f"FinMind辨識略過：{e}")
 
-prog.progress(22)
-
-# A2. yfinance價格+估值（標準乖離）- 完整保留
+# A2. yfinance價格+估值（標準乖離）
 def safe_num(val, rd=2):
     try:
         return round(float(val), rd) if pd.notna(val) else None
@@ -1789,7 +1793,7 @@ try:
 except Exception as e:
     status.warning(f"yfinance略過：{e}")
 
-# A3. FinMind進階（營收+三大法人）- 完整保留
+# A3. FinMind進階（營收+三大法人）
 status.info("📊 抓取營收YoY與三大法人...")
 if dl:
     try:
@@ -1815,7 +1819,10 @@ if dl:
     except Exception as e:
         status.warning(f"FinMind進階：{e}")
 
-prog.progress(40)
+try:
+    prog.progress(40)
+except:
+    pass
 
 status.success(f"✅ Step A完成！{stock_name} | {industry} | ETF:{is_etf}")
 st.json({
