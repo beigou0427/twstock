@@ -1683,100 +1683,99 @@ with tabs[0]:
 # =======================================================
 # Step A: 雙引擎辨識標的與進階數據抓取（終極完整版 - 全防呆）
 # =======================================================
-# status防呆
+import pandas as pd
+import time
+from datetime import datetime, timedelta
 try:
     from status import status
+    prog = status  # 假設 status 有 progress 方法
 except ImportError:
     import streamlit as st
     class DummyStatus:
         def info(self, msg): st.info(msg)
         def success(self, msg): st.success(msg)
         def warning(self, msg): st.warning(msg)
+        def error(self, msg): st.error(msg)
+        def progress(self, val): if 'prog_placeholder' not in st.session_state: st.session_state.prog_placeholder = st.progress(0); st.session_state.prog_placeholder.progress(val)
     status = DummyStatus()
+    prog = status
 
 status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
 
-# A0. 本地保險字典（關鍵熱門股）
+# A0. 本地保險字典（熱門股快速命中）
 local_industry_map = {
-    "2330": ("台積電",    "半導體業"), "2454": ("聯發科",    "半導體業"),
-    "2317": ("鴻海",      "電子業"),   "2303": ("聯電",      "半導體業"),
-    "2603": ("長榮",      "航運業"),   "2609": ("陽明",      "航運業"),
-    "2610": ("華航",      "航空業"),   "2618": ("長榮航",    "航空業"),
-    "2608": ("嘉里大榮",  "陸運業"),   "6214": ("精誠",      "資訊服務業"),
-    "2881": ("富邦金",    "金融保險業"),"2344": ("華邦電",    "記憶體"),
-    "1264": ("德麥",      "食品工業"), "0050": ("元大台灣50", "ETF"),
-    "0056": ("元大高股息","ETF"),
+    "2330": ("台積電", "半導體業"), "2454": ("聯發科", "半導體業"),
+    "2317": ("鴻海", "電子業"), "2303": ("聯電", "半導體業"),
+    "2603": ("長榮", "航運業"), "2609": ("陽明", "航運業"),
+    "2610": ("華航", "航空業"), "2618": ("長榮航", "航空業"),
+    "2608": ("嘉里大榮", "陸運業"), "6214": ("精誠", "資訊服務業"),
+    "2881": ("富邦金", "金融保險業"), "2344": ("華邦電", "記憶體"),
+    "1264": ("德麥", "食品工業"), "0050": ("元大台灣50", "ETF"),
+    "0056": ("元大高股息", "ETF"),
 }
 
 stock_name = stock_code
 industry = "未知產業"
 is_etf = False
 
-# 全域防呆變數
+# 全域結果變數
 advanced_data = {"revenue_yoy": "財報空窗期，暫不評估", "foreign_chips": "無顯著訊號"}
 price_snapshot = {}
 dividend_metrics = {}
 
+# 本地命中
 if stock_code in local_industry_map:
     stock_name, industry = local_industry_map[stock_code]
     is_etf = (industry == "ETF")
     status.success(f"✅ 本地字典：{stock_name} | {industry}")
+    prog.progress(10)
 
-# prog防呆初始化
-try:
-    prog.progress(22)
-except:
-    pass
-
-# A1. FinMind 雙API辨識（精準優先）
+# A1. FinMind 強制雙引擎（taiwan_stock_info 主力 + retry，絕不略過）
 dl = None
-finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
-try:
-    from finmind.data import DataLoader
-    dl = DataLoader()
-    if finmind_key:
-        dl.login_by_token(api_token=finmind_key)
-
-    # 策略1：stock_basic_info（單一最精準）
+finmind_key = st.secrets.get("FINMIND_TOKEN") or st.secrets.get("finmind_token", "")
+if not finmind_key:
+    status.error("❌ 缺少 FINMIND_TOKEN，請檢查 st.secrets")
+else:
     try:
-        df_basic = dl.stock_basic_info(stock_id=stock_code)
-        if not df_basic.empty and 'industry_category' in df_basic.columns:
-            finmind_name = str(df_basic['stock_name'].iloc[0])
-            finmind_ind  = str(df_basic['industry_category'].iloc[0])
-            if finmind_ind not in ["", "nan", "未知產業"]:
-                stock_name = finmind_name
-                industry   = finmind_ind
-                status.success(f"✅ FinMind basic：{stock_name} | {industry}")
-    except Exception:
-        pass
+        from finmind.data import DataLoader
+        dl = DataLoader()
+        dl.login_by_token(api_token=finmind_key)
+        status.info("✅ FinMind 登入成功")
 
-    # 策略2：taiwan_stock_info備援（廣度掃描）
-    if stock_name == stock_code or industry == "未知產業":
-        try:
-            df_info = dl.taiwan_stock_info()
-            row = df_info[df_info["stock_id"] == stock_code]
-            if not row.empty:
-                finmind_name = str(row["stock_name"].iloc[0])
-                finmind_ind  = str(row["industry_category"].iloc[0])
-                if finmind_ind not in ["", "nan", "未知產業"]:
-                    stock_name = finmind_name
-                    industry   = finmind_ind
-                    status.info(f"✅ FinMind info備援：{stock_name} | {industry}")
-        except Exception:
-            pass
+        def get_finmind_stock_info(dl, stock_code, max_retries=2):
+            for attempt in range(max_retries + 1):
+                try:
+                    df_info = dl.taiwan_stock_info()
+                    row = df_info[df_info["stock_id"] == stock_code]
+                    if not row.empty:
+                        f_name = str(row["stock_name"].iloc[0])
+                        f_ind = str(row["industry_category"].iloc[0])
+                        f_type = str(row["type"].iloc[0])
+                        if f_ind not in ["", "nan", "未知產業", "大盤", "Index", "所有證券"]:
+                            return f_name, f_ind, f_type == "etf" or "ETF" in f_ind
+                    if attempt < max_retries:
+                        time.sleep(1)
+                except Exception as e:
+                    status.warning(f"FinMind 嘗試 {attempt+1}: {e}")
+                    if attempt < max_retries:
+                        time.sleep(2)
+            return None, None, False
 
-    # ETF確認（7條件）
-    etf_kw = ["ETF", "指數股票型", "基金", "債券", "期信"]
-    is_etf = (
-        is_etf
-        or stock_code.startswith("0")
-        or any(k.lower() in (industry + stock_name).lower() for k in etf_kw)
-    )
+        f_name, f_ind, f_etf = get_finmind_stock_info(dl, stock_code)
+        if f_name:
+            stock_name = f_name
+            industry = f_ind
+            is_etf = f_etf
+            status.success(f"✅ FinMind 辨識：{stock_name} | {industry} | ETF:{is_etf}")
+        else:
+            status.warning("⚠️ FinMind 未命中，依賴本地/後續")
 
-except Exception as e:
-    status.warning(f"FinMind辨識略過：{e}")
+    except Exception as e:
+        status.warning(f"FinMind 初始化失敗：{e}")
 
-# A2. yfinance價格+估值（標準乖離）
+prog.progress(30)
+
+# A2. yfinance 價格+估值（MA20 乖離、PE/PB、配息）
 def safe_num(val, rd=2):
     try:
         return round(float(val), rd) if pd.notna(val) else None
@@ -1802,53 +1801,55 @@ try:
                 "last_price": safe_num(last_px),
                 "deviation_ma20_pct": safe_num(deviation)
             }
-            advanced_data["ma20_deviation"] = f"{deviation:.2f}%"
+            advanced_data["ma20_deviation"] = f"{deviation:.1f}%"
 
-        # 估值+配息
         info = yf_ticker.info
         advanced_data["pe_ratio"] = safe_num(info.get('trailingPE'))
         advanced_data["pb_ratio"] = safe_num(info.get('priceToBook'))
 
         divs = yf_ticker.dividends.tail(4)
         if not divs.empty:
-            dividend_metrics["avg_div"] = safe_num(divs.sum())
+            dividend_metrics["avg_div"] = safe_num(divs.sum() / 4, 2)  # 年均
 
+    status.success("✅ yfinance 價格/估值完成")
 except Exception as e:
-    status.warning(f"yfinance略過：{e}")
+    status.warning(f"yfinance 略過：{e}")
 
-# A3. FinMind進階（營收+三大法人）
-status.info("📊 抓取營收YoY與三大法人...")
+prog.progress(50)
+
+# A3. FinMind 進階數據（營收 YoY + 外資買賣）
+status.info("📊 抓取營收 YoY 與外資...")
 if dl:
     try:
-        from datetime import datetime, timedelta
-        # 營收
+        # 最新月營收 YoY
         df_rev = dl.taiwan_stock_month_revenue(
             stock_id=stock_code,
-            start_date=(datetime.today() - timedelta(90)).strftime("%Y-%m-%d")
+            start_date=(datetime.today() - timedelta(90)).strftime("%Y%m%d")
         )
         if not df_rev.empty:
-            yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
-            advanced_data["revenue_yoy"] = f"{yoy.iloc[-1]:.1f}%" if not yoy.empty else advanced_data["revenue_yoy"]
+            df_rev = df_rev.sort_values('date').tail(1)
+            yoy = df_rev['revenue_YearOnYear_ratio'].iloc[0]
+            advanced_data["revenue_yoy"] = f"{yoy:.1f}%" if pd.notna(yoy) else advanced_data["revenue_yoy"]
 
-        # 法人
+        # 外資近 15 天淨買賣（張）
         df_inst = dl.taiwan_stock_institutional_investors(
             stock_id=stock_code,
-            start_date=(datetime.today() - timedelta(15)).strftime("%Y-%m-%d")
+            start_date=(datetime.today() - timedelta(15)).strftime("%Y%m%d")
         )
         if not df_inst.empty:
             foreign = df_inst[df_inst['type'] == 'foreign_investor']['change_from_previous_day'].sum()
-            advanced_data["foreign_chips"] = f"外資近{foreign:+.0f}張"
+            advanced_data["foreign_chips"] = f"外資近15天 {foreign:+.0f}張"
 
+        status.success("✅ FinMind 進階數據完成")
     except Exception as e:
-        status.warning(f"FinMind進階：{e}")
+        status.warning(f"FinMind 進階：{e}")
 
-try:
-    prog.progress(40)
-except:
-    pass
+prog.progress(100)
+status.success(f"✅ Step A 完成！{stock_name} | {industry} | ETF:{is_etf}")
 
-status.success(f"✅ Step A完成！{stock_name} | {industry} | ETF:{is_etf}")
+# 輸出結果
 st.json({
+    "stock_info": {"name": stock_name, "industry": industry, "is_etf": is_etf},
     "price_snapshot": price_snapshot,
     "advanced_data": advanced_data,
     "dividend_metrics": dividend_metrics
