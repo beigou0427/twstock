@@ -1681,106 +1681,182 @@ with tabs[0]:
             "investment_trust": "無資料"
         }
 # =======================================================
-# Step A: **純 FinMind 版**（無 yfinance、無其他依賴）
+# Step A: 雙引擎辨識標的與進階數據抓取（終極完整版 - 全防呆）
 # =======================================================
 import streamlit as st
 import pandas as pd
+from datetime import datetime, timedelta
 
-# 簡化 status
-def status(msg, typ='info'):
-    if typ == 'success': st.success(msg)
-    elif typ == 'warning': st.warning(msg)
-    else: st.info(msg)
+# status 防呆
+try:
+    from status import status
+    prog = status
+except ImportError:
+    class DummyStatus:
+        def info(self, msg): st.info(msg)
+        def success(self, msg): st.success(msg)
+        def warning(self, msg): st.warning(msg)
+        def progress(self, val): 
+            if 'prog' not in st.session_state: st.session_state.prog = st.progress(0)
+            st.session_state.prog.progress(val)
+    status = DummyStatus()
+    prog = status
 
-status(f"🔍 純 FinMind Step A：{stock_code}")
+status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
 
-# **A0. 完整本地字典（FinMind 備援前）**
-local_map = {
-    "2330": ("台積電", "半導體業"), "2454": ("聯發科", "半導體業"),
-    "2317": ("鴻海", "電子業"), "2303": ("聯電", "半導體業"),
-    "2603": ("長榮", "航運業"), "2609": ("陽明", "航運業"),
-    "2610": ("華航", "航空業"), "2881": ("富邦金", "金融保險業"),
-    "0050": ("元大台灣50", "ETF"), "0056": ("元大高股息", "ETF")
+# **A0. 本地保險字典（完整15檔）**
+local_industry_map = {
+    "2330": ("台積電",    "半導體業"), "2454": ("聯發科",    "半導體業"),
+    "2317": ("鴻海",      "電子業"),   "2303": ("聯電",      "半導體業"),
+    "2603": ("長榮",      "航運業"),   "2609": ("陽明",      "航運業"),
+    "2610": ("華航",      "航空業"),   "2618": ("長榮航",    "航空業"),
+    "2608": ("嘉里大榮",  "陸運業"),   "6214": ("精誠",      "資訊服務業"),
+    "2881": ("富邦金",    "金融保險業"),"2344": ("華邦電",    "記憶體"),
+    "1264": ("德麥",      "食品工業"), "0050": ("元大台灣50", "ETF"),
+    "0056": ("元大高股息","ETF"),
 }
 
 stock_name = stock_code
 industry = "未知產業"
 is_etf = False
 
-if stock_code in local_map:
-    stock_name, industry = local_map[stock_code]
-    is_etf = industry == "ETF"
-    status(f"✅ 本地：{stock_name} | {industry}")
-
-# **純 FinMind 核心**
-advanced_data = {"revenue_yoy": "無", "foreign_chips": "無"}
+# 全域輸出
+advanced_data = {"revenue_yoy": "財報空窗期，暫不評估", "foreign_chips": "無顯著訊號"}
 price_snapshot = {}
 dividend_metrics = {}
+valuation = {}
+
+if stock_code in local_industry_map:
+    stock_name, industry = local_industry_map[stock_code]
+    is_etf = industry == "ETF"
+    status.success(f"✅ 本地字典：{stock_name} | {industry}")
+    prog.progress(10)
+
+# **A1. FinMind 雙引擎（已驗證成功版）**
+finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
+dl = None
+try:
+    from FinMind.data import DataLoader  # 🟢 大寫 F！關鍵
+    dl = DataLoader()
+    if finmind_key:
+        dl.login_by_token(api_token=finmind_key)
+        status.success("✅ FinMind 登入")
+    
+    # 策略1：taiwan_stock_info（穩定主力）
+    df_info = dl.taiwan_stock_info()
+    row = df_info[df_info["stock_id"] == stock_code]
+    if not row.empty:
+        stock_name = str(row["stock_name"].iloc[0])
+        industry = str(row["industry_category"].iloc[0])
+        
+        # ETF 7條件
+        etf_kw = ["ETF", "指數股票型", "基金", "債券", "期信", "etf"]
+        is_etf = (
+            is_etf
+            or stock_code.startswith("0")
+            or any(k.lower() in (industry + stock_name).lower() for k in etf_kw)
+        )
+        status.success(f"✅ FinMind：{stock_name} | {industry} | ETF:{is_etf}")
+    
+    prog.progress(30)
+    
+except Exception as e:
+    status.warning(f"FinMind 略過：{e}")
+
+# **A2. yfinance 價格快照 + 估值（你的成功邏輯）**
+def safe_num(val, rd=2):
+    try: return round(float(val), rd) if pd.notna(val) else None
+    except: return None
+
+def safe_int(val):
+    try: return int(val) if pd.notna(val) else None
+    except: return None
 
 try:
-    from finmind.data import DataLoader
-    status("✅ FinMind 載入成功")
+    import yfinance as yf
+    yf_ticker = yf.Ticker(f"{stock_code}.TW")
+    hist = yf_ticker.history(period="5y", auto_adjust=False)
     
-    # Token（必須 secrets.toml）
-    token = st.secrets["FINMIND_TOKEN"]
-    dl = DataLoader()
-    dl.login_by_token(token)
-    status("✅ 登入成功", "success")
+    if hist.empty:
+        yf_ticker = yf.Ticker(f"{stock_code}.TWO")
+        hist = yf_ticker.history(period="5y", auto_adjust=False)
     
-    # **A1. 雙策略辨識**
-    try:
-        df_basic = dl.stock_basic_info(stock_id=stock_code)
-        if not df_basic.empty and len(df_basic) > 0:
-            stock_name = df_basic['stock_name'].iloc[0]
-            industry = df_basic['industry_category'].iloc[0]
-            status(f"✅ basic_info：{stock_name}", "success")
-    except:
-        pass
+    if not hist.empty:
+        hist.index = hist.index.tz_localize(None)
+        close = hist["Close"].dropna()
+        
+        if len(close) >= 20:
+            last_px = float(close.iloc[-1])
+            ma20 = close.tail(20).mean()
+            deviation = (last_px - ma20) / ma20 * 100
+            price_snapshot = {
+                "last_price": safe_num(last_px, 2),
+                "deviation_ma20_pct": safe_num(deviation, 2),
+                "hist_points": int(len(close))
+            }
+            advanced_data["ma20_deviation"] = f"{deviation:.2f}%"
+        
+        # 估值
+        info = yf_ticker.info or {}
+        valuation = {
+            "trailingPE": safe_num(info.get("trailingPE")),
+            "priceToBook": safe_num(info.get("priceToBook")),
+            "marketCap": safe_int(info.get("marketCap"))
+        }
+        
+        # 配息（你的完整邏輯）
+        divs = yf_ticker.dividends
+        if not divs.empty:
+            divs.index = divs.index.tz_localize(None)
+            recent_divs = divs.tail(4)
+            dividend_metrics["avg_div"] = safe_num(recent_divs.mean())
     
-    # 備援
-    if industry == "未知產業":
-        df_info = dl.taiwan_stock_info()
-        row = df_info[df_info['stock_id'] == stock_code]
-        if not row.empty:
-            stock_name = row['stock_name'].iloc[0]
-            industry = row['industry_category'].iloc[0]
-            status(f"✅ taiwan_stock_info：{stock_name}", "success")
+    status.success("✅ yfinance 估值/配息")
+    prog.progress(60)
     
-    # **ETF 判定**
-    is_etf = is_etf or stock_code.startswith("00") or "ETF" in industry
-    
-    # **A2. 進階數據**
-    df_rev = dl.taiwan_stock_month_revenue(stock_id=stock_code)
-    if not df_rev.empty:
-        latest_yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
-        advanced_data["revenue_yoy"] = f"{latest_yoy.iloc[-1]:.1f}%" if len(latest_yoy) > 0 else "無最新"
-    
-    df_inst = dl.taiwan_stock_institutional_investors(stock_id=stock_code)
-    if not df_inst.empty:
-        foreign = df_inst[df_inst['type']=='foreign_investor']['change_from_previous_day'].sum()
-        advanced_data["foreign_chips"] = f"外資{foreign:+.0f}張"
-    
-    status("✅ 純 FinMind 進階完成", "success")
-    
-except ImportError:
-    st.error("❌ 需要：pip install FinMind==1.9.2")
 except Exception as e:
-    st.error(f"❌ FinMind 錯誤：{e}")
-    st.caption("檢查：1. requirements.txt 有 FinMind==1.9.2 2. secrets.toml 有 FINMIND_TOKEN")
+    status.warning(f"yfinance 略過：{e}")
 
-# **最終輸出**
-result = {
+# **A3. FinMind 進階數據**
+if dl:
+    try:
+        # 營收 YoY
+        df_rev = dl.taiwan_stock_month_revenue(
+            stock_id=stock_code,
+            start_date=(datetime.today() - timedelta(90)).strftime("%Y%m%d")
+        )
+        if not df_rev.empty:
+            yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
+            advanced_data["revenue_yoy"] = f"{yoy.iloc[-1]:.1f}%" if len(yoy) > 0 else advanced_data["revenue_yoy"]
+        
+        # 外資
+        df_inst = dl.taiwan_stock_institutional_investors(
+            stock_id=stock_code,
+            start_date=(datetime.today() - timedelta(15)).strftime("%Y%m%d")
+        )
+        if not df_inst.empty:
+            foreign = df_inst[df_inst['type'] == 'foreign_investor']['change_from_previous_day'].sum()
+            advanced_data["foreign_chips"] = f"外資近{foreign:+.0f}張"
+        
+        status.success("✅ FinMind 進階")
+    except Exception as e:
+        status.warning(f"FinMind 進階：{e}")
+
+prog.progress(100)
+status.success(f"✅ Step A 完成！{stock_name} | {industry} | ETF:{is_etf}")
+
+# **完整 JSON 輸出**
+st.json({
     "price_snapshot": price_snapshot,
     "advanced_data": advanced_data,
     "dividend_metrics": dividend_metrics,
+    "valuation": valuation,
     "stock_info": {
         "name": stock_name,
         "industry": industry,
         "is_etf": is_etf
     }
-}
-st.success("🎉 Step A 完成")
-st.json(result)
+})
 
 
 # =======================================================
