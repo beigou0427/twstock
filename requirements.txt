@@ -12,7 +12,6 @@ google-generativeai==0.5.2
 
 # FinMind (台灣股市)
 finmind>=1.9.4
-finmind>=2.4.7
 
 # LLM & NLP
 transformers>=4.35.0
