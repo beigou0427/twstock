@@ -1699,13 +1699,13 @@ status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
 # A0. 本地保險字典（關鍵熱門股）
 local_industry_map = {
     "2330": ("台積電",    "半導體業"), "2454": ("聯發科",    "半導體業"),
-    "2317": ("鴻海",      "半導體業"), "2303": ("聯電",      "半導體業"),
-    "2603": ("長榮",      "航運業"), "2609": ("陽明",      "航運業"),
-    "2610": ("華航",      "航空業"), "2618": ("長榮航",    "航空業"),
-    "2608": ("嘉里大榮",  "陸運業"), 
-    "6214": ("精誠",      "資訊服務業"),
-    "2881": ("富邦金",    "金融保險業"), "0050": ("元大台灣50", "ETF"),
-    "0056": ("元大高股息", "ETF")
+    "2317": ("鴻海",      "電子業"),   "2303": ("聯電",      "半導體業"),
+    "2603": ("長榮",      "航運業"),   "2609": ("陽明",      "航運業"),
+    "2610": ("華航",      "航空業"),   "2618": ("長榮航",    "航空業"),
+    "2608": ("嘉里大榮",  "陸運業"),   "6214": ("精誠",      "資訊服務業"),
+    "2881": ("富邦金",    "金融保險業"),"2344": ("華邦電",    "記憶體"),
+    "1264": ("德麥",      "食品工業"), "0050": ("元大台灣50", "ETF"),
+    "0056": ("元大高股息","ETF"),
 }
 
 stock_name = stock_code
@@ -1720,35 +1720,58 @@ dividend_metrics = {}
 if stock_code in local_industry_map:
     stock_name, industry = local_industry_map[stock_code]
     is_etf = (industry == "ETF")
-    status.success(f"✅ 本地字典：{industry}")
+    status.success(f"✅ 本地字典：{stock_name} | {industry}")
 
 # prog防呆初始化
 try:
     prog.progress(22)
 except:
-    pass  # 若無prog變數，跳過
+    pass
 
-# A1. FinMind 雙API辨識（finmind未裝自動略過）
+# A1. FinMind 雙API辨識（精準優先）
 dl = None
-finmind_key = st.secrets.get("finmind_key", "")
+finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
 try:
     from finmind.data import DataLoader
     dl = DataLoader()
     if finmind_key:
         dl.login_by_token(api_token=finmind_key)
 
-    # stock_basic_info優先
-    df_basic = dl.stock_basic_info(stock_id=stock_code)
-    if not df_basic.empty and 'industry_category' in df_basic.columns:
-        finmind_ind = str(df_basic['industry_category'].iloc[0])
-        if finmind_ind not in ["", "nan", "未知產業"]:
-            industry = finmind_ind
-            stock_name = str(df_basic['stock_name'].iloc[0])
-            status.success(f"✅ FinMind：{industry}")
+    # 策略1：stock_basic_info（單一最精準）
+    try:
+        df_basic = dl.stock_basic_info(stock_id=stock_code)
+        if not df_basic.empty and 'industry_category' in df_basic.columns:
+            finmind_name = str(df_basic['stock_name'].iloc[0])
+            finmind_ind  = str(df_basic['industry_category'].iloc[0])
+            if finmind_ind not in ["", "nan", "未知產業"]:
+                stock_name = finmind_name
+                industry   = finmind_ind
+                status.success(f"✅ FinMind basic：{stock_name} | {industry}")
+    except Exception:
+        pass
 
-    # ETF確認
-    etf_kw = ["ETF", "指數股票型", "基金"]
-    is_etf = is_etf or any(k.lower() in (industry+stock_name).lower() for k in etf_kw) or stock_code.startswith("0")
+    # 策略2：taiwan_stock_info備援（廣度掃描）
+    if stock_name == stock_code or industry == "未知產業":
+        try:
+            df_info = dl.taiwan_stock_info()
+            row = df_info[df_info["stock_id"] == stock_code]
+            if not row.empty:
+                finmind_name = str(row["stock_name"].iloc[0])
+                finmind_ind  = str(row["industry_category"].iloc[0])
+                if finmind_ind not in ["", "nan", "未知產業"]:
+                    stock_name = finmind_name
+                    industry   = finmind_ind
+                    status.info(f"✅ FinMind info備援：{stock_name} | {industry}")
+        except Exception:
+            pass
+
+    # ETF確認（7條件）
+    etf_kw = ["ETF", "指數股票型", "基金", "債券", "期信"]
+    is_etf = (
+        is_etf
+        or stock_code.startswith("0")
+        or any(k.lower() in (industry + stock_name).lower() for k in etf_kw)
+    )
 
 except Exception as e:
     status.warning(f"FinMind辨識略過：{e}")
@@ -1785,7 +1808,7 @@ try:
         info = yf_ticker.info
         advanced_data["pe_ratio"] = safe_num(info.get('trailingPE'))
         advanced_data["pb_ratio"] = safe_num(info.get('priceToBook'))
-        
+
         divs = yf_ticker.dividends.tail(4)
         if not divs.empty:
             dividend_metrics["avg_div"] = safe_num(divs.sum())
@@ -1813,7 +1836,7 @@ if dl:
             start_date=(datetime.today() - timedelta(15)).strftime("%Y-%m-%d")
         )
         if not df_inst.empty:
-            foreign = df_inst[df_inst['type']=='foreign_investor']['change_from_previous_day'].sum()
+            foreign = df_inst[df_inst['type'] == 'foreign_investor']['change_from_previous_day'].sum()
             advanced_data["foreign_chips"] = f"外資近{foreign:+.0f}張"
 
     except Exception as e:
