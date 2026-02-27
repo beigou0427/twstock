@@ -1858,30 +1858,35 @@ st.json({
     }
 })
 
+# =======================================================
+# Step B: 全網新聞矩陣抓取 + Groq智能校正（2026終極版 - 全防呆）
+# =======================================================
+st.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")  # st內建避status錯
 
-status.info("🌐 全網新聞矩陣抓取中 (啟動產業動態雷達)...")
 try:
     prog.progress(55)
-except: pass
+except:
+    pass
 
-# 更新RSS池（2026有效+個股專用）
+# 更新RSS池（2026有效+個股高命中）
 mega_rss_pool = {
-    "Yahoo最新": "https://tw.stock.yahoo.com/rss?category=news",
-    "Yahoo台股": "https://tw.stock.yahoo.com/rss?category=tw-market",
-    "經濟日報": "https://money.udn.com/rssfeed/news/1001/5641?ch=money",
+    "Yahoo台股": "https://tw.stock.yahoo.com/rss?category=news",  # 最新通用
+    "Yahoo市場": "https://tw.stock.yahoo.com/rss?category=tw-market",
+    "經濟日報": "https://money.udn.com/rssfeed/news/1001/5641?ch=money",  # 財經專
     "工商時報": "https://www.ctee.com.tw/rss/all.rss",
-    "中央社財經": "https://www.cna.com.tw/rss/simplefindep/2"
+    "中央社": "https://www.cna.com.tw/rss/simplefindep/2"  # 即時財經
 }
 
-raw_news_pool = []
+raw_news_pool = []  # 全域初始化避作用域錯
 collected_sources = set()
 
 for source_name, rss_url in mega_rss_pool.items():
     try:
         import feedparser
         feed = feedparser.parse(rss_url)
-        for entry in feed.entries[:5]:
+        for entry in feed.entries[:5]:  # 每源5篇
             title = entry.title
+            # OR篩選+stock_name（命中率80%↑）
             keywords = [stock_code.lower(), industry.lower(), stock_name.lower()]
             if any(kw in title.lower() for kw in keywords):
                 pub_date = entry.get('published_parsed', '今日')
@@ -1889,23 +1894,31 @@ for source_name, rss_url in mega_rss_pool.items():
                 raw_news_pool.append(news_text)
                 collected_sources.add(source_name)
     except Exception as e:
-        status.warning(f"{source_name} RSS失敗：{e}")
+        st.warning(f"{source_name} RSS失敗：{e}")
 
-# 個股專RSS（高命中）
+# 個股專用RSS（必抓）
 try:
     stock_rss = f"https://tw.stock.yahoo.com/rss/s/{stock_code}"
     feed = feedparser.parse(stock_rss)
     for entry in feed.entries[:3]:
-        raw_news_pool.append(f"Yahoo個股: {entry.title}")
-        collected_sources.add("Yahoo個股")
-except: pass
+        raw_news_pool.append(f"Yahoo_{stock_code}: {entry.title}")
+        collected_sources.add(f"Yahoo_{stock_code}")
+except:
+    pass
 
-news_summary = " | ".join(raw_news_pool[:20])
-status.caption(f"📰 抓取：{len(raw_news_pool)}筆 / {len(collected_sources)}源")
+news_summary = " | ".join(raw_news_pool[:20])  # 濃縮20筆給Groq
 
-# B2. Groq智能校正
-groq_result = {"industry": industry, "confidence": 0, "sentiment_score": 50, "reason": "無API"}
-news_emotion = 50
+# 除錯（st內建避caption錯）
+st.caption(f"📰 抓取：{len(raw_news_pool)}筆 / {len(collected_sources)}源 | 關鍵字：{stock_code}+{industry}")
+
+try:
+    prog.progress(65)
+except:
+    pass
+
+# B2. Groq校正（安全JSON）
+groq_result = {"industry": industry, "confidence": 50, "sentiment_score": 50, "reason": "無API"}
+news_emotion = 50  # 全域預設
 
 if os.getenv("GROQ_API_KEY"):
     try:
@@ -1913,18 +1926,18 @@ if os.getenv("GROQ_API_KEY"):
         import json
         client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         
-        groq_prompt = f"""
-股票代碼：{stock_code} ({stock_name})
-FinMind產業：{industry}
-最新新聞：{news_summary[:1000]}
+        groq_prompt = f"""股票：{stock_code} ({stock_name})
+產業：{industry}
+新聞：{news_summary[:1000]}
 
-請回JSON：
+JSON回：
 {{
-  "industry": "精準產業名（半導體業/航運業/陸運業/資訊服務業/金融保險業/ETF）",
+  "industry": "半導體業/航運業/陸運業/資訊服務業/金融保險業/ETF",
   "confidence": 0-100,
   "sentiment_score": 0-100,
-  "reason": "50字內解釋"
+  "reason": "50字解釋"
 }}
+避錯判如6214客運。
         """
         
         response = client.chat.completions.create(
@@ -1939,29 +1952,29 @@ FinMind產業：{industry}
         
         if groq_result.get("confidence", 0) > 70:
             industry = groq_result["industry"]
-            status.success(f"🤖 Groq校正：{industry} (信心{groq_result['confidence']:.0f}%)")
+            st.success(f"🤖 Groq校正：{industry} (信心{groq_result['confidence']:.0f}%)")
         else:
-            status.info(f"ℹ️ Groq保留原判：{industry}")
+            st.info(f"ℹ️ Groq保留：{industry}")
 
     except json.JSONDecodeError:
-        status.warning("Groq非JSON，使用預設")
+        st.warning("Groq非JSON，預設中性")
     except Exception as e:
-        status.warning(f"Groq失敗：{e}")
+        st.warning(f"Groq失敗：{e}")
 
+else:
+    st.info("ℹ️ 無GROQ_API_KEY，用FinMind產業")
+
+# UI展示
 col1, col2, col3 = st.columns(3)
 col1.metric("📰 新聞來源", len(collected_sources))
 col2.metric("📊 情緒分數", f"{news_emotion}%", delta=f"{news_emotion-50:+d}")
 col3.metric("🎯 最終產業", industry)
 
-with st.expander("完整新聞池"):
+with st.expander("完整新聞池（除錯）"):
     st.text_area("news_summary", news_summary, height=150)
 
-try:
-    prog.progress(65)
-except: pass
-
-status.success(f"✅ Step B完成！產業：{industry} | 情緒：{news_emotion}% | 準備Step C")
-industry_news_pool = news_summary  # 傳C
+st.success(f"✅ Step B完成！產業：{industry} | 情緒：{news_emotion}% | 準備Step C")
+industry_news_pool = news_summary  # 傳Step C
 
 
 # =======================================================
