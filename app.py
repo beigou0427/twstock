@@ -1818,32 +1818,72 @@ except Exception as e:
     status.warning(f"yfinance 略過：{e}")
 
 # **A3. FinMind 進階數據**
+# **A3. FinMind 進階數據（終極完整版 - 營收+外資+P/E+EPS）**
 if dl:
     try:
-        # 營收 YoY
+        prog.progress(70)
+        
+        # 1. 營收 YoY（最新月）
         df_rev = dl.taiwan_stock_month_revenue(
             stock_id=stock_code,
             start_date=(datetime.today() - timedelta(90)).strftime("%Y%m%d")
         )
         if not df_rev.empty:
             yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
-            advanced_data["revenue_yoy"] = f"{yoy.iloc[-1]:.1f}%" if len(yoy) > 0 else advanced_data["revenue_yoy"]
+            if len(yoy) > 0:
+                advanced_data["revenue_yoy"] = f"{yoy.iloc[-1]:.1f}% (最新月)"
+                st.caption(f"營收YoY：{advanced_data['revenue_yoy']}")
+        prog.progress(80)
         
-        # 外資
+        # 2. 外資籌碼（近15天淨買賣）
         df_inst = dl.taiwan_stock_institutional_investors(
             stock_id=stock_code,
             start_date=(datetime.today() - timedelta(15)).strftime("%Y%m%d")
         )
         if not df_inst.empty:
-            foreign = df_inst[df_inst['type'] == 'foreign_investor']['change_from_previous_day'].sum()
-            advanced_data["foreign_chips"] = f"外資近{foreign:+.0f}張"
+            foreign_data = df_inst[df_inst['type'] == 'foreign_investor()']
+            if not foreign_data.empty:
+                foreign_net = foreign_data['change_from_previous_day'].sum()
+                advanced_data["foreign_chips"] = f"外資近15天{foreign_net:+.0f}張"
+                st.caption(f"外資：{advanced_data['foreign_chips']}")
+        prog.progress(85)
         
-        status.success("✅ FinMind 進階")
+        # 3. 🔥 P/E + EPS（自算，解決yfinance無PE）[web:93]
+        df_fund = dl.financial_statement(
+            stock_id=stock_code,
+            start_date=(datetime.today() - timedelta(365)).strftime("%Y%m%d")
+        )
+        eps_rows = df_fund[df_fund['FinancialStatementType'] == 'EPS']  # 正確欄位
+        if not eps_rows.empty:
+            eps_latest = float(eps_rows['Value'].tail(1).iloc[0])  # Value欄
+            last_price = price_snapshot.get('last_price', 0)
+            if last_price > 0 and eps_latest != 0:
+                pe_calc = last_price / abs(eps_latest)
+                valuation["calculatedPE"] = round(pe_calc, 2)
+                valuation["EPS"] = round(eps_latest, 2)
+                advanced_data["PE_EPS"] = f"P/E:{pe_calc:.1f}x (EPS:{eps_latest:+.2f})"
+                st.caption(f"P/E自算：{advanced_data['PE_EPS']}")
+            else:
+                advanced_data["PE_EPS"] = f"EPS:{eps_latest:.2f}（P/E N/A）"
+        else:
+            advanced_data["PE_EPS"] = "無EPS數據（財報空窗）"
+        
+        # 4. 毛利率（選填）
+        gross_margin_rows = df_fund[df_fund['FinancialStatementType'] == 'GrossMargin']
+        if not gross_margin_rows.empty:
+            gm_latest = float(gross_margin_rows['Value'].tail(1).iloc[0])
+            advanced_data["gross_margin"] = f"{gm_latest:.1f}%"
+        
+        status.success("✅ FinMind 全進階（營收+外資+P/E+毛利）")
+        
     except Exception as e:
         status.warning(f"FinMind 進階：{e}")
+        advanced_data["PE_EPS"] = "P/E N/A"
 
+# A3結束，進度完成
 prog.progress(100)
 status.success(f"✅ Step A 完成！{stock_name} | {industry} | ETF:{is_etf}")
+
 
 # **完整 JSON 輸出**
 st.json({
