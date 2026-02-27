@@ -1680,189 +1680,156 @@ with tabs[0]:
             "foreign_inv":      "無資料",
             "investment_trust": "無資料"
         }
-# -----------------------------
-# Step A: Identify + dividends + valuation + price snapshot
-# -----------------------------
-status.info(f"🔍 雙引擎辨識標的與估值/配息：{stock_code}")
-stock_name, industry = "", "未知產業"
-dividend_metrics, dividend_history = {}, []
+# =======================================================
+# Step A: 雙引擎辨識標的與進階數據抓取（終極完整版 - 全防呆）
+# =======================================================
+# status防呆
+try:
+    from status import status
+except ImportError:
+    import streamlit as st
+    class DummyStatus:
+        def info(self, msg): st.info(msg)
+        def success(self, msg): st.success(msg)
+        def warning(self, msg): st.warning(msg)
+    status = DummyStatus()
+
+status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
+
+# A0. 本地保險字典（關鍵熱門股）
+local_industry_map = {
+    "2330": ("台積電",    "半導體業"), "2454": ("聯發科",    "半導體業"),
+    "2317": ("鴻海",      "半導體業"), "2303": ("聯電",      "半導體業"),
+    "2603": ("長榮",      "航運業"), "2609": ("陽明",      "航運業"),
+    "2610": ("華航",      "航空業"), "2618": ("長榮航",    "航空業"),
+    "2608": ("嘉里大榮",  "陸運業"), 
+    "6214": ("精誠",      "資訊服務業"),
+    "2881": ("富邦金",    "金融保險業"), "0050": ("元大台灣50", "ETF"),
+    "0056": ("元大高股息", "ETF")
+}
+
+stock_name = stock_code
+industry = "未知產業"
 is_etf = False
 
-# A1) FinMind 雙API優先辨識（精準）
+# 全域防呆變數
+advanced_data = {"revenue_yoy": "財報空窗期，暫不評估", "foreign_chips": "無顯著訊號"}
+price_snapshot = {}
+dividend_metrics = {}
+
+if stock_code in local_industry_map:
+    stock_name, industry = local_industry_map[stock_code]
+    is_etf = (industry == "ETF")
+    status.success(f"✅ 本地字典：{industry}")
+
+# prog防呆初始化
 try:
-    from FinMind.data import DataLoader
+    prog.progress(22)
+except:
+    pass  # 若無prog變數，跳過
+
+# A1. FinMind 雙API辨識（finmind未裝自動略過）
+dl = None
+finmind_key = st.secrets.get("finmind_key", "")
+try:
+    from finmind.data import DataLoader
     dl = DataLoader()
     if finmind_key:
         dl.login_by_token(api_token=finmind_key)
 
-    # 策略1：stock_basic_info（單一最精準，舊版優勢）
-    try:
-        df_basic = dl.stock_basic_info(stock_id=stock_code)
-        if not df_basic.empty:
-            stock_name = str(df_basic["stock_name"].iloc[0])
-            industry = str(df_basic["industry_category"].iloc[0])
-            status.success(f"✅ FinMind basic：{stock_name} | {industry}")
-    except Exception:
-        pass
+    # stock_basic_info優先
+    df_basic = dl.stock_basic_info(stock_id=stock_code)
+    if not df_basic.empty and 'industry_category' in df_basic.columns:
+        finmind_ind = str(df_basic['industry_category'].iloc[0])
+        if finmind_ind not in ["", "nan", "未知產業"]:
+            industry = finmind_ind
+            stock_name = str(df_basic['stock_name'].iloc[0])
+            status.success(f"✅ FinMind：{industry}")
 
-    # 策略2：taiwan_stock_info備援（新版廣度）
-    if not stock_name:
-        df_info = dl.taiwan_stock_info()
-        row = df_info[df_info["stock_id"] == stock_code]
-        if not row.empty:
-            stock_name = str(row["stock_name"].iloc[0])
-            industry = str(row["industry_category"].iloc[0])
-            status.info(f"✅ FinMind info備援：{stock_name} | {industry}")
-
-    # ETF判定（7條件）
-    etf_kw = ["etf", "ETF", "指數股票型", "基金", "債券", "期信"]
-    is_etf = (
-        any(k.lower() in industry.lower() for k in etf_kw)
-        or any(k.lower() in stock_name.lower() for k in etf_kw)
-        or stock_code.startswith("0")
-    )
+    # ETF確認
+    etf_kw = ["ETF", "指數股票型", "基金"]
+    is_etf = is_etf or any(k.lower() in (industry+stock_name).lower() for k in etf_kw) or stock_code.startswith("0")
 
 except Exception as e:
-    status.warning(f"FinMind 略過：{e}")
+    status.warning(f"FinMind辨識略過：{e}")
 
-# 本地熱門股備援（FinMind全失敗時）
-local_map = {
-    "2330": ("台積電", "半導體業"), "2454": ("聯發科", "半導體業"),
-    "2344": ("華邦電", "記憶體"),   "1264": ("強茂",   "光電業"),
-    "2317": ("鴻海",   "電子業"),   "2303": ("聯電",   "半導體業"),
-    "2603": ("長榮",   "航運業"),   "2609": ("陽明",   "航運業"),
-    "2610": ("華航",   "航空業"),   "2618": ("長榮航", "航空業"),
-    "2881": ("富邦金", "金融保險業"),"0050": ("元大台灣50", "ETF"),
-    "0056": ("元大高股息", "ETF"),
-}
-if stock_code in local_map and not stock_name:
-    stock_name, industry = local_map[stock_code]
-    etf_kw = ["etf", "ETF", "指數股票型", "基金", "債券", "期信"]
-    is_etf = (
-        any(k.lower() in industry.lower() for k in etf_kw)
-        or stock_code.startswith("0")
-    )
-    status.info(f"✅ 本地備援：{stock_name} | {industry}")
-
-# A2) yfinance (history/dividends/info)
-valuation = {}
-price_snapshot = {}
-yf_ticker = None
-hist = pd.DataFrame()
+# A2. yfinance價格+估值（標準乖離）
+def safe_num(val, rd=2):
+    try:
+        return round(float(val), rd) if pd.notna(val) else None
+    except:
+        return None
 
 try:
-    # try TW then TWO
+    import yfinance as yf
     yf_ticker = yf.Ticker(f"{stock_code}.TW")
-    hist = yf_ticker.history(period="5y", auto_adjust=False)
+    hist = yf_ticker.history(period="5y")
     if hist.empty:
         yf_ticker = yf.Ticker(f"{stock_code}.TWO")
-        hist = yf_ticker.history(period="5y", auto_adjust=False)
+        hist = yf_ticker.history(period="5y")
 
-    # price snapshot
     if not hist.empty:
         hist.index = hist.index.tz_localize(None)
         close = hist["Close"].dropna()
-        if len(close) >= 2:
-            last_px = float(close.iloc[-1])
-            px_7d = float(close.iloc[-min(len(close), 6)]) if len(close) >= 6 else float(close.iloc[0])
-            ret_approx = (last_px / px_7d - 1.0) * 100 if px_7d else None
+        if len(close) >= 20:
+            last_px = close.iloc[-1]
+            ma20 = close.tail(20).mean()
+            deviation = (last_px - ma20) / ma20 * 100
             price_snapshot = {
-                "last_price": safe_num(last_px, 2),
-                "ret_approx_pct": safe_num(ret_approx, 2),
-                "hist_points": int(len(close)),
+                "last_price": safe_num(last_px),
+                "deviation_ma20_pct": safe_num(deviation)
             }
+            advanced_data["ma20_deviation"] = f"{deviation:.2f}%"
 
-    # dividends + fillback
-    if yf_ticker is not None and not hist.empty:
-        divs = yf_ticker.dividends
+        # 估值+配息
+        info = yf_ticker.info
+        advanced_data["pe_ratio"] = safe_num(info.get('trailingPE'))
+        advanced_data["pb_ratio"] = safe_num(info.get('priceToBook'))
+        
+        divs = yf_ticker.dividends.tail(4)
         if not divs.empty:
-            divs.index = divs.index.tz_localize(None)
-            today = pd.Timestamp(datetime.now().date())
+            dividend_metrics["avg_div"] = safe_num(divs.sum())
 
-            future_divs = divs[divs.index > today].sort_index()
-            past_divs = divs[divs.index <= today].sort_index(ascending=False)
-
-            next_ex_date_str = "尚未公告"
-            next_cash_str = "-"
-            if not future_divs.empty:
-                next_ex_date_str = f"已公告：{future_divs.index[0].strftime('%Y-%m-%d')}"
-                next_cash_str = f"{float(future_divs.iloc[0]):.2f} 元"
-
-            valid = []
-            for ex_date, cash_div in past_divs.head(10).items():
-                if cash_div <= 0:
-                    continue
-
-                ex_date_str = ex_date.strftime("%Y-%m-%d")
-                fillback_days = -1
-                yield_rate = 0.0
-
-                pre_ex_df = hist[hist.index < ex_date]
-                if not pre_ex_df.empty:
-                    ref_price = float(pre_ex_df["Close"].iloc[-1])
-                    if ref_price > 0:
-                        yield_rate = (float(cash_div) / ref_price) * 100
-
-                    post_ex_df = hist[hist.index >= ex_date]
-                    fill_df = post_ex_df[post_ex_df["Close"] >= ref_price]
-                    if not fill_df.empty:
-                        fillback_days = int((fill_df.index[0] - ex_date).days)
-
-                valid.append({
-                    "year": str(ex_date.year),
-                    "ex_date": ex_date_str,
-                    "cash_dividend": float(cash_div),
-                    "yield_rate": float(yield_rate),
-                    "fillback_days": int(fillback_days),
-                    "month": int(ex_date.month),
-                })
-
-            if valid:
-                latest = valid[0]
-                days_since = (datetime.now().date() - pd.to_datetime(latest["ex_date"]).date()).days
-                months_pattern = sorted(set(d["month"] for d in valid))
-
-                if next_ex_date_str == "尚未公告" and months_pattern:
-                    cur_m = datetime.now().month
-                    future_m = [m for m in months_pattern if m > cur_m]
-                    next_m = future_m[0] if future_m else months_pattern[0]
-                    next_ex_date_str = f"歷史預估：{next_m} 月"
-
-                filled_list = [d["fillback_days"] for d in valid if d["fillback_days"] != -1]
-                yields_list = [d["yield_rate"] for d in valid if d["yield_rate"] > 0]
-
-                dividend_metrics = {
-                    "last_ex_date": latest["ex_date"],
-                    "days_since_last_ex": int(days_since),
-                    "last_cash": float(latest["cash_dividend"]),
-                    "next_ex_date": next_ex_date_str,
-                    "next_cash": next_cash_str,
-                    "avg_fillback": (sum(filled_list) / len(filled_list)) if filled_list else -1,
-                    "avg_yield": (sum(yields_list) / len(yields_list)) if yields_list else 0.0,
-                    "total_divs": int(len(valid)),
-                    "months_pattern": months_pattern,
-                }
-                dividend_history = valid
-
-    # valuation from info (may be missing for TW tickers)
-    if yf_ticker is not None:
-        info = yf_ticker.info or {}
-        valuation = {
-            "marketCap": safe_int(info.get("marketCap")),
-            "beta": safe_num(info.get("beta"), 2),
-            "trailingPE": safe_num(info.get("trailingPE"), 2),
-            "forwardPE": safe_num(info.get("forwardPE"), 2),
-            "pegRatio": safe_num(info.get("pegRatio"), 2),
-            "priceToBook": safe_num(info.get("priceToBook"), 2),
-            "recommendationKey": (info.get("recommendationKey") or ""),
-            "targetMeanPrice": safe_num(info.get("targetMeanPrice"), 2),
-            "targetLowPrice": safe_num(info.get("targetLowPrice"), 2),
-            "targetHighPrice": safe_num(info.get("targetHighPrice"), 2),
-        }
 except Exception as e:
-    status.warning(f"yfinance 略過：{e}")
+    status.warning(f"yfinance略過：{e}")
 
-prog.progress(22)
+# A3. FinMind進階（營收+三大法人）
+status.info("📊 抓取營收YoY與三大法人...")
+if dl:
+    try:
+        from datetime import datetime, timedelta
+        # 營收
+        df_rev = dl.taiwan_stock_month_revenue(
+            stock_id=stock_code,
+            start_date=(datetime.today() - timedelta(90)).strftime("%Y-%m-%d")
+        )
+        if not df_rev.empty:
+            yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
+            advanced_data["revenue_yoy"] = f"{yoy.iloc[-1]:.1f}%" if not yoy.empty else advanced_data["revenue_yoy"]
+
+        # 法人
+        df_inst = dl.taiwan_stock_institutional_investors(
+            stock_id=stock_code,
+            start_date=(datetime.today() - timedelta(15)).strftime("%Y-%m-%d")
+        )
+        if not df_inst.empty:
+            foreign = df_inst[df_inst['type']=='foreign_investor']['change_from_previous_day'].sum()
+            advanced_data["foreign_chips"] = f"外資近{foreign:+.0f}張"
+
+    except Exception as e:
+        status.warning(f"FinMind進階：{e}")
+
+try:
+    prog.progress(40)
+except:
+    pass
+
+status.success(f"✅ Step A完成！{stock_name} | {industry} | ETF:{is_etf}")
+st.json({
+    "price_snapshot": price_snapshot,
+    "advanced_data": advanced_data,
+    "dividend_metrics": dividend_metrics
+})
 
 # =======================================================
 # Step B: 全網新聞矩陣抓取 + Groq智能校正（2026終極版 - 全防呆）
