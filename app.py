@@ -2014,9 +2014,12 @@ if is_etf:
 elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
     industry_micro_logic = """
 【半導體專屬分析框架】
-1. 技術迭代：評估先進製程（如 2nm/3nm）的良率與轉換成本，或先進封裝（CoWoS）的產能瓶頸。
-2. 供需動態：分析晶圓代工稼動率（Utilization rate）與下游客戶的庫存去化天數。
-3. 資本支出：評估 Capex/Sales 比率，判斷是過度投資還是精準擴產。
+【半導體通用框架】（依子類調整）
+1. 技術迭代：先進節點良率/CoWoS（代工） | 成熟製程/新品ASP（記憶體） | 設備訂單（上游）。
+2. 供需動態：晶圓稼動率/客戶庫存（代工） | 價格指數/終端需求（記憶體） | 全球能見度（IDM）。
+3. 資本支出：Capex/Sales比率，判斷擴產/維護。
+4. 通用財務：毛利率(>40%)、R&D%銷售、客戶集中度。
+
 """
 elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
     industry_micro_logic = """
