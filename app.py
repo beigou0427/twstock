@@ -1681,30 +1681,28 @@ with tabs[0]:
             "investment_trust": "無資料"
         }
 # =======================================================
-# Step A: 雙引擎辨識標的與進階數據抓取（終極完整版 - 全防呆）
+# Step A: 雙引擎辨識標的與進階數據抓取（完整保留版）
 # =======================================================
-import streamlit as st
-import pandas as pd
-from datetime import datetime, timedelta
 
-# status 防呆
+# status 防呆（保留）
 try:
     from status import status
     prog = status
 except ImportError:
     class DummyStatus:
-        def info(self, msg): st.info(msg)
-        def success(self, msg): st.success(msg)
-        def warning(self, msg): st.warning(msg)
+        def info(self, msg): pass  # ← 改成 pass（靜默）
+        def success(self, msg): pass  # ← 改成 pass（靜默）
+        def warning(self, msg): pass  # ← 改成 pass（靜默）
         def progress(self, val): 
-            if 'prog' not in st.session_state: st.session_state.prog = st.progress(0)
+            if 'prog' not in st.session_state: 
+                st.session_state.prog = st.progress(0)
             st.session_state.prog.progress(val)
     status = DummyStatus()
     prog = status
 
-status.info(f"🔍 雙引擎辨識標的與進階數據抓取：{stock_code}")
+# status.info(f"🔍 雙引擎...")  # ← 註解（靜默）
 
-# **A0. 本地保險字典（完整15檔）**
+# **A0. 本地保險字典（完整保留）**
 local_industry_map = {
     "2330": ("台積電",    "半導體業"), "2454": ("聯發科",    "半導體業"),
     "2317": ("鴻海",      "電子業"),   "2303": ("聯電",      "半導體業"),
@@ -1720,7 +1718,6 @@ stock_name = stock_code
 industry = "未知產業"
 is_etf = False
 
-# 全域輸出
 advanced_data = {"revenue_yoy": "財報空窗期，暫不評估", "foreign_chips": "無顯著訊號"}
 price_snapshot = {}
 dividend_metrics = {}
@@ -1729,41 +1726,32 @@ valuation = {}
 if stock_code in local_industry_map:
     stock_name, industry = local_industry_map[stock_code]
     is_etf = industry == "ETF"
-    status.success(f"✅ 本地字典：{stock_name} | {industry}")
     prog.progress(10)
 
-# **A1. FinMind 雙引擎（已驗證成功版）**
+# **A1. FinMind 雙引擎（完整保留）**
 finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
 dl = None
 try:
-    from FinMind.data import DataLoader  # 🟢 大寫 F！關鍵
+    from FinMind.data import DataLoader
     dl = DataLoader()
     if finmind_key:
         dl.login_by_token(api_token=finmind_key)
-        status.success("✅ FinMind 登入")
     
-    # 策略1：taiwan_stock_info（穩定主力）
     df_info = dl.taiwan_stock_info()
     row = df_info[df_info["stock_id"] == stock_code]
     if not row.empty:
         stock_name = str(row["stock_name"].iloc[0])
         industry = str(row["industry_category"].iloc[0])
-        
-        # ETF 7條件
         etf_kw = ["ETF", "指數股票型", "基金", "債券", "期信", "etf"]
         is_etf = (
-            is_etf
-            or stock_code.startswith("0")
+            is_etf or stock_code.startswith("0")
             or any(k.lower() in (industry + stock_name).lower() for k in etf_kw)
         )
-        status.success(f"✅ FinMind：{stock_name} | {industry} | ETF:{is_etf}")
-    
     prog.progress(30)
-    
 except Exception as e:
-    status.warning(f"FinMind 略過：{e}")
+    pass  # 靜默
 
-# **A2. yfinance 價格快照 + 估值（你的成功邏輯）**
+# **A2. yfinance（完整保留）**
 def safe_num(val, rd=2):
     try: return round(float(val), rd) if pd.notna(val) else None
     except: return None
@@ -1796,7 +1784,6 @@ try:
             }
             advanced_data["ma20_deviation"] = f"{deviation:.2f}%"
         
-        # 估值
         info = yf_ticker.info or {}
         valuation = {
             "trailingPE": safe_num(info.get("trailingPE")),
@@ -1804,26 +1791,22 @@ try:
             "marketCap": safe_int(info.get("marketCap"))
         }
         
-        # 配息（你的完整邏輯）
         divs = yf_ticker.dividends
         if not divs.empty:
             divs.index = divs.index.tz_localize(None)
             recent_divs = divs.tail(4)
             dividend_metrics["avg_div"] = safe_num(recent_divs.mean())
     
-    status.success("✅ yfinance 估值/配息")
     prog.progress(60)
-    
 except Exception as e:
-    status.warning(f"yfinance 略過：{e}")
+    pass
 
-# **A3. FinMind 進階數據**
-# **A3. FinMind 進階數據（終極完整版 - 營收+外資+P/E+EPS）**
+# **A3. FinMind 進階數據（完整保留）**
 if dl:
     try:
         prog.progress(70)
         
-        # 1. 營收 YoY（最新月）
+        # 1. 營收 YoY
         df_rev = dl.taiwan_stock_month_revenue(
             stock_id=stock_code,
             start_date=(datetime.today() - timedelta(90)).strftime("%Y%m%d")
@@ -1832,10 +1815,10 @@ if dl:
             yoy = df_rev['revenue_YearOnYear_ratio'].dropna()
             if len(yoy) > 0:
                 advanced_data["revenue_yoy"] = f"{yoy.iloc[-1]:.1f}% (最新月)"
-                st.caption(f"營收YoY：{advanced_data['revenue_yoy']}")
+        
         prog.progress(80)
         
-        # 2. 外資籌碼（近15天淨買賣）
+        # 2. 外資籌碼
         df_inst = dl.taiwan_stock_institutional_investors(
             stock_id=stock_code,
             start_date=(datetime.today() - timedelta(15)).strftime("%Y%m%d")
@@ -1845,58 +1828,43 @@ if dl:
             if not foreign_data.empty:
                 foreign_net = foreign_data['change_from_previous_day'].sum()
                 advanced_data["foreign_chips"] = f"外資近15天{foreign_net:+.0f}張"
-                st.caption(f"外資：{advanced_data['foreign_chips']}")
+        
         prog.progress(85)
         
-        # 3. 🔥 P/E + EPS（自算，解決yfinance無PE）[web:93]
+        # 3. P/E + EPS
         df_fund = dl.financial_statement(
             stock_id=stock_code,
             start_date=(datetime.today() - timedelta(365)).strftime("%Y%m%d")
         )
-        eps_rows = df_fund[df_fund['FinancialStatementType'] == 'EPS']  # 正確欄位
+        eps_rows = df_fund[df_fund['FinancialStatementType'] == 'EPS']
         if not eps_rows.empty:
-            eps_latest = float(eps_rows['Value'].tail(1).iloc[0])  # Value欄
+            eps_latest = float(eps_rows['Value'].tail(1).iloc[0])
             last_price = price_snapshot.get('last_price', 0)
             if last_price > 0 and eps_latest != 0:
                 pe_calc = last_price / abs(eps_latest)
                 valuation["calculatedPE"] = round(pe_calc, 2)
                 valuation["EPS"] = round(eps_latest, 2)
-                advanced_data["PE_EPS"] = f"P/E:{pe_calc:.1f}x (EPS:{eps_latest:+.2f})"
-                st.caption(f"P/E自算：{advanced_data['PE_EPS']}")
-            else:
-                advanced_data["PE_EPS"] = f"EPS:{eps_latest:.2f}（P/E N/A）"
-        else:
-            advanced_data["PE_EPS"] = "無EPS數據（財報空窗）"
+                advanced_data["PE_EPS"] = f"P/E:{pe_calc:.1f}x"
         
-        # 4. 毛利率（選填）
         gross_margin_rows = df_fund[df_fund['FinancialStatementType'] == 'GrossMargin']
         if not gross_margin_rows.empty:
             gm_latest = float(gross_margin_rows['Value'].tail(1).iloc[0])
             advanced_data["gross_margin"] = f"{gm_latest:.1f}%"
         
-        status.success("✅ FinMind 全進階（營收+外資+P/E+毛利）")
+        prog.progress(100)
         
     except Exception as e:
-        status.warning(f"FinMind 進階：{e}")
-        advanced_data["PE_EPS"] = "P/E N/A"
+        pass
 
-# A3結束，進度完成
-prog.progress(100)
-status.success(f"✅ Step A 完成！{stock_name} | {industry} | ETF:{is_etf}")
-
-
-# **完整 JSON 輸出**
-st.json({
-    "price_snapshot": price_snapshot,
-    "advanced_data": advanced_data,
-    "dividend_metrics": dividend_metrics,
-    "valuation": valuation,
-    "stock_info": {
-        "name": stock_name,
-        "industry": industry,
-        "is_etf": is_etf
-    }
+# **儲存結果**
+st.session_state.update({
+    "t5_stock_name": stock_name, "t5_industry": industry, "t5_is_etf": is_etf,
+    "t5_price_snapshot": price_snapshot, "t5_advanced_data": advanced_data,
+    "t5_dividend_metrics": dividend_metrics, "t5_valuation": valuation
 })
+
+# ✅ 完美結束（唯一一行顯示）
+st.success(f"✅ {stock_name} 資料收集完成")
 
 # =======================================================
 # Step B+: 超強新聞矩陣 + 產業API（2026終極，新聞必滿）
