@@ -2135,6 +2135,7 @@ col4.metric("📊 P/E", f"{valuation.get('trailingPE', 'N/A')}")
 
 st.success("✅ Step C 綜合報告生成完成！")
 st.session_state.hide_valuation = True 
+st.stop() 
 
 # =========================================================
 # 4) Display (content-oriented; no background blocks)
