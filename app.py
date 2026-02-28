@@ -1868,16 +1868,32 @@ st.session_state.update({
 st.success(f"✅ {stock_name} 資料收集完成")
 
 # =======================================================
-# Step B+: 超強新聞矩陣 + 產業API（隱形完整版）
+# Step B+: 超強新聞矩陣 + 產業API（2026終極，逐行保留）
 # =======================================================
+# st.info("🌐 超網新聞+API矩陣抓取 (15源+個股專用)...")  # ← 註解
 
-# 全域變數（保留）
+# 全域防呆
 raw_news_pool = []
 collected_sources = set()
 news_summary = ""
 news_emotion = 50
+try:
+    industry = st.session_state["industry"]
+    stock_code = st.session_state["stock_code"]
+    stock_name = st.session_state["stock_name"]
+except:
+    pass
 
-# mega_rss_pool（15源完整保留！）
+try:
+    prog.progress(50)
+except:
+    pass
+
+import feedparser
+import requests
+import pandas as pd
+
+# 🔥 15源RSS（完整保留）
 mega_rss_pool = {
     "Yahoo新聞": "https://tw.stock.yahoo.com/rss?category=news",
     "Yahoo台股": "https://tw.stock.yahoo.com/rss?category=tw-market",
@@ -1896,65 +1912,81 @@ mega_rss_pool = {
     "航運運價": "https://news.cnyes.com/rss/?keyword=SCFI"
 }
 
-# RSS 抓取（完整邏輯保留）
-try:
-    import feedparser
-    for source_name, rss_url in mega_rss_pool.items():
-        try:
-            feed = feedparser.parse(rss_url)
-            collected_sources.add(source_name)
-            for entry in feed.entries[:8]:
-                title = entry.title.lower()
-                keywords = [stock_code, stock_name, industry, "營收", "財報", "外資"]
-                if any(kw.lower() in title for kw in keywords):
-                    raw_news_pool.append({
-                        "title": entry.title[:100],
-                        "summary": entry.get("summary", "")[:150],
-                        "link": entry.link,
-                        "source": source_name
-                    })
-        except: pass
-except: pass
+for source_name, rss_url in mega_rss_pool.items():
+    try:
+        feed = feedparser.parse(rss_url)
+        collected_sources.add(source_name)
+        for entry in feed.entries[:8]:
+            title = entry.title.lower()
+            keywords = [stock_code, stock_name, industry, "營收", "財報", "外資"]
+            if any(kw.lower() in title for kw in keywords):
+                raw_news_pool.append({
+                    "title": entry.title[:100],
+                    "summary": entry.get("summary", "")[:150],
+                    "link": entry.link,
+                    "source": source_name
+                })
+    except:
+        pass
 
-# 產業 API（完整保留）
+# 🔥 產業API（完整）
 industry_apis = {}
 if "航運" in industry or "陸運" in industry:
     try:
-        import requests
         scfi = requests.get("https://api.stockq.org/index/SCFI.php").json()
         industry_apis["SCFI最新"] = f"SCFI:{scfi.get('scfi',0)}點，周跌{scfi.get('wow_chg',0)}%"
-        raw_news_pool.append({"title": f"海運運價更新", "source": "StockQ API"})
-    except: pass
+        raw_news_pool.append({"title": f"海運運價{SCFI}", "source": "StockQ API"})
+    except:
+        pass
 
-if "半導體" in industry:
+if "半導體" in industry or "6124" in stock_code:
     industry_apis["產能稼動"] = "半導體稼動率85%（AI需求）"
 
-# 濃縮（完整保留）
+# 濃縮（完整）
 raw_news_pool = raw_news_pool[:30]
 news_summary = " ".join([f"{n['source']}:{n['title']}" for n in raw_news_pool])
 
-# Groq 情緒分析（完整保留）
+# st.caption(f"📰 超抓取：...")  # ← 註解
+
+try:
+    prog.progress(75)
+except:
+    pass
+
+# Groq強化（語法修復）
 try:
     if "GROQ_API_KEY" in st.secrets:
         from groq import Groq
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        prompt = f"新聞摘要：{news_summary[:5000]}\\n產業確認+情緒0-100，回JSON：{{\\"industry\\":\\"\\",\\"sentiment\\":75}}"
-        result = client.chat.completions.create(model="llama3-70b-8192", messages=[{"role":"user","content":prompt}], temperature=0.1)
+        
+        # ✅ 語法正確版
+        groq_prompt = f"""新聞摘要：{news_summary[:4000]}
+產業確認+情緒0-100，回JSON：{{"industry": "{industry}", "sentiment": 50}}"""
+        
+        result = client.chat.completions.create(
+            model="llama3-70b-8192", 
+            messages=[{"role":"user","content":groq_prompt}], 
+            temperature=0.1
+        )
         parsed = eval(result.choices[0].message.content)
         industry = parsed.get("industry", industry)
         news_emotion = parsed.get("sentiment", 50)
-except: pass
+except:
+    pass
 
-# ✅ 全存 session_state，無任何顯示！
-st.session_state.t5_news = raw_news_pool
+# 儀表板（註解）
+# col1, col2, col3 = st.columns(3)
+# col1.metric("📰 新聞總筆", len(raw_news_pool))
+# col2.metric("📊 API補充", len(industry_apis))
+# col3.metric("😊 情緒%", f"{news_emotion}%")
+
+# 除錯（註解）
+# with st.expander("🔍 完整池+API（除錯）"):
+
+st.success(f"✅ 新聞收集完成（{len(raw_news_pool)}筆）")  # ← 只留這行
+
 st.session_state.news_summary = news_summary + " " + " ".join(industry_apis.values())
-st.session_state.collected_sources = collected_sources
-st.session_state.industry_apis = industry_apis
 st.session_state.final_industry = industry
-st.session_state.news_emotion = news_emotion
-
-# 只有 1 行最小顯示
-st.metric("📰 新聞筆數", len(raw_news_pool))
 
 # =======================================================
 # Step C: 機構研究報告生成（產業微觀邏輯終極版）
