@@ -2101,7 +2101,7 @@ def get_industry_perspectives(industry, stock_code, current_price):
 perspectives = get_industry_perspectives(industry, stock_code, S_current)
 current_price = price_snapshot.get('last_price', 280)
 
-combined_prompt = f"""你是高盛資深產業首席，綜合三方觀點生成單一篇報告。
+combined_prompt = f"""你是資深產業首席，綜合三方觀點生成單一篇報告。
 
 【標的】{stock_code} {stock_name} | {industry}
 【數據】最新價：{current_price}元 (乖離 {advanced_data.get('ma20_deviation', '0%')}) | P/E：{pe_text}
