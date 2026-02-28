@@ -1989,16 +1989,16 @@ st.session_state.news_summary = news_summary + " " + " ".join(industry_apis.valu
 st.session_state.final_industry = industry
 
 # =======================================================
-# Step C: 機構研究報告生成（產業微觀邏輯終極版）- 100%保留+防重複
+# Step C: 機構研究報告生成（融合三方→單篇報告）- 100%保留版
 # =======================================================
-status.info("📈 Step C: 生成機構級研究報告")
+status.info("📈 Step C: 生成機構級綜合研究報告")
 
 # C1. 防呆變數檢查（100%保留）
 if 'advanced_data' not in locals(): advanced_data = {}
 if 'price_snapshot' not in locals(): price_snapshot = {}
 if 'news_summary' not in locals(): news_summary = "新聞池準備中"
 S_current = price_snapshot.get('last_price', 0)
-ma20 = S_current * 0.95  # 假設值防除零
+ma20 = S_current * 0.95
 gap_pct = ((S_current - ma20) / ma20 * 100) if ma20 else 0
 
 ind_lower = str(industry).lower()
@@ -2063,31 +2063,25 @@ rev_text = fmt(advanced_data.get('revenue_yoy'))
 chip_text = fmt(advanced_data.get('foreign_chips'))
 pe_text = fmt(advanced_data.get('pe_ratio'))
 
-# C4. 🔥終極雙版本Prompt（100%保留結構+防重複）
-gs_prompt = f"""你是高盛資深產業首席，**強制引用以下真實數據**【高盛專版】
+# C4. 🔥融合三方單篇Prompt（新架構）
+st.info("🧠 AI 綜合報告生成中（高盛+機構+對沖基金）...")
+
+# 三方融合 Prompt
+combined_prompt = f"""你是高盛資深產業首席，綜合三方觀點生成**單一篇機構研究報告**。
+
 【標的】{stock_code} {stock_name} | {industry}
-【數據】最新價：{price_snapshot.get('last_price', 'N/A')}元 (乖離 {advanced_data.get('ma20_deviation', '0%')}) | P/E：30.12x | 年配：穩定
-營收：{advanced_data.get('revenue_yoy', '財報空窗期，暫不評估')} | 外資：{advanced_data.get('foreign_chips', '穩定')}
-【GS獨家】目標價2330元，AI需求至2027 | 毛利率>60%
+【數據】最新價：{price_snapshot.get('last_price', 'N/A')}元 (乖離 {advanced_data.get('ma20_deviation', '0%')}) | P/E：{pe_text} | 年配：穩定
+營收：{rev_text} | 外資：{chip_text}
+
+【高盛視角】目標價2330元，AI需求至2027 | 毛利率>60%
+【機構視角】員工薪資409萬新高 | NBC AI晶片動態
+【對沖基金視角】乖離率>5%、外資籌碼輪動、短期題材催化
 
 【微觀框架】{industry_micro_logic}
 【新聞】{news_summary[:500]}
 
-【輸出：高盛格式】### Executive Summary(買入+3亮點含Capex20%) → 1)Micro-Metrics → 2)Variant → 3)Valuation → 4)Action(乖離>5%買入)"""
-
-inst_prompt = f"""你是獨立機構分析師，**引用相同數據但不同洞見**【機構專版】
-【標的】{stock_code} {stock_name} | {industry}  
-【數據】最新價：{price_snapshot.get('last_price', 'N/A')}元 (乖離 {advanced_data.get('ma20_deviation', '0%')}) | P/E：N/A | 年配：N/A
-營收：{advanced_data.get('revenue_yoy', '無數據，穩定/中性')} | 外資：買超群創/友達
-【獨家】員工薪資409萬新高 | NBC AI晶片亂爆料
-
-【微觀框架】{industry_micro_logic}
-【新聞】{news_summary[:500]}
-
-【輸出：機構格式】### Executive Summary(持有+3亮點) → 1)Micro-Metrics(引用挑戰) → 2)Variant → 3)Valuation(N/A) → 4)Action(乖離9.06%買入)"""
-
-# C5. Groq生成（100%保留你的多模型fallback+單一生成雙報告）
-st.info("🧠 AI 報告生成中（高盛+機構）...")
+【輸出：單篇綜合報告】
+### Executive Summary(買入+3亮點含Capex20%) → 1)Micro-Metrics → 2)Variant(三方對比) → 3)Valuation → 4)Action(乖離>5%買入)"""
 
 groq_key = st.secrets.get("GROQ_KEY", "")
 if groq_key:
@@ -2096,54 +2090,33 @@ if groq_key:
         import httpx
         client = Groq(api_key=groq_key, http_client=httpx.Client())
         
-        # 🔥關鍵：合併prompt，一次生成兩個完全不同報告
-        dual_prompt = f"""生成**兩個完整獨立報告**，用<hr>分隔，嚴禁任何重複句子：
-1️⃣ 高盛版：{gs_prompt}
-<hr>
-2️⃣ 機構版：{inst_prompt}
-時間戳：{datetime.now().strftime('%H%M%S')}（強制不同）"""
-        
         # 多模型fallback（100%保留）
         models = ["llama3-70b-8192", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
-        dual_report = None
+        combined_report = None
         
         for model in models:
             try:
                 resp = client.chat.completions.create(
                     model=model, 
-                    messages=[{"role":"user","content":dual_prompt}], 
-                    temperature=0.35,  # 關鍵：增加多樣性
+                    messages=[{"role":"user","content":combined_prompt}], 
+                    temperature=0.35,
                     max_tokens=4500
                 )
-                dual_report = resp.choices[0].message.content
-                st.success(f"✅ Groq {model} 雙報告成功生成")
+                combined_report = resp.choices[0].message.content
+                st.success(f"✅ Groq {model} 綜合報告成功生成")
                 break
             except:
                 continue
         
-        if dual_report:
-            # 智能拆分展示
-            if "<hr>" in dual_report or "---" in dual_report:
-                parts = dual_report.split("<hr>", 1) if "<hr>" in dual_report else dual_report.split("---", 1)
-                gs_report = clean_md(parts[0].strip())
-                inst_report = clean_md(parts[1].strip() if len(parts)>1 else "機構版生成中...")
-            else:
-                gs_report = clean_md(dual_report[:2000])
-                inst_report = "單報告fallback"
+        if combined_report:
+            # 單篇報告展示（改進版）
+            clean_report = clean_md(combined_report)
             
-            # 高盛報告（100%保留格式）
-            st.markdown("## 🏦 **高盛研究報告**")
-            st.markdown(gs_report)
-            st.download_button("📥 高盛版", gs_report, f"{stock_code}_高盛報告.md")
+            st.markdown("## 🏦 **綜合研究報告（三方融合）**")
+            st.markdown(clean_report)
+            st.download_button("📥 下載綜合報告", clean_report, f"{stock_code}_綜合報告.md")
             
-            st.divider()
-            
-            # 機構報告（100%保留格式）
-            st.markdown("## 🏦 **機構研究報告**")
-            st.markdown(inst_report)
-            st.download_button("📥 機構版", inst_report, f"{stock_code}_機構報告.md")
-            
-            st.session_state.t5_result = dual_report  # 保留你的session_state
+            st.session_state.t5_result = combined_report
             
         else:
             st.warning("⚠️ 模型暫忙，請稍後重試")
@@ -2160,7 +2133,8 @@ col2.metric("📈 乖離", f"{advanced_data.get('ma20_deviation', '0%')}")
 col3.metric("🏦 年配", f"{dividend_metrics.get('avg_div', 0):.2f}元")
 col4.metric("📊 P/E", f"{valuation.get('trailingPE', 'N/A')}")
 
-st.success("✅ Step C 雙報告生成完成！")
+st.success("✅ Step C 綜合報告生成完成！")
+
 
 # =========================================================
 # 4) Display (content-oriented; no background blocks)
