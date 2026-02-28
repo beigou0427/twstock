@@ -12,6 +12,7 @@ from FinMind.data import DataLoader
 from scipy.stats import norm
 import plotly.graph_objects as go
 import plotly.express as px
+
 import feedparser
 import time
 from collections import Counter
@@ -2097,25 +2098,56 @@ P/E{advanced_data.get('pe_ratio', 'N/A')}同業比較+年配{dividend_metrics.ge
 具體建議（乖離>5%買入<-5%賣出）+風險矩陣（新聞排序）"""
 
 # C5. Groq生成
-if os.getenv("GROQ_API_KEY"):
+# =======================================================
+# Groq 生成（穩定版，無除錯）
+# =======================================================
+st.info("🧠 AI 報告生成中...")
+
+groq_key = st.secrets.get("GROQ_KEY", "")
+if groq_key:
     try:
         from groq import Groq
-        client = Groq()
-        response = client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[{"role": "user", "content": ai_prompt}],
-            temperature=0.1
-        )
-        st.markdown("## 🏦 **機構研究報告**")
-        st.markdown(response.choices[0].message.content)
-        st.download_button("📥 PDF", response.choices[0].message.content, f"{stock_code}_report.md")
+        import httpx
+        client = Groq(api_key=groq_key, http_client=httpx.Client())
+        
+        # 多模型 fallback
+        models = ["llama3-70b-8192", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+        report = None
+        
+        for model in models:
+            try:
+                resp = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": ai_prompt}],
+                    temperature=0.1,
+                    max_tokens=3000
+                )
+                report = resp.choices[0].message.content
+                break
+            except:
+                continue
+        
+        if report:
+            st.markdown("## 🏦 **高盛研究報告**")
+            st.markdown(report)
+            st.download_button("📥 下載報告", report, f"{stock_code}_高盛報告.md")
+            st.success("✅ 報告生成成功！")
+            st.session_state.t5_result = report  # 存起來
+        else:
+            st.warning("⚠️ 模型暫忙，請稍後重試")
+            
     except Exception as e:
-        st.error(f"生成失敗：{e}")
-        st.code(ai_prompt)
+        st.error("❌ Groq 連線問題")
+        # ❌ 永遠不顯示 st.code(ai_prompt)
 else:
-    st.code(ai_prompt)
+    st.warning("⚠️ 請設定 GROQ_KEY")
 
-status.success("🎉 高盛級報告生成完成！")
+# 儀表板（永遠顯示）
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("💰 現價", f"{price_snapshot.get('last_price', 0):,.0f}元")
+col2.metric("📈 乖離", f"{advanced_data.get('ma20_deviation', '0%')}")
+col3.metric("🏦 年配", f"{dividend_metrics.get('avg_div', 0):.2f}元")
+col4.metric("📊 P/E", f"{valuation.get('trailingPE', 'N/A')}")
 
 # ----------------------------- 
 # Step D: Groq call (with fallback model) - 防無限循環終極版（完美縮排）
