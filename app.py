@@ -2067,18 +2067,62 @@ pe_text = fmt(advanced_data.get('pe_ratio'))
 st.info("🧠 AI 綜合報告生成中（高盛+機構+對沖基金）...")
 
 # 三方融合 Prompt
-combined_prompt = f"""你是高盛資深產業首席，綜合三方觀點生成**單一篇機構研究報告**。
+# C4. 三方融合 Prompt（動態版）
+def get_industry_perspectives(industry, stock_code, current_price):
+    """動態生成三方視角"""
+    ind_lower = industry.lower()
+    
+    if any(x in ind_lower for x in ["半導體", "晶圓"]):
+        return {
+            "gs": "目標價2330元，AI先進製程至2027 | 毛利率>60%",
+            "inst": "員工薪資409萬新高 | CoWoS產能全滿",
+            "hedge": "乖離>5%、外資連買、AI題材催化"
+        }
+    elif "食品" in ind_lower:
+        return {
+            "gs": f"目標價{current_price*1.12:.0f}元，品牌定價權強化 | 毛利率>35%",
+            "inst": "原物料成本成功轉嫁 | 通路庫存健康",
+            "hedge": "乖離>3%、內資回補、消費旺季效應"
+        }
+    elif any(x in ind_lower for x in ["金融", "銀行"]):
+        return {
+            "gs": f"目標價{current_price*1.10:.0f}元，NIM利差擴張 | ROE>12%",
+            "inst": "放款餘額穩健成長 | NPL控制優異",
+            "hedge": "乖離>4%、存貸利差擴大、法說利多"
+        }
+    else:  # 通用
+        target = current_price * 1.15
+        return {
+            "gs": f"目標價{target:.0f}元，{industry}景氣復甦 | 毛利率改善",
+            "inst": f"營收{rev_text} | 外資{chip_text}",
+            "hedge": f"乖離>5%、法人回補、季節性題材"
+        }
+
+perspectives = get_industry_perspectives(industry, stock_code, S_current)
+current_price = price_snapshot.get('last_price', 280)
+
+combined_prompt = f"""你是高盛資深產業首席，綜合三方觀點生成單一篇報告。
 
 【標的】{stock_code} {stock_name} | {industry}
-【數據】最新價：{price_snapshot.get('last_price', 'N/A')}元 (乖離 {advanced_data.get('ma20_deviation', '0%')}) | P/E：{pe_text} | 年配：穩定
-營收：{rev_text} | 外資：{chip_text}
+【數據】最新價：{current_price}元 (乖離 {advanced_data.get('ma20_deviation', '0%')}) | P/E：{pe_text}
 
-【高盛視角】目標價2330元，AI需求至2027 | 毛利率>60%
-【機構視角】員工薪資409萬新高 | NBC AI晶片動態
-【對沖基金視角】乖離率>5%、外資籌碼輪動、短期題材催化
+【高盛視角】{perspectives['gs']}
+【機構視角】{perspectives['inst']}
+【對沖基金視角】{perspectives['hedge']}
 
 【微觀框架】{industry_micro_logic}
-【新聞】{news_summary[:500]}
+【新聞】{news_summary[:400]}
+
+【輸出：單篇綜合報告】
+### Executive Summary(買入+3亮點)
+1) Micro-Metrics
+2) Variant(三方對比)
+3) Valuation
+4) Action(乖離>X%買入)
+
+**嚴禁重複句子，每段1-2句，嚴格依產業邏輯**
+"""
+
 
 【輸出：單篇綜合報告】
 ### Executive Summary(買入+3亮點含Capex20%) → 1)Micro-Metrics → 2)Variant(三方對比) → 3)Valuation → 4)Action(乖離>5%買入)"""
