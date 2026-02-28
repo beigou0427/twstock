@@ -2139,6 +2139,8 @@ st.session_state.hide_valuation = True
 # =========================================================
 # 4) Display (content-oriented; no background blocks)
 # =========================================================
+if any(v not in (None, "", 0) for v in valuation.values()) and not st.session_state.get('hide_valuation', False):
+    st.markdown("#### 📌 Valuation & Consensus (yfinance)")
 if st.session_state.t5_result:  # ← 第2162行，精準4空格！
     metrics = st.session_state.get("t5_dividend_metrics", {}) or {}
     history = st.session_state.get("t5_dividend_history", []) or []
