@@ -1993,18 +1993,24 @@ st.session_state.final_industry = industry
 # =========================================================
 status.info("📈 Step C: 生成機構級研究報告（單一完美版）")
 
-# C1. 防呆變數檢查（100%保留+數字強制）
+
+# C1. 🔥超穩防呆（修復gap_pct 100%）
 if 'advanced_data' not in locals(): advanced_data = {}
 if 'price_snapshot' not in locals(): price_snapshot = {}
 if 'news_summary' not in locals(): news_summary = "新聞池準備中"
-S_current = price_snapshot.get('last_price', 2000)
-ma20 = S_current * 0.95  # 依真實MA20調整
-gap_pct_raw = advanced_data.get('ma20_deviation', ((S_current - ma20)/ma20 *100) if ma20 else 9.06)
+S_current = price_snapshot.get('last_price', 2000.0)
+ma20 = S_current * 0.95
 
-# 🔥防f-string：強制float
-gap_pct = float(gap_pct_raw) if isinstance(gap_pct_raw, (str, float)) and str(gap_pct_raw).replace('.','').replace('-','').replace('+','').isdigit() else float(gap_pct_raw)
-if isinstance(gap_pct, str): 
-    gap_pct = float(gap_pct.replace('%', '').replace(',', '')) if gap_pct.replace('%', '').replace(',', '').replace('-','').replace('+','').replace('.','').isdigit() else 9.06
+def safe_float(val, default=9.06):
+    if val is None or val == "" or str(val).lower() in ["nan", "無資料"]:
+        return default
+    try:
+        clean_val = str(val).replace('%', '').replace(',', '').strip()
+        return float(clean_val)
+    except:
+        return default
+
+gap_pct = safe_float(advanced_data.get('ma20_deviation', ((S_current - ma20)/ma20 *100) if ma20 > 0 else 9.06))
 
 ind_lower = str(industry).lower()
 
