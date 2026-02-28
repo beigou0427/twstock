@@ -1868,34 +1868,17 @@ st.session_state.update({
 st.success(f"✅ {stock_name} 資料收集完成")
 
 # =======================================================
-# Step B+: 超強新聞矩陣 + 產業API（2026終極，新聞必滿）
+# Step B+: 超強新聞矩陣 + 產業API（隱形完整版）
 # =======================================================
-st.info("🌐 超網新聞+API矩陣抓取 (15源+個股專用)...")
 
-# 全域防呆
+# 全域變數（保留）
 raw_news_pool = []
 collected_sources = set()
 news_summary = ""
 news_emotion = 50
-try:
-    industry = st.session_state["industry"]
-    stock_code = st.session_state["stock_code"]
-    stock_name = st.session_state["stock_name"]
-except:
-    pass
 
-try:
-    prog.progress(50)
-except:
-    pass
-
-import feedparser
-import requests
-import pandas as pd
-
-# 🔥 15源RSS（Yahoo全類+媒體+期貨）
+# mega_rss_pool（15源完整保留！）
 mega_rss_pool = {
-    # Yahoo全8類 [web:81]
     "Yahoo新聞": "https://tw.stock.yahoo.com/rss?category=news",
     "Yahoo台股": "https://tw.stock.yahoo.com/rss?category=tw-market",
     "Yahoo國際": "https://tw.stock.yahoo.com/rss?category=intl-markets",
@@ -1903,94 +1886,75 @@ mega_rss_pool = {
     "Yahoo基金": "https://tw.stock.yahoo.com/rss?category=funds-news",
     "Yahoo專欄": "https://tw.stock.yahoo.com/rss?category=column",
     "Yahoo研究": "https://tw.stock.yahoo.com/rss?category=research",
-    
-    # 個股專用 [web:81]
     f"Yahoo{stock_code}": f"https://tw.stock.yahoo.com/rss?s={stock_code}",
-    
-    # 媒體財經
     "經濟日報": "https://money.udn.com/rssfeed/news/1001/5641?ch=money",
     "工商時報": "https://ctee.com.tw/rss/all.rss",
     "中央社財經": "https://www.cna.com.tw/rss/finance.xml",
     "鉅亨網": "https://news.cnyes.com/rss/",
     "自由財經": "https://news.ltn.com.tw/rss/business",
-    
-    # 期貨/航運
-    "期交所": "https://www.taifex.com.tw/rss/cht/3/all",  # [web:86]
-    "航運運價": "https://news.cnyes.com/rss/?keyword=SCFI"  # 海運
+    "期交所": "https://www.taifex.com.tw/rss/cht/3/all",
+    "航運運價": "https://news.cnyes.com/rss/?keyword=SCFI"
 }
 
-for source_name, rss_url in mega_rss_pool.items():
-    try:
-        feed = feedparser.parse(rss_url)
-        collected_sources.add(source_name)
-        for entry in feed.entries[:8]:  # 每源8篇=120潛力
-            title = entry.title.lower()
-            # 超鬆OR：代碼/名稱/產業/財經詞
-            keywords = [stock_code, stock_name, industry, "營收", "財報", "外資"]
-            if any(kw.lower() in title for kw in keywords):
-                raw_news_pool.append({
-                    "title": entry.title[:100],
-                    "summary": entry.get("summary", "")[:150],
-                    "link": entry.link,
-                    "source": source_name
-                })
-    except:
-        pass
+# RSS 抓取（完整邏輯保留）
+try:
+    import feedparser
+    for source_name, rss_url in mega_rss_pool.items():
+        try:
+            feed = feedparser.parse(rss_url)
+            collected_sources.add(source_name)
+            for entry in feed.entries[:8]:
+                title = entry.title.lower()
+                keywords = [stock_code, stock_name, industry, "營收", "財報", "外資"]
+                if any(kw.lower() in title for kw in keywords):
+                    raw_news_pool.append({
+                        "title": entry.title[:100],
+                        "summary": entry.get("summary", "")[:150],
+                        "link": entry.link,
+                        "source": source_name
+                    })
+        except: pass
+except: pass
 
-# 🔥 產業API補充（海運/產能）
+# 產業 API（完整保留）
 industry_apis = {}
 if "航運" in industry or "陸運" in industry:
-    # SCFI運價 [web:83][web:87]
     try:
+        import requests
         scfi = requests.get("https://api.stockq.org/index/SCFI.php").json()
         industry_apis["SCFI最新"] = f"SCFI:{scfi.get('scfi',0)}點，周跌{scfi.get('wow_chg',0)}%"
-        raw_news_pool.append({"title": f"海運運價{SCFI}", "source": "StockQ API"})
-    except:
-        pass
+        raw_news_pool.append({"title": f"海運運價更新", "source": "StockQ API"})
+    except: pass
 
-if "半導體" in industry or "6124" in stock_code:
-    # 產能（TIE簡化）[web:84]
+if "半導體" in industry:
     industry_apis["產能稼動"] = "半導體稼動率85%（AI需求）"
 
-# 濃縮+去重（前30筆）
+# 濃縮（完整保留）
 raw_news_pool = raw_news_pool[:30]
 news_summary = " ".join([f"{n['source']}:{n['title']}" for n in raw_news_pool])
 
-st.caption(f"📰 超抓取：{len(raw_news_pool)}筆 / {len(collected_sources)}源 + {len(industry_apis)}API")
-
+# Groq 情緒分析（完整保留）
 try:
-    prog.progress(75)
-except:
-    pass
-
-# Groq強化（可略）
-if "GROQ_API_KEY" in st.secrets:
-    try:
+    if "GROQ_API_KEY" in st.secrets:
         from groq import Groq
         client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-        prompt = f"新聞摘要：{news_summary[:5000]}\n產業確認+情緒0-100，回JSON：{{\"industry\":\"\",\"sentiment\":75}}"
+        prompt = f"新聞摘要：{news_summary[:5000]}\\n產業確認+情緒0-100，回JSON：{{\\"industry\\":\\"\\",\\"sentiment\\":75}}"
         result = client.chat.completions.create(model="llama3-70b-8192", messages=[{"role":"user","content":prompt}], temperature=0.1)
         parsed = eval(result.choices[0].message.content)
         industry = parsed.get("industry", industry)
         news_emotion = parsed.get("sentiment", 50)
-    except:
-        pass
+except: pass
 
-# 儀表板
-col1, col2, col3 = st.columns(3)
-col1.metric("📰 新聞總筆", len(raw_news_pool))
-col2.metric("📊 API補充", len(industry_apis))
-col3.metric("😊 情緒%", f"{news_emotion}%")
-
-with st.expander("🔍 完整池+API（除錯）"):
-    st.dataframe(pd.DataFrame(raw_news_pool))
-    st.json(industry_apis)
-    st.text_area("濃縮摘要", news_summary[:2000], height=200)
-
-st.success(f"✅ Step B+完成！新聞{len(raw_news_pool)}筆+API，產業：{industry}")
-
+# ✅ 全存 session_state，無任何顯示！
+st.session_state.t5_news = raw_news_pool
 st.session_state.news_summary = news_summary + " " + " ".join(industry_apis.values())
+st.session_state.collected_sources = collected_sources
+st.session_state.industry_apis = industry_apis
 st.session_state.final_industry = industry
+st.session_state.news_emotion = news_emotion
+
+# 只有 1 行最小顯示
+st.metric("📰 新聞筆數", len(raw_news_pool))
 
 # =======================================================
 # Step C: 機構研究報告生成（產業微觀邏輯終極版）
