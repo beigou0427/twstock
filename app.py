@@ -1789,8 +1789,7 @@ with tabs[0]:
             "foreign_inv":      "無資料",
             "investment_trust": "無資料"
         }
-         st.session_state.report_running = False
-                st.rerun()
+  
 # =======================================================
 # Step A: 雙引擎辨識標的與進階數據抓取（完整保留版）
 # =======================================================
@@ -2408,9 +2407,8 @@ col3.metric("🏦 年配", f"{dividend_metrics.get('avg_div', 0):.2f}元")
 col4.metric("📊 P/E", f"{valuation.get('trailingPE', 'N/A')}")
 
 st.success("✅ Step C 綜合報告生成完成！")
-st.session_state.hide_valuation = True 
-st.stop() 
-
+st.session_state.report_running = False  # ← **與st.success同縮排**
+st.rerun()     
 # =========================================================
 # 4) Display (content-oriented; no background blocks)
 # =========================================================
