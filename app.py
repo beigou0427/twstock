@@ -2048,13 +2048,30 @@ if is_etf:
 3. 嚴禁事項：嚴禁將單一個股（如 Nvidia）的利多直接視為高股息 ETF 的唯一驅動。
 """
 elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
-    industry_micro_logic = """
-【半導體專屬分析框架】
-【半導體通用框架】（依子類調整）
-1. 技術迭代：先進節點良率/CoWoS（代工） | 成熟製程/新品ASP（記憶體） | 設備訂單（上游）。
-2. 供需動態：晶圓稼動率/客戶庫存（代工） | 價格指數/終端需求（記憶體） | 全球能見度（IDM）。
-3. 資本支出：Capex/Sales比率，判斷擴產/維護。
-4. 通用財務：毛利率(>40%)、R&D%銷售、客戶集中度。
+    # 🔥 細分半導體子類（依股票辨識）
+    if stock_code in ["2330", "2303"]:  # 台積電/聯電-代工
+        industry_micro_logic = """
+【晶圓代工框架】
+1. 先進節點(3nm/2nm)良率 | CoWoS產能
+2. 晶圓稼動率 | Nvidia/AMD庫存
+3. Capex/Sales >30% | 毛利率>55%
+        """
+    elif any(x in stock_name.lower() for x in ["華邦", "2344", "macronix"]):  # 記憶體
+        industry_micro_logic = """
+【記憶體專屬框架】（華邦電/DRAM/NOR）
+1. 成熟製程(DDR4/LPDDR4) ASP | HBM競爭態勢
+2. 晶片價格指數(DRAMeX) | PC/手機庫存去化
+3. 稼動率>90% | 車用NOR訂單 | 毛利率>25%
+        """
+    elif stock_code == "2454":  # 聯發科-IC設計
+        industry_micro_logic = """
+【IC設計框架】
+1. SoC出貨量 | 天璣/緯甲ASP
+2. 手機市占 | AI PC晶片能見度
+3. 毛利率>45% | 客戶集中(小米/OPPO)
+        """
+    else:  # 通用半導體
+        industry_micro_logic = """【半導體通用】..."""
 
 """
 elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
