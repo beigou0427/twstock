@@ -951,7 +951,7 @@ with tabs[2]:
     
     st.caption("📊 **操作邏輯**：優先槓桿最接近 → 最高微觀勝率 → 最遠天數。建議搭配遠月 LEAPS CALL 降低時間風險。")
 # -------------------------- 
-# Tab 3: 歷史回測（100% 穩定版） 
+# Tab 3: 歷史回測（終極穩定版） 
 # --------------------------
 with tabs[3]:
     st.markdown("### 📊 **策略時光機：真實歷史驗證**")
@@ -1045,74 +1045,81 @@ with tabs[3]:
                     fig1.update_layout(title="資金曲線對比", height=350, hovermode="x unified")
                     st.plotly_chart(fig1, use_container_width=True)
                     
+                    # 🔥 熱力圖 + 蒙地卡羅（並排）
                     col_hm, col_mc = st.columns(2)
                     
-                    # 2. 熱力圖（穩定版）
+                    # 2. 熱力圖（超穩定）
                     with col_hm:
                         st.markdown("### 🔥 **月損益熱力圖**")
-                        df_month = df_hist[['date', 'Strategy_Ret']].copy()
+                        df_month = df_hist.copy()
                         df_month['year'] = df_month['date'].dt.year
                         df_month['month'] = df_month['date'].dt.month
-                        monthly = df_month.groupby(['year', 'month'])['Strategy_Ret'].sum().reset_index()
+                        monthly = df_month.groupby(['year', 'month'])['Strategy_Ret'].sum() * 100
                         
-                        pivot = monthly.pivot(index='year', columns='month', values='Strategy_Ret').fillna(0)
+                        # 超安全pivot
+                        pivot = monthly.reset_index().pivot(index='year', columns='month', values='Strategy_Ret').fillna(0)
                         
-                        fig2 = px.imshow(pivot * 100, color_continuous_scale='RdYlGn_r', 
-                                       title="月報酬率 %", aspect="auto", height=350)
-                        fig2.update_xaxes(ticktext=[f'{i}月' for i in range(1,13)])
+                        fig2 = px.imshow(pivot, 
+                                       color_continuous_scale='RdYlGn_r',
+                                       title="月報酬率 %", 
+                                       aspect="auto", height=350)
+                        fig2.update_xaxes(tickangle=-45)
                         st.plotly_chart(fig2, use_container_width=True)
                     
-                    # 3. 蒙地卡羅（✅ 修復版）
+                    # 3. 蒙地卡羅（✅ 最終修復）
                     with col_mc:
                         st.markdown("### 🎲 **蒙地卡羅模擬**")
                         mu = df_hist['Strategy_Ret'].mean()
                         sigma = df_hist['Strategy_Ret'].std()
                         
                         sim_days = 252
-                        n_sims = 200
+                        n_sims = 100  # 減少模擬次數提升穩定性
                         np.random.seed(42)
                         
-                        # ✅ 正確維度：(sims, days)
+                        # ✅ 正確維度：(n_sims, sim_days)
                         sim_rets = np.random.normal(mu, sigma, (n_sims, sim_days))
                         sim_paths = init_capital * np.cumprod(1 + sim_rets, axis=1)
                         
                         fig3 = go.Figure()
-                        step = max(1, n_sims // 30)
-                        for i in range(0, n_sims, step):
+                        # 只顯示前20條避免過密
+                        for i in range(min(20, n_sims)):
                             fig3.add_trace(go.Scatter(
                                 x=list(range(sim_days)), 
-                                y=sim_paths[i, :],  # ✅ 修復：列向量
+                                y=sim_paths[i, :].tolist(),  # ✅ 轉list防錯
                                 mode='lines',
                                 line=dict(width=1, color='lightblue'),
-                                showlegend=(i==0),
-                                name='模擬路徑'
+                                showlegend=False,
+                                hovertemplate=''
                             ))
                         
-                        # 當前資產線
-                        fig3.add_hline(y=df_hist['Equity_Strategy'].iloc[-1], 
-                                     line_dash="dash", line_color="#00CC96",
-                                     annotation_text="當前資產")
+                        # 當前資產水平線
+                        current_equity = df_hist['Equity_Strategy'].iloc[-1]
+                        fig3.add_hline(y=current_equity, line_dash="dash", line_color="#00CC96",
+                                     annotation_text=f"當前 {current_equity:.0f}萬")
                         
-                        fig3.update_layout(title=f"未來252天模擬 (μ={mu*252:.1%})", height=350)
+                        fig3.update_layout(title=f"未來252天 (μ={mu*252:.1f}%)", height=350)
                         st.plotly_chart(fig3, use_container_width=True)
                     
-                    # 分位數
-                    p10, p50, p90 = np.percentile(sim_paths, [10, 50, 90], axis=0)[-1]
+                    # ✅ 修復分位數計算
+                    final_values = sim_paths[:, -1]  # 最後一天所有模擬結果
+                    p10 = np.percentile(final_values, 10)
+                    p50 = np.percentile(final_values, 50)
+                    p90 = np.percentile(final_values, 90)
+                    
                     col_m1, col_m2, col_m3 = st.columns(3)
-                    col_m1.metric("中位數", f"{p50:.0f}萬")
-                    col_m2.metric("10%最差", f"{p10:.0f}萬")
-                    col_m3.metric("90%最好", f"{p90:.0f}萬")
+                    col_m1.metric("🎯 中位數", f"{p50:.0f}萬")
+                    col_m2.metric("😱 10%最差", f"{p10:.0f}萬")
+                    col_m3.metric("😎 90%最好", f"{p90:.0f}萬")
                     
                     # 近期訊號
                     st.markdown("### 📋 **最新訊號**")
                     recent = df_hist.tail(10)[['date', 'close', 'MA20', 'Signal']].copy()
                     recent['訊號'] = recent['Signal'].map({True: '🟢持有', False: '⚪空倉'})
                     recent['日期'] = recent['date'].dt.strftime('%Y-%m-%d')
-                    recent = recent.rename({'date': '日期', 'close': '收盤', MA20: True})  # 修正顯示
-                    st.dataframe(recent.rename(columns={'MA20': 'MA20', 'close': '收盤價'})[['日期', 'close', '訊號']],
-                               hide_index=True, use_container_width=True)
+                    recent = recent[['日期', 'close', 'MA20', '訊號']]
+                    st.dataframe(recent, hide_index=True, use_container_width=True)
                     
-                    st.caption("資料來源：FinMind TAIEX | 策略：MA20>MA60 多頭")
+                    st.caption("⚠️ 投資有風險 | 資料：FinMind TAIEX")
 
 
 # --------------------------
