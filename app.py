@@ -1597,6 +1597,8 @@ import yfinance as yf
 import streamlit as st
 
 with tabs[0]:
+    st.session_state.current_tab = 'tab0'  # ← 只加這行
+
     # =========================================================
     # 0) Typography CSS（只調排版；不使用任何 background 色）
     # =========================================================
@@ -2406,7 +2408,7 @@ st.stop()
 # =========================================================
 if any(v not in (None, "", 0) for v in valuation.values()) and not st.session_state.get('hide_valuation', False):
     st.markdown("#### 📌 Valuation & Consensus (yfinance)")
-if st.session_state.t5_result:  # ← 第2162行，精準4空格！
+if st.session_state.get('current_tab') == 'tab0' and st.session_state.t5_result: # ← 第2162行，精準4空格！
     metrics = st.session_state.get("t5_dividend_metrics", {}) or {}
     history = st.session_state.get("t5_dividend_history", []) or []
     valuation = st.session_state.get("t5_valuation", {}) or {}
