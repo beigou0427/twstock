@@ -2139,6 +2139,25 @@ def get_industry_perspectives(industry, stock_code, current_price):
 
 perspectives = get_industry_perspectives(industry, stock_code, S_current)
 current_price = price_snapshot.get('last_price', 280)
+perspectives = get_industry_perspectives(industry, stock_code, S_current)
+current_price = price_snapshot.get('last_price', 280)
+
+# 🔥 新增：產品資訊注入三方視角
+product_info = ""
+if advanced_data.get("revenue_segments"):
+    segs = advanced_data["revenue_segments"][:2]
+    seg1_name = segs[0].get('segment_name', '主力產品')
+    seg1_rev = safe_num(segs[0].get('revenue', 0), 0)
+    product_info = f"{seg1_name}營收{seg1_rev:,}萬"
+elif advanced_data.get("key_products"):
+    product_info = advanced_data['key_products'].split('(')[0].strip()  # 取第一產品
+
+# 🔥 強化三方視角，加入產品數據
+if product_info:
+    perspectives["gs"] += f" | {product_info}成長"
+    perspectives["inst"] = f"{product_info}貢獻{rev_text} | " + perspectives["inst"]
+    perspectives["hedge"] += f" | {product_info}訂單"
+
 
 combined_prompt = f"""你是資深產業首席，綜合三方觀點生成單一篇報告。
 
