@@ -1753,7 +1753,9 @@ with tabs[0]:
     # 3) Core run
     # =========================================================
     if run_btn and not st.session_state.get('report_running', False):
-    st.session_state.report_running = True
+                st.session_state.report_running = True
+                
+                prog = st.progress(0)
 
         prog = st.progress(0)
         status = st.empty()
