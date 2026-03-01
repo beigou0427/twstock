@@ -2124,34 +2124,58 @@ st.info("🧠 AI 綜合報告生成中（高盛+機構+對沖基金）...")
 
 # 三方融合 Prompt
 # C4. 三方融合 Prompt（動態版）
-def get_industry_perspectives(industry, stock_code, current_price):
-    """動態生成三方視角"""
+def get_industry_perspectives(industry, stock_code, current_price, rev_text="穩定", chip_text="持平"):
+    """動態生成三方視角（股票+產業雙重匹配）"""
     ind_lower = industry.lower()
+    target_upside = 1.20  # 預設20%上漲空間
     
-    if any(x in ind_lower for x in ["半導體", "晶圓"]):
+    # 🔥 股票專屬（優先）
+    stock_special = {
+        "2330": ("台積電", "AI先進製程至2027 | 毛利率>60%", "CoWoS產能全滿", "乖離>5%"),
+        "2344": ("華邦電", "DDR4/LPDDR4供不應求 | 毛利率>28%", "DRAM稼動率92%", "乖離>8%"), 
+        "2454": ("聯發科", "天璣SoC市占No.2 | 毛利率>45%", "AI PC晶片訂單", "乖離>6%"),
+        "2317": ("鴻海", "AI伺服器出貨Q1新高", "Nvidia合作深化", "乖離>7%"),
+    }
+    
+    if stock_code in stock_special:
+        name, gs_core, inst_core, hedge_core = stock_special[stock_code]
         return {
-            "gs": "目標價2330元，AI先進製程至2027 | 毛利率>60%",
-            "inst": "員工薪資409萬新高 | CoWoS產能全滿",
-            "hedge": "乖離>5%、外資連買、AI題材催化"
+            "gs": f"目標價{current_price*target_upside:.0f}元，{gs_core}",
+            "inst": f"{inst_core} | 員工生產力提升",
+            "hedge": f"{hedge_core}、內資回補、換機題材"
+        }
+    
+    # 🔥 產業通用（次優先）
+    if any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
+        return {
+            "gs": f"目標價{current_price*target_upside:.0f}元，{industry}週期復甦 | 毛利率改善",
+            "inst": f"稼動率提升 | {rev_text}",
+            "hedge": f"乖離>6%、法人買超、終端需求回溫"
         }
     elif "食品" in ind_lower:
         return {
-            "gs": f"目標價{current_price*1.12:.0f}元，品牌定價權強化 | 毛利率>35%",
-            "inst": "原物料成本成功轉嫁 | 通路庫存健康",
-            "hedge": "乖離>3%、內資回補、消費旺季效應"
+            "gs": f"目標價{current_price*1.12:.0f}元，品牌定價權 | 毛利率>30%",
+            "inst": f"原物料轉嫁成功 | 通路動能{rev_text}",
+            "hedge": "乖離>4%、內需穩健、旺季效應"
         }
-    elif any(x in ind_lower for x in ["金融", "銀行"]):
+    elif any(x in ind_lower for x in ["金融", "銀行", "保險"]):
         return {
-            "gs": f"目標價{current_price*1.10:.0f}元，NIM利差擴張 | ROE>12%",
-            "inst": "放款餘額穩健成長 | NPL控制優異",
-            "hedge": "乖離>4%、存貸利差擴大、法說利多"
+            "gs": f"目標價{current_price*1.10:.0f}元，NIM擴張 | ROE>12%",
+            "inst": f"放款成長{rev_text} | NPL低檔",
+            "hedge": "乖離>5%、存貸利差、法說優於預期"
         }
-    else:  # 通用
+    elif any(x in ind_lower for x in ["航運", "海運"]):
+        return {
+            "gs": f"目標價{current_price*1.30:.0f}元，SCFI指數反彈",
+            "inst": f"運價長約鎖定 | 閒置船隊低",
+            "hedge": "乖離>10%、紅海效應、旺季訂艙"
+        }
+    else:  # 🔥 真正通用（防變數錯誤）
         target = current_price * 1.15
         return {
-            "gs": f"目標價{target:.0f}元，{industry}景氣復甦 | 毛利率改善",
-            "inst": f"營收{rev_text} | 外資{chip_text}",
-            "hedge": f"乖離>5%、法人回補、季節性題材"
+            "gs": f"目標價{target:.0f}元，{industry}基本面穩健",
+            "inst": f"營收成長{rev_text} | 外資{chip_text}",
+            "hedge": f"乖離>5%、法人動向、產業復甦"
         }
 
 perspectives = get_industry_perspectives(industry, stock_code, S_current)
