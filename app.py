@@ -1752,7 +1752,11 @@ with tabs[0]:
     # =========================================================
     # 3) Core run
     # =========================================================
-    if run_btn:
+    if run_btnif run_btn and not st.session_state.get('report_running', False):
+    st.session_state.report_running = True
+    # ... 報告邏輯 ...
+    st.session_state.report_running = False
+    st.rerun()
         prog = st.progress(0)
         status = st.empty()
         # =======================================================
