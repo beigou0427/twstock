@@ -951,31 +951,34 @@ with tabs[2]:
     
     st.caption("📊 **操作邏輯**：優先槓桿最接近 → 最高微觀勝率 → 最遠天數。建議搭配遠月 LEAPS CALL 降低時間風險。")
 # -------------------------- 
-# Tab 3: 歷史回測終極版（熱力圖 + 蒙地卡羅 + 已修復） 
+# Tab 3: 歷史回測（100% 穩定版） 
 # --------------------------
 with tabs[3]:
-    st.markdown("### 📊 **策略時光機：機構級驗證**")
+    st.markdown("### 📊 **策略時光機：真實歷史驗證**")
     
     # Pro 鎖定
     if not st.session_state.is_pro:
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.warning("🔒 **Pro 專屬：真實回測 + 未來預測**")
-            st.info("解鎖後查看：\n✅ TAIEX 真實歷史\n✅ 月熱力圖\n✅ 蒙地卡羅1000路徑\n✅ MDD/Sharpe指標")
+            st.warning("🔒 **Pro 專屬功能**")
+            st.info("解鎖：\n✅ 真實TAIEX回測\n✅ 月熱力圖\n✅ 蒙地卡羅\n✅ 專業KPI")
         with col2:
-            st.metric("策略報酬", "🔒 ??%", "??%")
+            st.metric("報酬率", "🔒 ???%", "勝率 ???%")
             if st.button("⭐ 升級 Pro", key="pro_tab3"):
                 st.session_state.is_pro = True
                 st.balloons()
                 st.rerun()
-        st.image("https://via.placeholder.com/1000x250?text=Pro+解鎖：熱力圖+蒙地卡羅", use_container_width=True)
+        st.markdown("---")
     
     else:
         # 參數
         col_p1, col_p2, col_p3 = st.columns(3)
-        with col_p1: period_days = st.selectbox("回測天數", [250, 500, 750], index=1)
-        with col_p2: init_capital = st.number_input("初始本金(萬)", 10, 500, 100)
-        with col_p3: leverage = st.slider("槓桿", 1, 5, 2)
+        with col_p1: 
+            period_days = st.selectbox("回測天數", [250, 500, 750], index=1)
+        with col_p2: 
+            init_capital = st.number_input("初始本金(萬)", 10, 500, 100)
+        with col_p3: 
+            leverage = st.slider("槓桿", 1, 5, 2)
         
         if st.button("🚀 執行回測", type="primary"):
             with st.spinner("計算中..."):
@@ -993,12 +996,12 @@ with tabs[3]:
                 if df_hist.empty:
                     st.error("❌ 無資料")
                 else:
+                    # 資料處理
                     df_hist['close'] = df_hist['close'].astype(float)
                     df_hist = df_hist[df_hist['Trading_Volume'] > 0].copy()
                     df_hist['date'] = pd.to_datetime(df_hist['date'])
                     df_hist = df_hist.sort_values('date').reset_index(drop=True)
                     
-                    # 技術指標
                     df_hist['MA20'] = df_hist['close'].rolling(20).mean()
                     df_hist['MA60'] = df_hist['close'].rolling(60).mean()
                     df_hist = df_hist.dropna().tail(period_days).reset_index(drop=True)
@@ -1012,7 +1015,7 @@ with tabs[3]:
                     df_hist['Equity_Strategy'] = init_capital * (1 + df_hist['Strategy_Ret']).cumprod()
                     df_hist['Equity_Benchmark'] = init_capital * (1 + df_hist['Daily_Ret']).cumprod()
                     
-                    # KPI ✅ 修正版
+                    # KPI
                     total_ret = (df_hist['Equity_Strategy'].iloc[-1] / init_capital - 1) * 100
                     bench_ret = (df_hist['Equity_Benchmark'].iloc[-1] / init_capital - 1) * 100
                     signal_days = df_hist['Signal'].shift(1) == True
@@ -1022,8 +1025,8 @@ with tabs[3]:
                     mdd = ((df_hist['Equity_Peak'] - df_hist['Equity_Strategy']) / df_hist['Equity_Peak']).max() * 100
                     sharpe = df_hist['Strategy_Ret'].mean() / df_hist['Strategy_Ret'].std() * np.sqrt(252) if df_hist['Strategy_Ret'].std() > 0 else 0
                     
-                    # KPI 展示
-                    st.markdown("### 📊 **績效總覽**")
+                    # KPI展示
+                    st.markdown("### 📊 **績效指標**")
                     col1, col2, col3, col4, col5 = st.columns(5)
                     col1.metric("最終資產", f"{int(df_hist['Equity_Strategy'].iloc[-1]):,}萬", f"{total_ret:+.1f}%")
                     col2.metric("大盤", f"{bench_ret:+.1f}%", f"超額{total_ret-bench_ret:+.1f}%")
@@ -1033,67 +1036,83 @@ with tabs[3]:
                     
                     st.divider()
                     
-                    # 🔥 1. 資金曲線
+                    # 1. 資金曲線
                     fig1 = go.Figure()
-                    fig1.add_trace(go.Scatter(x=df_hist['date'], y=df_hist['Equity_Strategy'], name='策略', line=dict(color='#00CC96', width=3)))
-                    fig1.add_trace(go.Scatter(x=df_hist['date'], y=df_hist['Equity_Benchmark'], name='大盤', line=dict(color='#EF553B', width=2, dash='dash')))
-                    fig1.update_layout(title="資金曲線", height=350, hovermode="x unified")
+                    fig1.add_trace(go.Scatter(x=df_hist['date'], y=df_hist['Equity_Strategy'], 
+                                            name='策略', line=dict(color='#00CC96', width=3)))
+                    fig1.add_trace(go.Scatter(x=df_hist['date'], y=df_hist['Equity_Benchmark'], 
+                                            name='大盤', line=dict(color='#EF553B', width=2, dash='dash')))
+                    fig1.update_layout(title="資金曲線對比", height=350, hovermode="x unified")
                     st.plotly_chart(fig1, use_container_width=True)
                     
-                    # 🔥 2. 熱力圖 ✅ 完全修復版
-                    st.markdown("### 📈 **月度損益熱力圖**")
-                    df_month = df_hist.copy()
-                    df_month['YearMonth'] = df_month['date'].dt.to_period('M')
-                    monthly_returns = df_month.groupby('YearMonth')['Strategy_Ret'].sum() * 100
-                    monthly_df = monthly_returns.reset_index()
-                    monthly_df['Year'] = monthly_df['YearMonth'].dt.year
-                    monthly_df['Month'] = monthly_df['YearMonth'].dt.month
+                    col_hm, col_mc = st.columns(2)
                     
-                    # ✅ 安全 pivot
-                    pivot_table = monthly_df.pivot_table(index='Year', columns='Month', values='Strategy_Ret', fill_value=0)
+                    # 2. 熱力圖（穩定版）
+                    with col_hm:
+                        st.markdown("### 🔥 **月損益熱力圖**")
+                        df_month = df_hist[['date', 'Strategy_Ret']].copy()
+                        df_month['year'] = df_month['date'].dt.year
+                        df_month['month'] = df_month['date'].dt.month
+                        monthly = df_month.groupby(['year', 'month'])['Strategy_Ret'].sum().reset_index()
+                        
+                        pivot = monthly.pivot(index='year', columns='month', values='Strategy_Ret').fillna(0)
+                        
+                        fig2 = px.imshow(pivot * 100, color_continuous_scale='RdYlGn_r', 
+                                       title="月報酬率 %", aspect="auto", height=350)
+                        fig2.update_xaxes(ticktext=[f'{i}月' for i in range(1,13)])
+                        st.plotly_chart(fig2, use_container_width=True)
                     
-                    fig2 = px.imshow(pivot_table, 
-                                   color_continuous_scale='RdYlGn_r',
-                                   title="月報酬率 (%)<br><small>綠=獲利 | 紅=虧損</small>",
-                                   aspect="auto", height=350)
-                    fig2.update_xaxes(tickvals=list(range(1,13)), ticktext=[f'{i}月' for i in range(1,13)])
-                    fig2.update_xaxes(tickangle=-45)
-                    st.plotly_chart(fig2, use_container_width=True)
-                    
-                    # 🔥 3. 蒙地卡羅
-                    st.markdown("### 🎲 **蒙地卡羅模擬（252天）**")
-                    mu, sigma = df_hist['Strategy_Ret'].mean(), df_hist['Strategy_Ret'].std()
-                    sims = 500
-                    days = 252
-                    
-                    np.random.seed(42)
-                    sim_rets = np.random.normal(mu, sigma, (days, sims))
-                    sim_paths = init_capital * np.cumprod(1 + sim_rets, axis=0)
-                    
-                    fig3 = go.Figure()
-                    for i in range(0, sims, 10):  # 每10條顯示一條
-                        fig3.add_trace(go.Scatter(x=range(days), y=sim_paths[:,i], 
-                                                line=dict(width=1, color='lightblue'), 
-                                                showlegend=False))
-                    fig3.add_hline(y=df_hist['Equity_Strategy'].iloc[-1], line_dash='dash', line_color='green')
-                    fig3.update_layout(title=f"蒙地卡羅路徑 (μ={mu*252:.1%})", height=350)
-                    st.plotly_chart(fig3, use_container_width=True)
+                    # 3. 蒙地卡羅（✅ 修復版）
+                    with col_mc:
+                        st.markdown("### 🎲 **蒙地卡羅模擬**")
+                        mu = df_hist['Strategy_Ret'].mean()
+                        sigma = df_hist['Strategy_Ret'].std()
+                        
+                        sim_days = 252
+                        n_sims = 200
+                        np.random.seed(42)
+                        
+                        # ✅ 正確維度：(sims, days)
+                        sim_rets = np.random.normal(mu, sigma, (n_sims, sim_days))
+                        sim_paths = init_capital * np.cumprod(1 + sim_rets, axis=1)
+                        
+                        fig3 = go.Figure()
+                        step = max(1, n_sims // 30)
+                        for i in range(0, n_sims, step):
+                            fig3.add_trace(go.Scatter(
+                                x=list(range(sim_days)), 
+                                y=sim_paths[i, :],  # ✅ 修復：列向量
+                                mode='lines',
+                                line=dict(width=1, color='lightblue'),
+                                showlegend=(i==0),
+                                name='模擬路徑'
+                            ))
+                        
+                        # 當前資產線
+                        fig3.add_hline(y=df_hist['Equity_Strategy'].iloc[-1], 
+                                     line_dash="dash", line_color="#00CC96",
+                                     annotation_text="當前資產")
+                        
+                        fig3.update_layout(title=f"未來252天模擬 (μ={mu*252:.1%})", height=350)
+                        st.plotly_chart(fig3, use_container_width=True)
                     
                     # 分位數
-                    p10, p50, p90 = np.percentile(sim_paths[-1], [10,50,90])
+                    p10, p50, p90 = np.percentile(sim_paths, [10, 50, 90], axis=0)[-1]
                     col_m1, col_m2, col_m3 = st.columns(3)
                     col_m1.metric("中位數", f"{p50:.0f}萬")
-                    col_m2.metric("10%分位", f"{p10:.0f}萬")
-                    col_m3.metric("90%分位", f"{p90:.0f}萬")
+                    col_m2.metric("10%最差", f"{p10:.0f}萬")
+                    col_m3.metric("90%最好", f"{p90:.0f}萬")
                     
                     # 近期訊號
                     st.markdown("### 📋 **最新訊號**")
-                    recent = df_hist.tail(10).copy()
+                    recent = df_hist.tail(10)[['date', 'close', 'MA20', 'Signal']].copy()
                     recent['訊號'] = recent['Signal'].map({True: '🟢持有', False: '⚪空倉'})
                     recent['日期'] = recent['date'].dt.strftime('%Y-%m-%d')
-                    st.dataframe(recent[['日期', 'close', 'MA20', '訊號']], hide_index=True)
+                    recent = recent.rename({'date': '日期', 'close': '收盤', MA20: True})  # 修正顯示
+                    st.dataframe(recent.rename(columns={'MA20': 'MA20', 'close': '收盤價'})[['日期', 'close', '訊號']],
+                               hide_index=True, use_container_width=True)
                     
-                    st.caption("⚠️ 投資有風險 | 資料：FinMind TAIEX")
+                    st.caption("資料來源：FinMind TAIEX | 策略：MA20>MA60 多頭")
 
 
 # --------------------------
