@@ -1708,7 +1708,8 @@ with tabs[0]:
 
     b1, b2 = st.columns([3, 1])
     with b1:
-        run_btn = st.button("🚀 啟動全網掃描與深度研究報告", type="primary", use_container_width=True)
+        run_btn = st.button("🚀 啟動全網掃描與深度研究報告", type="secondary", use_container_width=True)
+
     with b2:
         clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
 
@@ -2408,7 +2409,6 @@ col4.metric("📊 P/E", f"{valuation.get('trailingPE', 'N/A')}")
 
 st.success("✅ Step C 綜合報告生成完成！")
 st.session_state.report_running = False  # ← **與st.success同縮排**
-st.rerun()     
 # =========================================================
 # 4) Display (content-oriented; no background blocks)
 # =========================================================
