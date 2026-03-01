@@ -2073,7 +2073,7 @@ elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
     else:  # 通用半導體
         industry_micro_logic = """【半導體通用】..."""
 
-"""
+
 elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
     industry_micro_logic = """
 【航空業專屬分析框架】
