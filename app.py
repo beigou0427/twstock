@@ -1558,7 +1558,9 @@ with tabs[0]:
         "t5_is_etf": False,
         "t5_gap_pct": 0.0,
         "t5_valuation": {},          # NEW
-        "t5_price_snapshot": {},     # NEW
+        "t5_price_snapshot": {}, # NEW
+        "t5_revenue_segments": [],      # 🔥 新增
+        "t5_product_info": "",          # 🔥 新增
     }
     for k, v in defaults.items():
         if k not in st.session_state:
