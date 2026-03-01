@@ -1752,13 +1752,15 @@ with tabs[0]:
     # =========================================================
     # 3) Core run
     # =========================================================
-    if run_btn and not st.session_state.get('report_running', False):
+            if run_btn and not st.session_state.get('report_running', False):
                 st.session_state.report_running = True
                 
                 prog = st.progress(0)
-
-        prog = st.progress(0)
-        status = st.empty()
+                # ===== 這裡貼上所有原有邏輯（從統一安全宣告區到st.success）=====
+                
+                st.session_state.report_running = False
+                st.rerun()
+             
         # =======================================================
         # 【統一安全宣告區】確保所有變數有初始值，不管 API 成功與否
         # =======================================================
