@@ -2207,6 +2207,26 @@ else:
     st.warning("⚠️ 請設定 GROQ_KEY")
 
 # C6. 儀表板（100%保留）
+# 🔥 新增：產品營收組成儀表板
+if advanced_data.get("revenue_segments"):
+    st.markdown("#### 🧩 **產品營收組成**")
+    segments = advanced_data.get("revenue_segments", [])
+    
+    if isinstance(segments, list) and segments:
+        seg_cols = st.columns(min(3, len(segments)))
+        for i, seg in enumerate(segments[:3]):
+            with seg_cols[i]:
+                rev = safe_num(seg.get('revenue', 0), 0)
+                st.metric(
+                    f"**{seg.get('segment_name', 'N/A')}**", 
+                    f"{rev:,.0f}萬" if rev else "—"
+                )
+        st.caption(f"前三大占比：{advanced_data.get('top3_concentration', 'N/A')}")
+    else:
+        st.caption(advanced_data.get("key_products", "查詢中..."))
+    
+    st.divider()
+
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("💰 現價", f"{price_snapshot.get('last_price', 0):,.0f}元")
 col2.metric("📈 乖離", f"{advanced_data.get('ma20_deviation', '0%')}")
