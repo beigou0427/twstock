@@ -1695,44 +1695,30 @@ with tabs[0]:
         f"　TAIEX **{S_current:,.0f}**　｜　MA20 **{ma20:,.0f}**"
     )
 
-c1, c2, c3 = st.columns([1.5, 1, 1.5])
-with c1:
-    stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="", max_chars=6)  # 🔥 空白！
-with c2:
-    days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
-with c3:
-    focus_region = st.selectbox("🌐 數據權重", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
+    c1, c2, c3 = st.columns([1.5, 1, 1.5])
+    with c1:
+        stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="2330", max_chars=6)
+    with c2:
+        days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
+    with c3:
+        focus_region = st.selectbox("🌐 數據權重", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
 
-# 🔥 超強鎖定
-if 'manual_lock' not in st.session_state:
-    st.session_state.manual_lock = True  # 預設鎖
+    groq_key = st.secrets.get("GROQ_KEY", "")
+    finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
+    if not groq_key:
+        st.error("❌ GROQ_KEY 遺失，請至 Settings → Secrets 設定")
+        st.stop()
 
-b1, b2 = st.columns([3, 1])
-with b1:
-    is_ready = bool(stock_code.strip())
-    run_btn = st.button("🚀 啟動全網掃描", 
-                       type="primary",
-                       disabled=not is_ready or st.session_state.manual_lock,
-                       help="填代碼（如2330）後解鎖" if not is_ready else None,
-                       use_container_width=True)
-with b2:
-    clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
+    b1, b2 = st.columns([3, 1])
+    with b1:
+        run_btn = st.button("🚀 啟動全網掃描與深度研究報告", type="primary", use_container_width=True)
+    with b2:
+        clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
 
-# 🔥 三重防護：空白+鎖+狀態
-if run_btn and stock_code.strip() and not st.session_state.get('analysis_running', False):
-    st.session_state.manual_lock = False  # 解鎖
-    st.session_state.analysis_running = True
-    # 原 #3 Core run 流程...
-    # 末尾：
-    st.session_state.analysis_running = False
-
-if clear_btn:
-    for k, v in defaults.items():
-        st.session_state[k] = v
-    st.session_state.manual_lock = True  # 重新鎖定
-    st.session_state.analysis_running = False
-    st.rerun()
-
+    if clear_btn:
+        for k, v in defaults.items():
+            st.session_state[k] = v
+        st.rerun()
 
     # =========================================================
     # helpers
@@ -2509,5 +2495,4 @@ if st.session_state.t5_result:  # ← 第2162行，精準4空格！
             df_news = df_news.rename(columns={"media": "媒體", "title": "標題", "date": "時間"})
             st.dataframe(df_news, use_container_width=True)
             st.caption("Sources: " + ", ".join(sorted(list(st.session_state.get("t5_sources", set())))))
-
 
