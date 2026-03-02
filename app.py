@@ -1700,7 +1700,7 @@ with tabs[0]:
       <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:14px; flex-wrap:wrap;">
         <div>
           <div style="font-size:34px; font-weight:300; letter-spacing:-1px; line-height:1.1;">
-            🏛️ Institutional Research Hub
+             Institutional Research Hub
           </div>
           <div style="opacity:0.65; font-size:13px; font-family:monospace; margin-top:6px;">
             Beigu AI Desk · Deep-Dive Thesis Engine · No-investment-advice
