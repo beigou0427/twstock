@@ -1695,33 +1695,29 @@ with tabs[0]:
         f"　TAIEX **{S_current:,.0f}**　｜　MA20 **{ma20:,.0f}**"
     )
 
-    c1, c2, c3 = st.columns([1.5, 1, 1.5])
-    with c1:
-        stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="2330", max_chars=6)
-    with c2:
-        days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
-    with c3:
-        focus_region = st.selectbox("🌐 數據權重", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
+c1, c2, c3 = st.columns([1.5, 1, 1.5])
+with c1:
+    stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="2330", max_chars=6)
+with c2:
+    days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
+with c3:
+    focus_region = st.selectbox("🌐 數據權重", ["全球均衡", "偏重台美", "偏重亞洲"], index=0)
 
-    groq_key = st.secrets.get("GROQ_KEY", "")
-    finmind_key = st.secrets.get("FINMIND_TOKEN", st.secrets.get("finmind_token", ""))
-    if not groq_key:
-        st.error("❌ GROQ_KEY 遺失，請至 Settings → Secrets 設定")
-        st.stop()
-    b1, b2 = st.columns([3, 1])
-    with b1:
-        run_btn = st.button("🚀 啟動全網掃描與深度研究報告", 
-                           type="secondary", 
-                           disabled=st.session_state.get('analysis_running', False),
-                           use_container_width=True)
-    with b2:
-        clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
+# 🔥 狀態鎖定（全域）
+if 'analysis_running' not in st.session_state:
+    st.session_state.analysis_running = False
 
-    if 'analysis_running' not in st.session_state:
-        st.session_state.analysis_running = False
+b1, b2 = st.columns([3, 1])
+with b1:
+    run_btn = st.button("🚀 啟動全網掃描與深度研究報告", 
+                       type="secondary",
+                       disabled=st.session_state.analysis_running,
+                       use_container_width=True)
+with b2:
+    clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
 
-    if run_btn and not st.session_state.analysis_running:
-        st.session_state.analysis_running = True
+if run_btn and not st.session_state.analysis_running:
+    st.session_state.analysis_running = True
     # =========================================================
     # helpers
     # =========================================================
@@ -2402,15 +2398,8 @@ col3.metric("🏦 年配", f"{dividend_metrics.get('avg_div', 0):.2f}元")
 col4.metric("📊 P/E", f"{valuation.get('trailingPE', 'N/A')}")
 
 st.success("✅ Step C 綜合報告生成完成！")
- st.session_state.analysis_running = False
+st.session_state.analysis_running = False
 st.rerun()
-
-if clear_btn:
-    for k, v in defaults.items():
-         st.session_state[k] = v
-    st.session_state.analysis_running = False
-    st.rerun()     
-
 # =========================================================
 # 4) Display (content-oriented; no background blocks)
 # =========================================================
