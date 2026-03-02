@@ -1718,7 +1718,6 @@ with tabs[0]:
     if clear_btn:
         for k, v in defaults.items():
             st.session_state[k] = v
-        st.session_state.run_once = False     
         st.rerun()
 
     # =========================================================
@@ -1756,8 +1755,7 @@ with tabs[0]:
     # =========================================================
     # 3) Core run
     # =========================================================
-    if run_btn and st.session_state.get('run_once', False) == False:
-    st.session_state.run_once = True
+    if run_btn:
         prog = st.progress(0)
         status = st.empty()
         # =======================================================
