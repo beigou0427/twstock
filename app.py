@@ -1819,14 +1819,7 @@ local_industry_map = {
     "1264": ("德麥",      "食品工業"), "0050": ("元大台灣50", "ETF"),
     "0056": ("元大高股息","ETF"),
 }
-if stock_code == "0050":
-    advanced_data.update({
-        "top_holdings": "台積電64.1%、鴻海3.9%、聯發科3.8%、台達電3.6%、日月光1.7%",
-        "industry_dist": "半導體65%、電子20%、金融10%、其他5%",
-        "target_price": f"{price_snapshot.get('last_price', 180)*1.02:.0f}",
-        "nav_discount": "-0.2%",
-        "yield_rate": "2.5%"
-    })
+
 stock_name = stock_code
 industry = "未知產業"
 is_etf = False
