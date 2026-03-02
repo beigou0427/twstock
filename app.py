@@ -1697,7 +1697,7 @@ with tabs[0]:
 
     c1, c2, c3 = st.columns([1.5, 1, 1.5])
     with c1:
-        stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="2330", max_chars=6)
+        stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="", max_chars=6)
     with c2:
         days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
     with c3:
