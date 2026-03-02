@@ -2402,14 +2402,14 @@ col3.metric("🏦 年配", f"{dividend_metrics.get('avg_div', 0):.2f}元")
 col4.metric("📊 P/E", f"{valuation.get('trailingPE', 'N/A')}")
 
 st.success("✅ Step C 綜合報告生成完成！")
-        st.session_state.analysis_running = False
-        st.rerun()
+ st.session_state.analysis_running = False
+st.rerun()
 
-    if clear_btn:
-        for k, v in defaults.items():
-            st.session_state[k] = v
-        st.session_state.analysis_running = False
-        st.rerun()
+if clear_btn:
+    for k, v in defaults.items():
+         st.session_state[k] = v
+    st.session_state.analysis_running = False
+    st.rerun()     
 
 # =========================================================
 # 4) Display (content-oriented; no background blocks)
