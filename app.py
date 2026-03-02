@@ -2361,8 +2361,7 @@ if st.session_state.t5_is_etf:
 ### 3)估值
 殖利率{yield_rate}%、追蹤誤差0.1%
 
-### 4)Action
-✅ 乖離>5% **立即買入**
+ℹ️ 乖離{advanced_data.get('ma20_deviation', '0%')} | 觀察>5%機會
 
 **嚴禁個股邏輯！列具體成分股名稱+權重%**"""
 
@@ -2387,7 +2386,7 @@ else:
 ### 1) Micro-Metrics  
 ### 2) Variant(三方對比)
 ### 3) Valuation
-### 4) Action(乖離>X%買入)
+ℹ️ 乖離{advanced_data.get('ma20_deviation', '0%')} | 觀察>5%機會
 
 **嚴禁重複，每段1-2句，嚴格產業邏輯**
 **營收組合列具體產品名稱+金額/占比**"""
