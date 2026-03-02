@@ -2172,6 +2172,14 @@ elif any(x in ind_lower for x in ["半導體", "晶圓", "ic"]):
         """
     else:  # 通用半導體
         industry_micro_logic = """【半導體通用】..."""
+elif stock_code == "0050":  # 🔥 0050升級為獨立elif
+    industry_micro_logic = """
+【0050 元大台灣50 專屬分析框架】
+1. 台積電權重64%：AI先進製程(N3E/2nm)對指數貢獻
+2. 資金流向：外資買超張數、NAV折溢價、季配息資金效應  
+3. 追蹤誤差<0.1%：成分股調整頻率與填息速度
+4. 嚴禁：不談個股營收，只談權重分布！
+"""        
 
 
 elif stock_code in ["2610", "2618"] or any(x in ind_lower for x in ["航空", "客運"]):
