@@ -2315,54 +2315,57 @@ if product_info:
     perspectives["inst"] = f"{product_info}貢獻{rev_text} | " + perspectives["inst"]
     perspectives["hedge"] += f" | {product_info}訂單"
 
-
-# 🔥 把你的 combined_prompt 整個替換成這個：
-
 if st.session_state.t5_is_etf:
-    # 🔥 硬編碼真實數據（永不錯）
-    if stock_code == "0050":
-        etf_holdings = "台積電64.1%、鴻海3.9%、聯發科3.8%、台達電3.6%、日月光1.7%"
-        target_price = f"{current_price*1.02:.0f}"
-    else:
-        etf_holdings = advanced_data.get("top_holdings", "查詢成分股")
-        target_price = f"{current_price*1.05:.0f}"
+    # 🔥 最小改：僅動態成分股，其他用advanced_data備案
+    try:
+        from FinMind.data import DataLoader
+        dl = DataLoader()
+        df = dl.taiwan_etf_composition(stock_id=stock_code)
+        top_df = df.nlargest(2, 'holding_share')[['stock_name', 'holding_share']]  # 只top2改表
+        etf_holdings = '、'.join([f"{row['stock_name']}{row['holding_share']:.1f}%" for _, row in top_df.iterrows()])
+        holdings_table = f"|{'|'.join(top_df['stock_name'])}|\n|{'|'.join(f"{w:.1f}%" for w in top_df['holding_share'])}|"
+    except:
+        if stock_code == "0050":
+            etf_holdings = "台積電64.1%、鴻海3.9%"
+            holdings_table = "|台積電|鴻海|\n|64.1%|3.9%|"
+        else:
+            etf_holdings = advanced_data.get("top_holdings", "查詢成分股")
+            holdings_table = "|股票|權重|\n|-|-|"
     
-    combined_prompt = f"""ETF分析首席，**嚴格使用以下數據**！
-
-【{stock_code} {stock_name}】
+    yield_rate = advanced_data.get('yield_rate', 2.5)
+    nav_discount = advanced_data.get('nav_discount', '-0.2%')
+    target_price = f"{current_price*1.02:.0f}"
+    
+    combined_prompt = f"""【{stock_code} {stock_name}】
 價：{current_price:.0f}元 | 乖離：{advanced_data.get('ma20_deviation', '0%')}
 **成分股**：{etf_holdings}
 **目標價**：{target_price}元
-**殖利率**：2.5% | **NAV折價**：-0.2%
+**殖利率**：{yield_rate}% | **NAV折價**：{nav_discount}
 
 【強制輸出】：
 ### Executive Summary
 **買入3亮點**：
 1.{etf_holdings.split('、')[0]}
-2.殖利率2.5%
+2.殖利率{yield_rate}%
 3.乖離{advanced_data.get('ma20_deviation', '0%')}%
 
 ### 📊 成分股權重
-|股票|權重|
-|-|-|
-|台積電|64.1%|
-|鴻海|3.9%|
+{holdings_table}
 
 ### 1)資金流向
-NAV折價-0.2%
+{nav_discount}
 
 ### 2)三方對比
 高盛：{target_price}元
 
 ### 3)估值
-殖利率2.5%、追蹤誤差0.1%
+殖利率{yield_rate}%、追蹤誤差0.1%
 
 ### 4)Action
 ✅ 乖離>5% **立即買入**
 
-
-
 **嚴禁個股邏輯！列具體成分股名稱+權重%**"""
+
     
 else:
     # 🔥 個股原版（加強版，完美保留）
