@@ -1700,11 +1700,11 @@ st.markdown("""
   <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:14px; flex-wrap:wrap;">
     <div>
       <div style="font-size:34px; font-weight:300; letter-spacing:-1px; line-height:1.1;">
-        Institutional Research Hub
+        Research Hub
       </div>
       <div style="opacity:0.65; font-size:13px; font-family:monospace; margin-top:6px;">
-        Beigu AI Desk - Deep-Dive Engine - No investment advice
-      </div>  <!--  · 改 - -->
+        Beigu AI - Deep Dive - No Advice
+      </div>
     </div>
     <div style="text-align:right; opacity:0.65; font-family:monospace; font-size:12px;">
       %s
@@ -1712,6 +1712,7 @@ st.markdown("""
   </div>
 </div>
 """ % datetime.now().strftime("%Y-%m-%d %H:%M CST"), unsafe_allow_html=True)
+
 
 
     st.info(
