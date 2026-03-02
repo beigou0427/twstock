@@ -240,8 +240,8 @@ with st.sidebar:
 # =========================================
 # 4. 主介面 & 市場快報
 # =========================================
-st.markdown("# 🥯 **貝伊果屋：財富雙軌系統**")
-st.markdown("---")
+st.markdown("# 🥯 **貝伊果屋：縮小財富差距**")
+st.markdown("-專為沒資源散戶打造--")
 
 col1, col2, col3, col4 = st.columns(4, gap="small")
 with col1:
