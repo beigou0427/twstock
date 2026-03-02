@@ -1695,23 +1695,24 @@ with tabs[0]:
     # =========================================================
     # 2) Header + Controls（無背景色）
     # =========================================================
-    st.markdown("""
-    <div style="padding-bottom:14px; margin-bottom:18px; border-bottom:2px solid rgba(59,130,246,0.55);">
-      <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:14px; flex-wrap:wrap;">
-        <div>
-          <div style="font-size:34px; font-weight:300; letter-spacing:-1px; line-height:1.1;">
-             Institutional Research Hub
-          </div>
-          <div style="opacity:0.65; font-size:13px; font-family:monospace; margin-top:6px;">
-            Beigu AI Desk · Deep-Dive Thesis Engine · No-investment-advice
-          </div>
-        </div>
-        <div style="text-align:right; opacity:0.65; font-family:monospace; font-size:12px;">
-          {ts}
-        </div>
+st.markdown("""
+<div style="padding-bottom:14px; margin-bottom:18px; border-bottom:2px solid rgba(59,130,246,0.55);">
+  <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:14px; flex-wrap:wrap;">
+    <div>
+      <div style="font-size:34px; font-weight:300; letter-spacing:-1px; line-height:1.1;">
+        Institutional Research Hub
       </div>
+      <div style="opacity:0.65; font-size:13px; font-family:monospace; margin-top:6px;">
+        Beigu AI Desk - Deep-Dive Engine - No investment advice
+      </div>  <!-- 🔥 · 改 - -->
     </div>
-    """.format(ts=datetime.now().strftime("%Y-%m-%d %H:%M CST")), unsafe_allow_html=True)
+    <div style="text-align:right; opacity:0.65; font-family:monospace; font-size:12px;">
+      %s
+    </div>
+  </div>
+</div>
+""" % datetime.now().strftime("%Y-%m-%d %H:%M CST"), unsafe_allow_html=True)
+
 
     st.info(
         f"⚠️ 本分析為研究用途之 AI 模擬報告，非投資建議。"
