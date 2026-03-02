@@ -1704,7 +1704,7 @@ st.markdown("""
       </div>
       <div style="opacity:0.65; font-size:13px; font-family:monospace; margin-top:6px;">
         Beigu AI Desk - Deep-Dive Engine - No investment advice
-      </div>  <!-- 🔥 · 改 - -->
+      </div>  <!--  · 改 - -->
     </div>
     <div style="text-align:right; opacity:0.65; font-family:monospace; font-size:12px;">
       %s
