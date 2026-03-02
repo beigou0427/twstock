@@ -1708,18 +1708,20 @@ with tabs[0]:
     if not groq_key:
         st.error("❌ GROQ_KEY 遺失，請至 Settings → Secrets 設定")
         st.stop()
-
     b1, b2 = st.columns([3, 1])
     with b1:
-        run_btn = st.button("🚀 啟動全網掃描與深度研究報告", type="primary", use_container_width=True)
+        run_btn = st.button("🚀 啟動全網掃描與深度研究報告", 
+                           type="secondary", 
+                           disabled=st.session_state.get('analysis_running', False),
+                           use_container_width=True)
     with b2:
         clear_btn = st.button("🗑️ 清除報告", use_container_width=True)
 
-    if clear_btn:
-        for k, v in defaults.items():
-            st.session_state[k] = v
-        st.rerun()
+    if 'analysis_running' not in st.session_state:
+        st.session_state.analysis_running = False
 
+    if run_btn and not st.session_state.analysis_running:
+        st.session_state.analysis_running = True
     # =========================================================
     # helpers
     # =========================================================
@@ -2400,8 +2402,14 @@ col3.metric("🏦 年配", f"{dividend_metrics.get('avg_div', 0):.2f}元")
 col4.metric("📊 P/E", f"{valuation.get('trailingPE', 'N/A')}")
 
 st.success("✅ Step C 綜合報告生成完成！")
-st.session_state.hide_valuation = True 
-st.stop() 
+        st.session_state.analysis_running = False
+        st.rerun()
+
+    if clear_btn:
+        for k, v in defaults.items():
+            st.session_state[k] = v
+        st.session_state.analysis_running = False
+        st.rerun()
 
 # =========================================================
 # 4) Display (content-oriented; no background blocks)
