@@ -1645,6 +1645,29 @@ with tabs[0]:
     [data-testid="stMetricLabel"] { font-size: 13px; opacity: 0.85; }
     </style>
     """, unsafe_allow_html=True)
+        if 'manual_ready' not in st.session_state:
+        st.session_state.manual_ready = False
+
+    if not st.session_state.manual_ready:
+        st.markdown("### 🚀 **準備分析台股**")
+        st.info("💡 **步驟：1️⃣填股票代碼 2️⃣點開始 3️⃣等待報告**")
+        
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            input_code = st.text_input("🏭 股票代碼（如2330.TW）", 
+                                     value="", 
+                                     max_chars=10, 
+                                     help="台積電=2330, 聯發科=2454")
+        with col2:
+            if st.button("✅ 開始深度分析", 
+                        type="primary",
+                        disabled=not input_code.strip()):
+                st.session_state.manual_ready = True
+                st.session_state.input_code = input_code
+                st.rerun()
+        st.stop()  # 永不自動跑！
+
+    stock_code = st.session_state.input_code  #
 
     # =========================================================
     # 1) Session State
