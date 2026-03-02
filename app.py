@@ -1697,7 +1697,7 @@ with tabs[0]:
 
     c1, c2, c3 = st.columns([1.5, 1, 1.5])
     with c1:
-        stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="2330", max_chars=6)
+        stock_code = st.text_input("🏭 代碼 (個股/ETF)", value="0050", max_chars=6)
     with c2:
         days_period = st.selectbox("⏳ 觀察期", [7, 14, 30, 90], index=1)
     with c3:
@@ -1958,10 +1958,7 @@ if dl:
             
             # 備用：個股專屬產品字典（半導體/航運等）
             product_catalog = {
-                "2330": "邏輯IC(60%)、記憶體(20%)、先進封測(15%)",
-                "2454": "手機SoC(45%)、物聯網晶片(25%)、電視晶片(20%)",
-                "2317": "伺服器組裝(35%)、消費電子(30%)、AI設備(25%)",
-                "2603": "美西航線(50%)、亞歐航線(30%)、散貨(15%)"
+
             }
             if stock_code in product_catalog:
                 advanced_data["key_products"] = product_catalog[stock_code]
